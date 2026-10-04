@@ -47,15 +47,24 @@ export const EquitySymbolType = Type.String({ pattern: EQUITY_SYMBOL_PATTERN })
 export const EquitySymbolSchema = z.string().trim().toUpperCase().regex(EQUITY_SYMBOL_REGEX)
 
 /**
- * The same grammar as SQLite GLOB patterns, for a read that must filter before its LIMIT so the
- * limit counts only symbols the schema will accept. GLOB has classes but no repetition, so the
- * shape is spelled out once per root and share-class width, derived from the same bounds as the
- * regex; a value matches one pattern exactly when it matches `EQUITY_SYMBOL_REGEX`. GLOB is case
- * sensitive, so the caller upper-cases the column first, as `EquitySymbolSchema` does.
+ * The same grammar as a SQL predicate over `column`, for a read that must filter before its LIMIT
+ * so the limit counts only symbols the schema will accept. A value satisfies it exactly when it
+ * matches `EQUITY_SYMBOL_REGEX`: only `[A-Z0-9/]`, at most one slash, a root of 1 to
+ * `MAX_SYMBOL_ROOT` characters, and a share class of 1 to `MAX_SHARE_CLASS` after the slash.
+ * The bounds are checked with `length`/`instr` rather than spelled out as one GLOB per width,
+ * because D1 refuses a GLOB pattern over 50 bytes and the widest spelled-out shape needs 73.
+ * GLOB is case sensitive, so pass the column upper-cased, as `EquitySymbolSchema` reads it.
  */
-export const EQUITY_SYMBOL_GLOBS: readonly string[] = Array.from({ length: MAX_SYMBOL_ROOT }, (_, root) =>
-  Array.from({ length: MAX_SHARE_CLASS + 1 }, (_, shareClass) =>
-    '[A-Z0-9]'.repeat(root + 1) + (shareClass ? `/${'[A-Z0-9]'.repeat(shareClass)}` : ''))).flat()
+export function equitySymbolSql(column: string): string {
+  const slash = `instr(${column}, '/')`
+  return `(${column} NOT GLOB '*[^A-Z0-9/]*'
+    AND CASE ${slash}
+      WHEN 0 THEN length(${column}) BETWEEN 1 AND ${MAX_SYMBOL_ROOT}
+      ELSE ${slash} - 1 BETWEEN 1 AND ${MAX_SYMBOL_ROOT}
+        AND length(${column}) - ${slash} BETWEEN 1 AND ${MAX_SHARE_CLASS}
+        AND instr(substr(${column}, ${slash} + 1), '/') = 0
+    END)`
+}
 
 /**
  * A ticker arriving from model text may still wear the cashtag X writes it with, and Reddit

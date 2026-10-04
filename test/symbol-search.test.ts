@@ -70,6 +70,15 @@ describe('instrument catalog fallback search', () => {
     store.close()
   })
 
+  it('answers a full-length search with accented letters instead of failing D1\'s pattern limit', async () => {
+    const store = await migrationStore()
+    const env = { DB: store.database }
+    // 48 characters, the most a search may have, but over 48 bytes once accents are UTF-8.
+    const longest = 'Soci\u00e9t\u00e9 G\u00e9n\u00e9rale '.padEnd(48, 'x')
+    await expect(searchInstrumentCatalog(env, longest)).resolves.toEqual([])
+    store.close()
+  })
+
   it('never answers with an unresolved or inactive instrument', async () => {
     const store = await migrationStore()
     const env = { DB: store.database }

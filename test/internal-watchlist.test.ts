@@ -206,9 +206,13 @@ describe('the maintained watchlist', () => {
     seedWatchlist(store, [], [{
       kind: 'public',
       name: 'Mixed notation',
-      entries: ['BRK/B', 'brk/a', '1810', 'BF.B', 'ABCDEFGH', '/ES', 'AAPL'].map((symbol) => ({ symbol })),
+      entries: [
+        'BRK/B', 'brk/a', '1810', 'BF.B', 'ABCDEFGH', '/ES', 'AAPL',
+        // The widest shape the grammar admits, and each way past its bounds.
+        'ABCDEF/XYZ', 'ABCDEFG', 'ABC/WXYZ', 'ABC/', 'A/B/C', 'A//B', 'ÄPPL',
+      ].map((symbol) => ({ symbol })),
     }])
-    await expect(readInternalWatchlistCatalogCandidates(env)).resolves.toEqual(['1810', 'AAPL', 'BRK/A', 'BRK/B'])
+    await expect(readInternalWatchlistCatalogCandidates(env)).resolves.toEqual(['1810', 'AAPL', 'ABCDEF/XYZ', 'BRK/A', 'BRK/B'])
   })
 
   it('reads the largest item metadata the importer could write, and refuses anything larger', async () => {

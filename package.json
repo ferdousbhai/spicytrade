@@ -48,7 +48,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "2.0.0-beta.sha-ad79608dd",
+    "@cloudflare/vite-plugin": "2.0.0-beta.sha-52b0dc0e9",
     "@oxlint/plugins": "1.78.0",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/vite": "^4.3.3",
