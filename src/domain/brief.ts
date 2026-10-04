@@ -6,7 +6,7 @@ import { IsoDateSchema } from './iso-date'
 
 /*
  * The daily brief: a trade line and a thesis per name, and the morning's market-moving links. It
- * is produced by exactly one writer, the private spice-workflow Workflow, and delivered through
+ * is produced by exactly one writer, the private spicy-workflow Workflow, and delivered through
  * `BriefPublisher`; this schema is the contract that boundary
  * holds the submission to, and the shape every reader of a stored brief gets back. It carries
  * what the site renders and nothing the producer keeps for itself: the structured legs stay in

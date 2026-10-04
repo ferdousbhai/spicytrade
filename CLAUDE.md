@@ -15,7 +15,7 @@ where they belong. Read the relevant code before changing behavior.
 `src/components/` product surfaces · `migrations/` D1 schema · `ops/` the member's own
 machine (credential proxy) and the owner's temporary bootstrap Workers, which reach the
 production bindings · `tools/` local jobs. No process on this Worker, and no tool it serves,
-produces the daily brief: the private spice-workflow Workflow generates it and delivers it through
+produces the daily brief: the private spicy-workflow Workflow generates it and delivers it through
 the `BriefPublisher` entrypoint over a service binding.
 
 ## Boundaries
@@ -73,7 +73,7 @@ the `BriefPublisher` entrypoint over a service binding.
   doctrine the server publishes as MCP `instructions` and prompts is content it injects into
   someone else's agent, so it is assembled only from this repository's constants — never from
   D1 rows, provider payloads, model output, or a fetched page — and it advises rather than
-  commands. **The daily brief has exactly one writer**: the private spice-workflow Workflow, over a
+  commands. **The daily brief has exactly one writer**: the private spicy-workflow Workflow, over a
   service binding into `BriefPublisher`, never over HTTP and never through a tool. What arrives
   is untrusted model output; this Worker parses it against its own schema and bounds, assigns
   the id and the instant, and stores nothing partial. The research writes that remain —

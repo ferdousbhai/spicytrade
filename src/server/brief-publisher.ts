@@ -7,7 +7,7 @@ import { type AppEnv } from './env'
 /**
  * The one way a daily brief gets written. Reachable only over a service binding from another
  * Worker in this account, never over HTTP, so the producer needs no token and nothing public
- * can reach it. The caller is the private spice-workflow Workflow; what it sends is treated as
+ * can reach it. The caller is the private spicy-workflow Workflow; what it sends is treated as
  * untrusted model output: the type on the parameter is the caller's claim, and the store
  * re-parses the value against this Worker's own contract before anything is written.
  *

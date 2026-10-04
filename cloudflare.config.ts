@@ -6,7 +6,7 @@ export default defineConfig({
   worker: {
     // Changing this name deploys a different Worker: it does not carry the per-Worker secret
     // (BETTER_AUTH_SECRET), Durable Object state, the Workers Builds connection, or the service
-    // binding the private spice-workflow Workflow uses to reach `BriefPublisher`. The Worker was
+    // binding the private spicy-workflow Workflow uses to reach `BriefPublisher`. The Worker was
     // `heston` until it moved to this name, which was safe only because both Durable Objects hold
     // transient coordination (a permit time and an expiring lease); the quarantine lives in D1.
     // Renaming a Durable Object class below still needs a lifecycle entry in `exports` and drops

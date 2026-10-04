@@ -646,7 +646,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
   .top-actions .last-updated { display: none; }
 }
 
-/* The daily brief the spice-workflow Workflow publishes: its trade lines and theses, one issue at a time. */
+/* The daily brief the spicy-workflow Workflow publishes: its trade lines and theses, one issue at a time. */
 .brief-screen { max-width: 760px; margin-inline: auto; animation: enter .35s var(--ease) both; }
 .brief-navigation { min-height: 42px; padding: 7px 14px; border-bottom: 1px solid var(--hairline); display: flex; align-items: center; justify-content: space-between; }
 .brief-cover { padding: 24px 22px 18px; border-bottom: 1px solid var(--hairline); }
