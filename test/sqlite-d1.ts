@@ -6,6 +6,8 @@ import type { JsonObject } from '../src/domain/json-payload'
 import type { InternalWatchlistOrigin } from '../src/server/internal-watchlist'
 import { d1Result, unsupportedDatabase, unsupportedStatement } from './fake-d1'
 
+const D1_LIKE_PATTERN_MAX_BYTES = 50
+
 type BoundStatement = D1PreparedStatement & { __run: () => Promise<D1Result> }
 
 type SqlInput = null | number | bigint | string
@@ -47,6 +49,11 @@ function prepared(statement: StatementSync, onExecute: () => void, values: unkno
 
 function sqliteD1(sql: readonly string[]) {
   const sqlite = new DatabaseSync(':memory:')
+  // D1 refuses a LIKE or GLOB pattern over 50 bytes ("pattern too complex"); stock SQLite allows
+  // 50,000, which let a query that fails in production pass here.
+  // SAFETY: Node's `DatabaseSync#limits` is newer than this repository's @types/node.
+  const { limits } = sqlite as DatabaseSync & { limits: { likePatternLength: number } }
+  limits.likePatternLength = D1_LIKE_PATTERN_MAX_BYTES
   let executedQueries = 0
   sqlite.exec('PRAGMA foreign_keys = ON')
   for (const migration of sql) sqlite.exec(migration)

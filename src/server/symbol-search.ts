@@ -41,6 +41,21 @@ export function searchableQuery(rawQuery: string): string | undefined {
   return query.toUpperCase().replace(/[%_]/g, ' ').replace(/\s+/g, ' ').trim() || undefined
 }
 
+// D1 refuses a LIKE pattern over 50 bytes, and the widest one here wraps the query in two `%`.
+const D1_LIKE_PATTERN_MAX_BYTES = 50
+const utf8 = new TextEncoder()
+
+/**
+ * The query cut, at a character boundary, to what fits D1's pattern limit. A search is capped at
+ * `MAX_QUERY_LENGTH` characters, which is within the limit for ASCII but not once a name carries
+ * accented letters; the cut keeps the leading text, which is what a name match turns on.
+ */
+function likePatternText(query: string): string {
+  let text = query
+  while (utf8.encode(text).length > D1_LIKE_PATTERN_MAX_BYTES - 2) text = text.slice(0, -1)
+  return text.trimEnd()
+}
+
 /**
  * Symbol first, then company name: an exact ticker outranks a ticker that starts with
  * the query, which outranks a name that starts with it, which outranks a name that
@@ -55,8 +70,9 @@ export async function searchInstrumentCatalog(
   if (!env.DB) throw new CallerVisibleError('SymbolSearch:store-unavailable')
   const query = searchableQuery(rawQuery)
   if (!query) return []
-  const prefix = `${query}%`
-  const contains = `%${query}%`
+  const pattern = likePatternText(query)
+  const prefix = `${pattern}%`
+  const contains = `%${pattern}%`
   const result = await env.DB.prepare(
     `SELECT symbol, description, short_description
      FROM instrument_catalog

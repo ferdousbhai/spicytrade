@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import { jsonObject, type JsonObject } from '../domain/json-payload'
-import { EQUITY_SYMBOL_GLOBS, EquitySymbolSchema, MAX_PROVIDER_LABEL_LENGTH } from '../domain/instrument'
+import { EquitySymbolSchema, MAX_PROVIDER_LABEL_LENGTH, equitySymbolSql } from '../domain/instrument'
 import { MAX_WATCHLIST_SYMBOLS } from '../domain/watchlist'
 import { type AppEnv } from './env'
 import { MAX_INSTRUMENT_CATALOG_ITEMS } from './instrument-catalog'
@@ -185,9 +185,9 @@ export async function readInternalWatchlistCatalogCandidates(env: AppEnv): Promi
     `SELECT DISTINCT upper(broker_symbol) AS symbol
      FROM internal_watchlist_seed_entries
      WHERE instrument_type = 'Equity'
-       AND (${EQUITY_SYMBOL_GLOBS.map(() => 'upper(broker_symbol) GLOB ?').join(' OR ')})
+       AND ${equitySymbolSql('upper(broker_symbol)')}
      ORDER BY symbol ASC LIMIT ${MAX_CATALOG_CANDIDATES + 1}`,
-  ).bind(...EQUITY_SYMBOL_GLOBS).all<{ symbol: string }>()
+  ).all<{ symbol: string }>()
   const symbols = z.array(z.object({ symbol: SymbolSchema })).max(MAX_CATALOG_CANDIDATES).parse(result.results)
   return symbols.map((row) => row.symbol)
 }
