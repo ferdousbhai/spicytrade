@@ -70,6 +70,33 @@ describe('instrument catalog fallback search', () => {
     store.close()
   })
 
+  it('matches a company name whatever the case or accents of the search', async () => {
+    const store = await migrationStore()
+    const env = { DB: store.database }
+    await seedCatalog(env, [
+      { description: 'Soci\u00e9t\u00e9 G\u00e9n\u00e9rale', symbol: 'SCGLY' },
+      { description: 'Nestl\u00e9 S.A.', symbol: 'NSRGY' },
+          ])
+    const societe = { name: 'Soci\u00e9t\u00e9 G\u00e9n\u00e9rale', symbol: 'SCGLY' }
+    for (const query of ['soci\u00e9t\u00e9 g\u00e9n\u00e9rale', 'SOCIETE GENERALE', 'societe generale', 'G\u00c9N\u00c9RALE']) {
+      await expect(searchInstrumentCatalog(env, query)).resolves.toEqual([societe])
+    }
+    // A decomposed accent (e + combining acute) reads the same as the precomposed one.
+    await expect(searchInstrumentCatalog(env, 'nestle\u0301')).resolves.toEqual([{ name: 'Nestl\u00e9 S.A.', symbol: 'NSRGY' }])
+    await expect(searchInstrumentCatalog(env, 'nestle')).resolves.toEqual([{ name: 'Nestl\u00e9 S.A.', symbol: 'NSRGY' }])
+    store.close()
+  })
+
+  it('still finds a row written before search names existed, by its raw name', async () => {
+    const store = await migrationStore()
+    const env = { DB: store.database }
+    await seedCatalog(env, [{ description: 'Bloom Energy Corporation', symbol: 'BE' }])
+    await store.database.prepare('UPDATE instrument_catalog SET search_name = NULL').run()
+    await expect(searchInstrumentCatalog(env, 'bloom')).resolves.toEqual([{ name: 'Bloom Energy Corporation', symbol: 'BE' }])
+    await expect(searchInstrumentCatalog(env, 'energy')).resolves.toEqual([{ name: 'Bloom Energy Corporation', symbol: 'BE' }])
+    store.close()
+  })
+
   it('answers a full-length search with accented letters instead of failing D1\'s pattern limit', async () => {
     const store = await migrationStore()
     const env = { DB: store.database }

@@ -135,3 +135,13 @@ export type InstrumentCatalogItem = z.infer<typeof InstrumentCatalogItemSchema>
 export function isTradeableInstrument(item: Pick<InstrumentCatalogItem, 'active' | 'resolutionStatus'>): boolean {
   return item.resolutionStatus === 'resolved' && item.active !== false
 }
+
+/**
+ * Text as name search compares it: compatibility-decomposed, combining marks dropped, upper-cased.
+ * `Société`, `societe` and a decomposed `Socie\u0301te\u0301` all read `SOCIETE`. SQLite's `upper()`
+ * folds ASCII only, so the catalog stores names already folded (`search_name`) and the search
+ * folds its query the same way here.
+ */
+export function searchFold(text: string): string {
+  return text.normalize('NFKD').replace(/\p{M}/gu, '').toUpperCase()
+}

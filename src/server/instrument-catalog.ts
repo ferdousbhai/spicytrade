@@ -5,6 +5,7 @@ import {
   InstrumentCatalogItemSchema,
   MAX_PROVIDER_DESCRIPTION_LENGTH,
   MAX_PROVIDER_LABEL_LENGTH,
+  searchFold,
   type InstrumentCatalogItem,
 } from '../domain/instrument'
 import {
@@ -23,7 +24,7 @@ const SQL_SYMBOL_CHUNK_SIZE = D1_MAX_BOUND_PARAMETERS
 // The one-time seed can retain far more provenance than the live watchlist;
 // this rejects an unexpected provider fan-out before it consumes a Worker isolate.
 export const MAX_INSTRUMENT_CATALOG_ITEMS = 10_000
-const CATALOG_BOUND_PARAMETERS_PER_ROW = 32
+const CATALOG_BOUND_PARAMETERS_PER_ROW = 33
 const CATALOG_ROWS_PER_STATEMENT = rowsPerD1Statement(CATALOG_BOUND_PARAMETERS_PER_ROW)
 
 /**
@@ -178,6 +179,12 @@ function sqlBoolean(value: boolean | null): number | null {
   return value === null ? null : Number(value)
 }
 
+/** `search_name`: the names folded as search reads them, or NULL when the provider gave none. */
+function catalogSearchName(item: InstrumentCatalogRecord): string | null {
+  const names = [item.description, item.shortDescription].filter((name) => name !== null)
+  return names.length ? searchFold(names.join(' ')) : null
+}
+
 function catalogValues(item: InstrumentCatalogRecord): Array<number | null | string> {
   return [
     item.symbol, item.source, item.description, item.shortDescription, item.instrumentType,
@@ -188,7 +195,7 @@ function catalogValues(item: InstrumentCatalogRecord): Array<number | null | str
     sqlBoolean(item.isFractionalQuantityEligible), sqlBoolean(item.overnightTradingPermitted),
     sqlBoolean(item.bypassManualReview), item.haltedAt, item.stopsTradingAt, item.lendability,
     item.borrowRate, item.identityRefreshedAt, item.statusRefreshedAt, item.createdAt, item.updatedAt,
-    item.resolutionStatus, item.identitySource,
+    item.resolutionStatus, item.identitySource, catalogSearchName(item),
   ]
 }
 
@@ -211,7 +218,8 @@ const resolvedConflictClause = `ON CONFLICT(symbol) DO UPDATE SET
         stops_trading_at = excluded.stops_trading_at, lendability = excluded.lendability,
         borrow_rate = excluded.borrow_rate, identity_refreshed_at = excluded.identity_refreshed_at,
         status_refreshed_at = excluded.status_refreshed_at, updated_at = excluded.updated_at,
-        resolution_status = excluded.resolution_status, identity_source = excluded.identity_source`
+        resolution_status = excluded.resolution_status, identity_source = excluded.identity_source,
+        search_name = excluded.search_name`
 
 const unresolvedConflictClause = `ON CONFLICT(symbol) DO UPDATE SET
         status_refreshed_at = excluded.status_refreshed_at, updated_at = excluded.updated_at
@@ -234,7 +242,7 @@ function catalogUpserts(
         is_closing_only, is_options_closing_only, is_illiquid, is_fractional_quantity_eligible,
         overnight_trading_permitted, bypass_manual_review, halted_at, stops_trading_at,
         lendability, borrow_rate, identity_refreshed_at, status_refreshed_at, created_at, updated_at,
-        resolution_status, identity_source
+        resolution_status, identity_source, search_name
       ) VALUES ${chunk.map(() => row).join(', ')}
       ${conflictClause}`,
     ).bind(...chunk.flatMap(catalogValues)))

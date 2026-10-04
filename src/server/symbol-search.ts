@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { EQUITY_SYMBOL_REGEX, EquitySymbolSchema } from '../domain/instrument'
+import { EQUITY_SYMBOL_REGEX, EquitySymbolSchema, searchFold } from '../domain/instrument'
 import { type AppEnv } from './env'
 import { CallerVisibleError } from './caller-visible-error'
 
@@ -38,7 +38,7 @@ export function searchableQuery(rawQuery: string): string | undefined {
   const query = rawQuery.trim()
   if (!query || query.length > MAX_QUERY_LENGTH) return undefined
   // LIKE treats these as wildcards, so a reader cannot turn a name search into a scan.
-  return query.toUpperCase().replace(/[%_]/g, ' ').replace(/\s+/g, ' ').trim() || undefined
+  return searchFold(query).replace(/[%_]/g, ' ').replace(/\s+/g, ' ').trim() || undefined
 }
 
 // D1 refuses a LIKE pattern over 50 bytes, and the widest one here wraps the query in two `%`.
@@ -81,13 +81,12 @@ export async function searchInstrumentCatalog(
        AND (
          symbol = ?1
          OR symbol LIKE ?2
-         OR upper(coalesce(description, '')) LIKE ?3
-         OR upper(coalesce(short_description, '')) LIKE ?3
+         OR coalesce(search_name, upper(coalesce(description, '') || ' ' || coalesce(short_description, ''))) LIKE ?3
        )
      ORDER BY CASE
          WHEN symbol = ?1 THEN 0
          WHEN symbol LIKE ?2 THEN 1
-         WHEN upper(coalesce(description, '')) LIKE ?2 THEN 2
+         WHEN coalesce(search_name, upper(coalesce(description, ''))) LIKE ?2 THEN 2
          ELSE 3
        END,
        length(symbol), symbol
