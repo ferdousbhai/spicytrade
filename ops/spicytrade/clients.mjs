@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { z } from 'zod'
 
 import { MCP_SERVER_NAME, ORIGIN, PROXY_URL } from './config.mjs'
@@ -8,7 +10,9 @@ import { MCP_SERVER_NAME, ORIGIN, PROXY_URL } from './config.mjs'
  * The agent clients `setup` can point at the proxy, through each client's own CLI rather than by
  * editing its config file, whose format is the client's to change.
  *
- * Every client is added at user scope, so the proxy is there in any directory. The commands run
+ * Every client is added at user scope, so the proxy is there in any directory, but switched off
+ * where the client allows it: trading tools are something to turn on when wanted, not a default in
+ * every session. The commands run
  * from the home directory: a project's own `.mcp.json` would otherwise answer for the server's name in
  * whatever directory `setup` happened to be run from.
  *
@@ -49,6 +53,29 @@ function lookup(got, urlOf) {
   return { state: 'configured', url: urlOf(got.stdout) }
 }
 
+/**
+ * Codex has no command to add a server switched off, so the entry `codex mcp add` just wrote gets
+ * `enabled = false` in its own table. Resolves false when the table is not where Codex keeps it.
+ */
+function disableCodexEntry(name) {
+  const path = join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'config.toml')
+  let lines
+  try {
+    lines = readFileSync(path, 'utf8').split('\n')
+  } catch {
+    return false
+  }
+  const header = lines.findIndex((line) => line.trim() === `[mcp_servers.${name}]`)
+  if (header < 0) return false
+  let end = header + 1
+  while (end < lines.length && !lines[end].trim().startsWith('[')) end += 1
+  const enabled = lines.slice(header + 1, end).findIndex((line) => /^\s*enabled\s*=/.test(line))
+  if (enabled >= 0) lines[header + 1 + enabled] = 'enabled = false'
+  else lines.splice(header + 1, 0, 'enabled = false')
+  writeFileSync(path, lines.join('\n'))
+  return true
+}
+
 /** Whether an entry's URL is this proxy or spicytrade itself, so the entry is ours to replace. */
 export function namesSpicytrade(url) {
   return url === PROXY_URL || url.startsWith(`${ORIGIN}/`)
@@ -64,6 +91,8 @@ export const CLIENTS = [
     add: () => run('claude', ['mcp', 'add', '--scope', 'user', '--transport', 'http', MCP_SERVER_NAME, PROXY_URL]),
     addCommand: `claude mcp add --scope user --transport http ${MCP_SERVER_NAME} ${PROXY_URL}`,
     name: 'Claude Code',
+    // Claude Code switches a server off per project only, never for every directory at once.
+    offNote: 'Claude Code cannot switch it off everywhere; turn it off in a project with /mcp',
     configured: (entry = MCP_SERVER_NAME) => lookup(
       run('claude', ['mcp', 'get', entry]),
       (stdout) => stdout.match(/^\s*URL:\s*(\S+)\s*$/m)?.[1] ?? '',
@@ -73,9 +102,14 @@ export const CLIENTS = [
     removeCommand: (entry = MCP_SERVER_NAME) => `claude mcp remove ${entry}`,
   },
   {
-    add: () => run('codex', ['mcp', 'add', MCP_SERVER_NAME, '--url', PROXY_URL]),
+    add: () => {
+      const added = run('codex', ['mcp', 'add', MCP_SERVER_NAME, '--url', PROXY_URL])
+      return added.ok ? { ...added, off: disableCodexEntry(MCP_SERVER_NAME) } : added
+    },
     addCommand: `codex mcp add ${MCP_SERVER_NAME} --url ${PROXY_URL}`,
     name: 'Codex',
+    offNote: `switched off; turn it on with enabled = true under [mcp_servers.${MCP_SERVER_NAME}] in ~/.codex/config.toml`,
+    offFailedNote: `could not switch it off; set enabled = false under [mcp_servers.${MCP_SERVER_NAME}] in ~/.codex/config.toml`,
     configured: (entry = MCP_SERVER_NAME) => lookup(run('codex', ['mcp', 'get', entry, '--json']), (stdout) => {
       try {
         return CodexServerSchema.parse(JSON.parse(stdout)).transport.url ?? ''

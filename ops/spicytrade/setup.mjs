@@ -134,6 +134,7 @@ export async function setup(out = process.stdout) {
     if (configured.state === 'uninstalled') continue
     clientsFound += 1
     let inPlace = false
+    let added
     if (configured.state === 'failed') {
       out.write(`✗ ${client.name} did not answer; add it yourself with:\n    ${client.addCommand}\n`)
     } else if (configured.state === 'configured' && configured.url === PROXY_URL) {
@@ -143,8 +144,10 @@ export async function setup(out = process.stdout) {
       // Someone chose that entry; replacing it is theirs to decide.
       out.write(`! ${client.name} already has a ${MCP_SERVER_NAME} server pointing elsewhere; left as it is. To replace it:\n`
         + `    ${client.removeCommand()} && ${client.addCommand}\n`)
-    } else if (client.add().ok) {
-      out.write(`✓ ${client.name}: added ${MCP_SERVER_NAME} at ${PROXY_URL}\n`)
+    } else if ((added = client.add()).ok) {
+      out.write(added.off === false
+        ? `! ${client.name}: added ${MCP_SERVER_NAME} at ${PROXY_URL}, but ${client.offFailedNote}\n`
+        : `✓ ${client.name}: added ${MCP_SERVER_NAME} at ${PROXY_URL}; ${client.offNote}\n`)
       inPlace = true
     } else {
       out.write(`✗ ${client.name} refused to add the server; add it yourself with:\n    ${client.addCommand}\n`)

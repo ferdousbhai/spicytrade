@@ -145,6 +145,7 @@ if [[ $2 == get ]]; then
 elif [[ $2 == add ]]; then
   ${client === 'claude' ? 'name="${@: -2:1}"; url="${@: -1}"' : 'name="$3"; url="$5"'}
   echo "$url" > "$state/${client}-$name-url"
+  ${client === 'codex' ? 'mkdir -p "$CODEX_HOME" && printf \'[mcp_servers.%s]\\nurl = "%s"\\n\' "$name" "$url" >> "$CODEX_HOME/config.toml"' : ''}
 elif [[ $2 == remove ]]; then
   rm "$state/${client}-$3-url"
 fi
@@ -160,6 +161,7 @@ function run(machine: Machine, workerPort: number, proxyPort: number, args: stri
   const child = spawn(process.execPath, [CLI, ...args], {
     env: {
       ...process.env,
+      CODEX_HOME: join(machine.home, '.codex'),
       HOME: machine.home,
       PATH: `${machine.bin}:/usr/bin:/bin`,
       SPICYTRADE_PROXY_PORT: String(proxyPort),
@@ -447,7 +449,9 @@ describe('spicytrade setup', () => {
     expect(stdout).toContain(`✓ Claude Code: added spicytrade at ${proxyUrl}`)
     expect(stdout).toContain('✓ Claude Code: removed the old spicy-trade entry; the server is spicytrade now')
     await expect(readFile(join(machine.state, 'claude-spicy-trade-url'), 'utf8')).rejects.toThrow()
-    expect(stdout).toContain(`✓ Codex: added spicytrade at ${proxyUrl}`)
+    expect(stdout).toContain(`✓ Codex: added spicytrade at ${proxyUrl}; switched off`)
+    expect(await readFile(join(machine.home, '.codex', 'config.toml'), 'utf8'))
+      .toBe(`[mcp_servers.spicytrade]\nenabled = false\nurl = "${proxyUrl}"\n`)
     expect(stdout).toContain("! Codex has a spicy-trade server that is not spicytrade's; left as it is")
     expect(await readFile(join(machine.state, 'codex-spicy-trade-url'), 'utf8')).toBe('https://someone-elses.example/mcp')
     expect(stdout).not.toContain('someone-elses')
