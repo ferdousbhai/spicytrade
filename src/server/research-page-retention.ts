@@ -11,7 +11,6 @@ import { citedPageKey } from './research-url'
  * that bound is the one that applied to every read.
  */
 export type ReadPage = { markdown: string; truncated: boolean }
-export type RetainedPage = ReadPage & { readAt: string }
 
 /*
  * A citation is worth what this Worker can show was read. Native web search happens inside
@@ -41,7 +40,7 @@ export const PAGE_NAVIGATION_TIMEOUT_MS = 30_000
  * contract is "cite something else", never a run-ending error. A page longer than the cap is
  * read in part and says so, rather than passing its prefix off as the whole page.
  */
-export async function readResearchPageMarkdown(
+async function readResearchPageMarkdown(
   browser: NonNullable<AppEnv['BROWSER']>,
   key: string,
 ): Promise<ReadPage | undefined> {
@@ -63,10 +62,10 @@ export async function readResearchPageMarkdown(
   }
 }
 
-export interface RetainedCitedPages {
+interface RetainedCitedPages {
   rejected: string[]
   /** Empty whenever anything was rejected: no binder may run on a partial set of reads. */
-  retained: Map<string, RetainedPage>
+  retained: Map<string, ReadPage>
 }
 
 /**
@@ -92,7 +91,6 @@ export async function retainCitedPages(
   browser: NonNullable<AppEnv['BROWSER']>,
   sources: readonly { sourceUrl: string }[],
   citedIndices: Iterable<number>,
-  readAt: string,
 ): Promise<RetainedCitedPages> {
   const rejected: string[] = []
   const pageKeys = new Set<string>()
@@ -106,11 +104,11 @@ export async function retainCitedPages(
   }
   if (rejected.length) return { rejected, retained: new Map() }
 
-  const retained = new Map<string, RetainedPage>()
+  const retained = new Map<string, ReadPage>()
   for (const key of pageKeys) {
     const page = await readResearchPageMarkdown(browser, key)
     if (page === undefined) rejected.push(`page did not open: ${key}`)
-    else retained.set(key, { ...page, readAt })
+    else retained.set(key, page)
   }
   if (rejected.length) return { rejected, retained: new Map() }
   return { rejected, retained }

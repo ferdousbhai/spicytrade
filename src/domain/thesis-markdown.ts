@@ -13,7 +13,7 @@ export type ThesisInline =
   | { kind: 'em'; children: ThesisInline[] }
   | { kind: 'link'; href: string; children: ThesisInline[] }
 
-export type ThesisBlock =
+type ThesisBlock =
   | { kind: 'heading'; inlines: ThesisInline[] }
   | { kind: 'paragraph'; inlines: ThesisInline[] }
   | { kind: 'list'; ordered: boolean; items: ThesisInline[][] }

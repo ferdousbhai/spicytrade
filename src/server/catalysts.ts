@@ -11,11 +11,10 @@ import { EquitySymbolSchema } from '../domain/instrument'
 import { isValidIsoDate } from '../domain/iso-date'
 import { type AppEnv } from './env'
 import { jsonObject, jsonText, type JsonObject, type JsonValue } from '../domain/json-payload'
-import { D1_MAX_BOUND_PARAMETERS, rowsPerD1Statement } from './d1-limits'
+import { d1InListChunks, d1RowPlaceholders, rowsPerD1Statement } from './d1-limits'
 import { CallerVisibleError } from './caller-visible-error'
 
 const TASTYTRADE_METRICS_URL = 'https://developer.tastytrade.com/open-api-spec/market-metrics/'
-const DELETE_SYMBOL_CHUNK_SIZE = D1_MAX_BOUND_PARAMETERS
 const CATALYST_BOUND_PARAMETERS_PER_ROW = 13
 const CATALYST_ROWS_PER_STATEMENT = rowsPerD1Statement(CATALYST_BOUND_PARAMETERS_PER_ROW)
 
@@ -53,7 +52,7 @@ export function catalystUpsertStatements(
     statements.push(db.prepare(
       `INSERT INTO catalysts
         (id, source_provider, symbol, kind, title, description, event_date, timing, confidence, source_label, source_url, updated_at, last_seen_at)
-       VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}
+       VALUES ${chunk.map(() => d1RowPlaceholders(CATALYST_BOUND_PARAMETERS_PER_ROW)).join(', ')}
        ON CONFLICT(id) DO UPDATE SET
         symbol = excluded.symbol, kind = excluded.kind, title = excluded.title,
         description = excluded.description, event_date = excluded.event_date,
@@ -124,9 +123,7 @@ export function catalystsFromMarketMetrics(metrics: readonly JsonObject[], now =
     const earningsDate = upcomingEarningsDate(earnings, today)
     if (!earningsDate) return []
     const estimated = optionalBoolean(earnings, 'estimated')
-    const updatedAt = earnings['updated-at'] === undefined || earnings['updated-at'] === null
-      ? providerTimestamp(metric['updated-at'])
-      : providerTimestamp(earnings['updated-at'])
+    const updatedAt = providerTimestamp(earnings['updated-at'] ?? metric['updated-at'])
     return [CatalystSchema.parse({
       id: `tastytrade:${symbol}:earnings`,
       symbol,
@@ -205,11 +202,14 @@ const EVENT_RANK = 'DENSE_RANK() OVER (PARTITION BY symbol ORDER BY event_date A
  */
 export const CALENDAR_EVENT_RANK = 'DENSE_RANK() OVER (ORDER BY event_date ASC, symbol ASC, kind ASC)'
 
+/** A catalyst row as `CatalystSchema` reads it, shared by the snapshot and agent calendar reads. */
+export const CATALYST_COLUMNS = `id, symbol, kind, title, description, event_date AS date, timing, confidence,
+           source_label AS source, source_url AS "sourceUrl", updated_at AS "updatedAt"`
+
 const UPCOMING_CATALYSTS_QUERY =
   `SELECT id, symbol, kind, title, description, date, timing, confidence, source, "sourceUrl", "updatedAt"
      FROM (
-       SELECT id, symbol, kind, title, description, event_date AS date, timing, confidence,
-           source_label AS source, source_url AS "sourceUrl", updated_at AS "updatedAt",
+       SELECT ${CATALYST_COLUMNS},
            ${EVENT_RANK} AS nearest
          FROM ${CURRENT_CATALYSTS}
          WHERE event_date >= ? AND symbol IN (SELECT value FROM json_each(?))
@@ -237,29 +237,13 @@ export async function readUpcomingCatalysts(
   return CatalystSchema.array().parse(result.results ?? [])
 }
 
-/** One symbol's events under the same event-counted cap as the snapshot. */
-const SYMBOL_CATALYSTS_QUERY =
-  `SELECT id, symbol, kind, title, description, date, timing, confidence, source, "sourceUrl", "updatedAt"
-     FROM (
-       SELECT id, symbol, kind, title, description, event_date AS date, timing, confidence,
-           source_label AS source, source_url AS "sourceUrl", updated_at AS "updatedAt",
-           ${EVENT_RANK} AS nearest
-         FROM ${CURRENT_CATALYSTS}
-         WHERE event_date >= ? AND symbol = ?
-     )
-     WHERE nearest <= ?
-     ORDER BY date ASC, id ASC`
-
-/** Full rows for one symbol, including description and source, for the focused runway. */
+/** One symbol's upcoming catalysts, for the focused runway: the same rows the many-symbol read returns. */
 export async function readUpcomingCatalystsForSymbol(
   env: AppEnv,
   symbol: string,
   now = new Date(),
 ): Promise<Catalyst[]> {
-  if (!env.DB) throw new CallerVisibleError('CatalystStoreUnavailable')
-  const result = await env.DB.prepare(SYMBOL_CATALYSTS_QUERY)
-    .bind(marketDate(now), EquitySymbolSchema.parse(symbol), MAX_CATALYSTS_PER_SYMBOL).all()
-  return CatalystSchema.array().parse(result.results ?? [])
+  return readUpcomingCatalysts(env, [symbol], now)
 }
 
 /**
@@ -279,8 +263,7 @@ export async function persistAndLoadCatalysts(
   const answered = [...new Set(symbols.answered.map((symbol) => EquitySymbolSchema.parse(symbol)))]
   const requested = [...new Set(symbols.requested.map((symbol) => EquitySymbolSchema.parse(symbol)))]
   const statements: D1PreparedStatement[] = []
-  for (let start = 0; start < answered.length; start += DELETE_SYMBOL_CHUNK_SIZE) {
-    const chunk = answered.slice(start, start + DELETE_SYMBOL_CHUNK_SIZE)
+  for (const chunk of d1InListChunks(answered)) {
     statements.push(env.DB.prepare(
       `DELETE FROM catalysts
        WHERE source_provider = 'tastytrade' AND symbol IN (${chunk.map(() => '?').join(', ')})`,

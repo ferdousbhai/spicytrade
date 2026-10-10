@@ -6,13 +6,14 @@ import { finalizeDocumentResponse } from './server/http'
 import { mcpEndpointRedirect } from './server/mcp-endpoint-redirect'
 import { configureTypeboxRuntime } from './server/typebox-runtime'
 import { MCP_PATH } from './domain/site'
+import { errorName, toError } from './domain/failure'
 
 /*
  * The MCP surface and the scheduled jobs are loaded when a request needs them rather than when
  * the isolate starts. Each pulls a large dependency graph — the MCP server, the broker client,
  * the research pipeline — that a visitor fetching the market never runs, and a cold isolate pays
- * for every module it evaluates before it can answer anyone. Auth is not among them: `http.ts`
- * reads the session on every document response, so better-auth is in the startup graph already
+ * for every module it evaluates before it can answer anyone. Auth is not among them: this file
+ * and `http.ts` import `./server/auth` statically, so better-auth is in the startup graph already
  * and OAuth discovery is imported statically.
  */
 const mcpSurface = () => import('./server/mcp')
@@ -56,56 +57,38 @@ export default {
       .then((event) => console.info(JSON.stringify(event)))
       .catch((cause: unknown) => console.error(
         'YearCandleRefreshFailed',
-        cause instanceof Error ? cause.name : 'UnknownError',
+        errorName(toError(cause)),
       )))
+    // Each sweep below logs how many rows it dropped, or the error name it failed with.
+    const sweep = (work: Promise<number>, event: string, countKey: string, failure: string) => {
+      context.waitUntil(work
+        .then((count) => console.info(JSON.stringify({ event, [countKey]: count })))
+        .catch((cause: unknown) => console.error(failure, errorName(toError(cause)))))
+    }
     // Anonymous symbol search claims a lease keyed by the reader's own query text, so each
     // distinct search leaves a row behind and nothing else ever removes one. A lapsed lease
     // guards nothing, so the tick drops the expired per-symbol rows.
-    context.waitUntil(import('./server/tastytrade-market-store')
-      .then(({ sweepExpiredSymbolRefreshLeases }) => sweepExpiredSymbolRefreshLeases(env, scheduledAt))
-      .then((leaseCount) => console.info(JSON.stringify({
-        event: 'SymbolRefreshLeasesSwept',
-        leaseCount,
-      })))
-      .catch((cause: unknown) => console.error(
-        'SymbolRefreshLeaseSweepFailed',
-        cause instanceof Error ? cause.name : 'UnknownError',
-      )))
+    sweep(
+      import('./server/tastytrade-market-store').then(({ sweepExpiredSymbolRefreshLeases }) => sweepExpiredSymbolRefreshLeases(env, scheduledAt)),
+      'SymbolRefreshLeasesSwept', 'leaseCount', 'SymbolRefreshLeaseSweepFailed',
+    )
     // Every distinct valid-pattern ticker a reader searches leaves an unresolved catalog
     // placeholder; one whose retry interval has lapsed already reads as missing, so the tick
     // deletes it rather than letting the table grow with every junk query ever typed.
-    context.waitUntil(import('./server/instrument-catalog')
-      .then(({ sweepStaleUnresolvedInstruments }) => sweepStaleUnresolvedInstruments(env, scheduledAt))
-      .then((instrumentCount) => console.info(JSON.stringify({
-        event: 'UnresolvedInstrumentsSwept',
-        instrumentCount,
-      })))
-      .catch((cause: unknown) => console.error(
-        'UnresolvedInstrumentSweepFailed',
-        cause instanceof Error ? cause.name : 'UnknownError',
-      )))
+    sweep(
+      import('./server/instrument-catalog').then(({ sweepStaleUnresolvedInstruments }) => sweepStaleUnresolvedInstruments(env, scheduledAt)),
+      'UnresolvedInstrumentsSwept', 'instrumentCount', 'UnresolvedInstrumentSweepFailed',
+    )
     // A member's lapsed brokerage connections are dropped whenever they start another; the tick
     // drops those of members who never came back.
-    context.waitUntil(import('./server/broker-authorizations')
-      .then(({ sweepExpiredBrokerAuthorizations }) => sweepExpiredBrokerAuthorizations(env, scheduledAt))
-      .then((authorizationCount) => console.info(JSON.stringify({
-        event: 'BrokerAuthorizationsSwept',
-        authorizationCount,
-      })))
-      .catch((cause: unknown) => console.error(
-        'BrokerAuthorizationSweepFailed',
-        cause instanceof Error ? cause.name : 'UnknownError',
-      )))
+    sweep(
+      import('./server/broker-authorizations').then(({ sweepExpiredBrokerAuthorizations }) => sweepExpiredBrokerAuthorizations(env, scheduledAt)),
+      'BrokerAuthorizationsSwept', 'authorizationCount', 'BrokerAuthorizationSweepFailed',
+    )
     // Likewise a member's lapsed terminal sign-ins, whose CLI never came back to redeem them.
-    context.waitUntil(import('./server/agent-logins')
-      .then(({ sweepExpiredAgentLogins }) => sweepExpiredAgentLogins(env, scheduledAt))
-      .then((loginCount) => console.info(JSON.stringify({
-        event: 'AgentLoginsSwept',
-        loginCount,
-      })))
-      .catch((cause: unknown) => console.error(
-        'AgentLoginSweepFailed',
-        cause instanceof Error ? cause.name : 'UnknownError',
-      )))
+    sweep(
+      import('./server/agent-logins').then(({ sweepExpiredAgentLogins }) => sweepExpiredAgentLogins(env, scheduledAt)),
+      'AgentLoginsSwept', 'loginCount', 'AgentLoginSweepFailed',
+    )
   },
 }

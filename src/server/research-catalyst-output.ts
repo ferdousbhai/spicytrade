@@ -13,7 +13,7 @@ import {
 import { EquitySymbolSchema } from '../domain/instrument'
 import { addDays, IsoDateSchema, textMentionsDateWithinHorizon } from '../domain/iso-date'
 import { type CatalystProvider } from './catalysts'
-import { type RetainedPage, TRUNCATED_READ_MISS } from './research-page-retention'
+import { type ReadPage, TRUNCATED_READ_MISS } from './research-page-retention'
 import { citedPageKey } from './research-url'
 
 export const ResearchCatalystCandidateSchema = z.strictObject({
@@ -62,7 +62,7 @@ type BoundCatalystProvider = keyof typeof BOUND_CATALYST_LABELS
 export function bindCatalystCandidates(
   candidates: readonly ResearchCatalystCandidate[],
   sources: readonly { sourceUrl: string }[],
-  retained: ReadonlyMap<string, RetainedPage>,
+  retained: ReadonlyMap<string, ReadPage>,
   now: Date,
   provider: BoundCatalystProvider,
   candidateNumbers?: readonly number[],

@@ -83,8 +83,9 @@ function optionalBoolean(value: JsonValue, field: string): boolean | undefined {
  * `historical-volatility-30-day` (30.8), `iv-hv-30-day-difference` (-4.7), the
  * annual `borrow-rate` (1.5 for Easy To Borrow, 951.15 for PCLA Locate Required), and
  * `implied-volatility-30-day` (24.59) are already percentage points. Multiplying those by 100
- * rejected or distorted real observations, so the `*Points` helpers below keep them as
- * reported.
+ * rejected or distorted real observations: `percentagePoints` and `optionalPercentagePoints`
+ * convert only the ratio fields, and the points fields are read as reported through
+ * `optionalNumeric` and `optionalNonnegative`.
  *
  * `implied-volatility-30-day` is the trap in that list: it carries the same number as
  * `implied-volatility-index` in the other unit, so reading it as a ratio looks plausible and
@@ -218,7 +219,7 @@ export function tastytradeRowsByRequestedSymbol(
   return bySymbol
 }
 
-export type NormalizedTastytradeMarketTicker = {
+type NormalizedTastytradeMarketTicker = {
   metricRecord: TastytradeMarketMetricRecord
   quoteRecord: TastytradeMarketQuoteRecord
   ticker: Ticker
@@ -424,9 +425,13 @@ export function catalogTickerInstrument(item: InstrumentCatalogItem | undefined)
   }
 }
 
+/** The session object, whether the provider wrapped it in `data` or sent it bare. */
+function sessionObject(payload: JsonValue): JsonObject | undefined {
+  return jsonObject(jsonObject(payload)?.data ?? payload)
+}
+
 export function marketStateFromTastytradeSession(payload: JsonValue): MarketSnapshot['marketState'] {
-  const body = jsonObject(payload)
-  const session = jsonObject(body?.data ?? payload)
+  const session = sessionObject(payload)
   if (!session) throw new CallerVisibleError('TastytradeMarketSession:invalid-response')
   const rawState = optionalText(session.state, 'market-state')?.toLowerCase()
   if (!rawState) throw new CallerVisibleError('TastytradeMarketSession:missing-state')
@@ -443,8 +448,8 @@ export function marketStateFromTastytradeSession(payload: JsonValue): MarketSnap
  * believe, and is refused as `marketStateFromTastytradeSession` refuses a bad state, rather than
  * shown as the same quiet absence.
  */
-function sessionInstant(value: JsonValue | undefined, check: string): number | undefined {
-  if (value === undefined || value === null) return undefined
+function sessionInstant(value: JsonValue, check: string): number | undefined {
+  if (unreported(value)) return undefined
   const instant = Date.parse(jsonText(value) ?? '')
   if (!Number.isFinite(instant)) throw new CallerVisibleError(`TastytradeMarketSession:${check}`)
   return instant
@@ -457,14 +462,13 @@ function sessionInstant(value: JsonValue | undefined, check: string): number | u
  * neither ahead of now yields nothing, and the reader gets the state without a countdown.
  */
 export function marketOpensAtFromTastytradeSession(payload: JsonValue, now = new Date()): string | undefined {
-  const body = jsonObject(payload)
-  const session = jsonObject(body?.data ?? payload)
+  const session = sessionObject(payload)
   if (!session) return undefined
   // Absent (or null) is the provider naming no next session; present but not an object is a
   // payload this reader cannot believe, refused like a bad instant rather than read as absent.
   const nextValue = session['next-session']
   const next = jsonObject(nextValue)
-  if (nextValue !== undefined && nextValue !== null && !next) {
+  if (!unreported(nextValue) && !next) {
     throw new CallerVisibleError('TastytradeMarketSession:invalid-next-session')
   }
   const candidates = [session['open-at'], next?.['open-at']]
@@ -476,8 +480,7 @@ export function marketOpensAtFromTastytradeSession(payload: JsonValue, now = new
 
 /** The current session's close while it is still ahead. A close already behind yields nothing. */
 export function marketClosesAtFromTastytradeSession(payload: JsonValue, now = new Date()): string | undefined {
-  const body = jsonObject(payload)
-  const session = jsonObject(body?.data ?? payload)
+  const session = sessionObject(payload)
   if (!session) return undefined
   const close = sessionInstant(session['close-at'], 'invalid-close-at')
   if (close === undefined || close <= now.getTime()) return undefined

@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { EquitySymbolSchema } from '../domain/instrument'
+import { errorName, toError } from '../domain/failure'
 import { jsonNoStore, jsonPublic } from '../server/http'
 import { readUpcomingCatalystsForSymbol } from '../server/catalysts'
 import { appEnv } from '../server/worker-env'
@@ -27,14 +28,13 @@ export const Route = createFileRoute('/api/public-catalysts')({
         try {
           const catalysts = await readUpcomingCatalystsForSymbol(appEnv, parsed.data)
           // Already parsed against `CatalystSchema` by the store read.
-          const response = jsonPublic({ catalysts })
-          response.headers.set(
-            'Cache-Control',
+          return jsonPublic(
+            { catalysts },
+            {},
             `public, max-age=${CATALYSTS_BROWSER_MAX_AGE_SECONDS}, s-maxage=${CATALYSTS_EDGE_MAX_AGE_SECONDS}`,
           )
-          return response
         } catch (error) {
-          console.error('PublicCatalystsUnavailable', error instanceof Error ? error.name : 'UnknownError')
+          console.error('PublicCatalystsUnavailable', errorName(toError(error)))
           return jsonNoStore({ error: 'Catalysts are temporarily unavailable' }, { status: 503 })
         }
       },

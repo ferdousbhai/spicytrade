@@ -15,7 +15,7 @@ import { CliFailure } from './loopback.mjs'
 
 const TEMPLATE_URL = new URL('./systemd/spicytrade-proxy.service', import.meta.url)
 
-export function unitPath(name = UNIT_NAME) {
+function unitPath(name = UNIT_NAME) {
   return join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'systemd', 'user', name)
 }
 
@@ -47,11 +47,11 @@ function unitWord(word) {
   return /[\s"'\\]/.test(escaped) ? `"${escaped.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"` : escaped
 }
 
-export function expectedExecStart() {
+function expectedExecStart() {
   return `ExecStart=${unitWord(process.execPath)} ${unitWord(PROXY_PATH)}`
 }
 
-export async function renderUnit() {
+async function renderUnit() {
   const template = await readFile(TEMPLATE_URL, 'utf8')
   if (!/^ExecStart=.*$/m.test(template)) throw new CliFailure('the unit template has no ExecStart line')
   return template.replace(/^ExecStart=.*$/m, expectedExecStart())

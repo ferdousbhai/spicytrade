@@ -1,8 +1,9 @@
 import { z } from 'zod'
 
+import { AppGrantRefusalSchema } from './broker-grants.mjs'
 import { cliCommand, ORIGIN } from './config.mjs'
 import {
-  agentToken, APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, keyringSecret, keyringStore, REFRESH_TOKEN_KEY, TASTYTRADE,
+  agentToken, APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, keyringStore, REFRESH_TOKEN_KEY, TASTYTRADE,
   tastytradeCredentialKind,
 } from './keyring.mjs'
 import { awaitReturn, CliFailure, loopbackListener, openBrowser } from './loopback.mjs'
@@ -61,7 +62,7 @@ async function callWorker(path, agentBearer, body) {
   }
   const payload = await response.json().catch(() => undefined)
   if (!response.ok) {
-    const tastytradeStatus = z.object({ tastytradeStatus: z.number().int() }).safeParse(payload)
+    const tastytradeStatus = AppGrantRefusalSchema.safeParse(payload)
     if (response.status === 401) {
       throw new CliFailure(`spicytrade did not accept the agent token in the keyring. Sign in again with:\n  ${cliCommand('login')}`)
     }
@@ -123,10 +124,9 @@ export async function connectTastytrade(out = process.stdout) {
   if (!exchanged.success) throw new CliFailure('spicytrade answered the exchange with an unreadable response')
   const { refreshToken } = exchanged.data
 
-  if (!await keyringStore(BROKER, KEY, 'tastytrade refresh token (spicytrade app)', refreshToken)) {
+  if (!await keyringStore(PROGRAM, BROKER, KEY, 'tastytrade refresh token (spicytrade app)', refreshToken)) {
     throw new CliFailure(`failed to store ${BROKER}/${KEY}`)
   }
-  if (await keyringSecret(PROGRAM, BROKER, KEY) !== refreshToken) throw new CliFailure(`failed to store ${BROKER}/${KEY}`)
   out.write(`Stored ${BROKER}/${KEY}.\n`)
 
   restartProxy(out)

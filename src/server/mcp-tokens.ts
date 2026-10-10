@@ -5,7 +5,7 @@ import {
   TOKEN_ID_PATTERN,
   type McpTokenMetadata,
 } from '../domain/mcp-tokens'
-import { base64Url, sha256Base64Url } from './digest'
+import { randomBase64Url, sha256Base64Url } from './digest'
 
 /**
  * `spice_<token_id>_<secret>`.
@@ -49,7 +49,7 @@ export function presentedBearer(request: Request): string | undefined {
   return match?.[1]?.trim() || undefined
 }
 
-export type McpTokenIdentity = { tokenId: string; userId: string }
+type McpTokenIdentity = { tokenId: string; userId: string }
 
 export class McpTokenLimitError extends Error {
   constructor() {
@@ -85,11 +85,6 @@ function randomTokenId(): string {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-function randomSecret(): string {
-  const bytes = new Uint8Array(32)
-  crypto.getRandomValues(bytes)
-  return base64Url(bytes)
-}
 
 function metadataFromRow(row: {
   created_at: string
@@ -126,7 +121,7 @@ export async function issueMcpToken(
 ): Promise<{ token: string; tokenMetadata: McpTokenMetadata }> {
   const parsedLabel = McpTokenLabelSchema.parse(label)
   const tokenId = randomTokenId()
-  const token = `${TOKEN_PREFIX}${tokenId}_${randomSecret()}`
+  const token = `${TOKEN_PREFIX}${tokenId}_${randomBase64Url(32)}`
   const createdAt = now.toISOString()
   // The cap is checked inside the insert rather than read first: two concurrent issues that
   // each counted below the cap would otherwise both insert and leave the member over it.

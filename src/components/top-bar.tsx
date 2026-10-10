@@ -26,16 +26,22 @@ import { BrandMark, HOME_LINK_LABEL } from './wordmark'
 // Fine enough that "just now" becomes "1 min ago" while a reader is still looking at it.
 const ELAPSED_TICK_MS = 15_000
 
+/** Whole seconds since `at`, or undefined when it is not a readable instant. */
+function elapsedSeconds(at: string, now: number): number | undefined {
+  const updated = Date.parse(at)
+  if (!Number.isFinite(updated)) return undefined
+  // A provider clock a little ahead of the browser's must not read as the future.
+  return Math.max(0, Math.round((now - updated) / 1_000))
+}
+
 /**
  * How old the data on screen is, in the terms a reader thinks in. This replaced a banner that
  * alarmed on every reconnect: what a reader needs is the age of what they are reading, not an
  * interruption each time a socket drops and heals itself.
  */
 export function elapsedLabel(at: string, now: number): string | undefined {
-  const updated = Date.parse(at)
-  if (!Number.isFinite(updated)) return undefined
-  // A provider clock a little ahead of the browser's must not read as the future.
-  const seconds = Math.max(0, Math.round((now - updated) / 1_000))
+  const seconds = elapsedSeconds(at, now)
+  if (seconds === undefined) return undefined
   if (seconds < 45) return 'just now'
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${Math.max(1, minutes)} min ago`
@@ -50,9 +56,8 @@ export function elapsedLabel(at: string, now: number): string | undefined {
  * cell has no room to say "just" and a reader glancing at a column wants one glyph per row.
  */
 export function compactElapsedLabel(at: string, now: number): string | undefined {
-  const updated = Date.parse(at)
-  if (!Number.isFinite(updated)) return undefined
-  const seconds = Math.max(0, Math.round((now - updated) / 1_000))
+  const seconds = elapsedSeconds(at, now)
+  if (seconds === undefined) return undefined
   if (seconds < 60) return 'now'
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes}m`
@@ -88,7 +93,7 @@ export function useElapsedLabel(at: string | undefined): string | undefined {
  * as unknown in a muted tone and counts down to nothing, since a bell it cannot place is not
  * one to count toward.
  */
-export type MarketStatus = { detail: string; tone: 'open' | 'waiting' | 'closed' | 'unknown' }
+type MarketStatus = { detail: string; tone: 'open' | 'waiting' | 'closed' | 'unknown' }
 
 const SESSION_NAMES = {
   after: 'After hours',
@@ -142,7 +147,7 @@ export function marketStatusLabel(
   return { detail: lines.join('\n'), tone }
 }
 
-export type LiveFeedSourceCopy = {
+type LiveFeedSourceCopy = {
   label: 'Live' | 'Snapshot'
   title: string
 }

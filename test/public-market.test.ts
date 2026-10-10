@@ -229,10 +229,6 @@ describe('public market boundary', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input))
       if (url.pathname.endsWith('/oauth/token')) return Response.json({ access_token: 'owner-read-token', expires_in: 900 })
-      if (url.pathname.endsWith('/customers/me/accounts')) {
-        return Response.json({ data: { items: [{ account: { 'account-number': 'TEST123' } }] } })
-      }
-      if (url.pathname.endsWith('/accounts/TEST123/positions')) return Response.json({ data: { items: [] } })
       if (url.pathname.includes('/market-time/equities/sessions/current')) {
         return Response.json({ data: { state: 'Open' } })
       }

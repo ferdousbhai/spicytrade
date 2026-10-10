@@ -87,9 +87,7 @@ case you are choosing to accept, and weigh it against the balances and positions
  * account tools, so their version names neither; it stops at the structure and its worst case.
  */
 export function tradeIdeaPrompt(symbol: string, thesis: string, signedIn: boolean): string {
-  const close = signedIn
-    ? `Only if it clears, propose a concrete structure with a named worst case.\n\n${ADMISSIBLE_ORDERS}`
-    : 'Only if it clears, propose a concrete structure with a named worst case.'
+  const close = `Only if it clears, propose a concrete structure with a named worst case.${signedIn ? `\n\n${ADMISSIBLE_ORDERS}` : ''}`
   return `
 Evaluate this idea for ${symbol}: ${thesis}
 

@@ -5,12 +5,14 @@ import {
   candleSubscription,
   isSameOriginWebSocketRequest,
   MarketFeedStatusSchema,
+  MAX_OPTION_GREEKS_CONTRACTS,
   type OptionGreeksEvent,
   OptionGreeksRequestRegistry,
   optionGreeksFromRow,
   parseOptionStreamerSymbols,
   parseRequestedSymbols,
 } from '../src/server/market-feed-contracts'
+import { MAX_LIVE_STREAM_SYMBOLS } from '../src/domain/watchlist'
 
 function greek(streamerSymbol: string, delta = 0.5): OptionGreeksEvent {
   return {
@@ -57,7 +59,7 @@ describe('market feed subscription boundary', () => {
     expect(() => parseRequestedSymbols(new URL(
       'https://spice.test/api/stream?symbols=SPY&symbols=NVDA',
     ))).toThrow()
-    const symbols = Array.from({ length: 101 }, (_, index) => `A${index}`)
+    const symbols = Array.from({ length: MAX_LIVE_STREAM_SYMBOLS + 1 }, (_, index) => `A${index}`)
     expect(() => parseRequestedSymbols(new URL(
       `https://spice.test/api/stream?symbols=${symbols.join(',')}`,
     ))).toThrow()
@@ -73,7 +75,7 @@ describe('market feed subscription boundary', () => {
   })
 
   it('requests bounded regular-session candle history', () => {
-    expect(candleSubscription('NVDA', 1_765_000_000_000)).toEqual({
+    expect(candleSubscription('NVDA', 1_765_000_000_000, 'intraday')).toEqual({
       type: 'Candle',
       symbol: 'NVDA{=5m,tho=true}',
       fromTime: 1_765_000_000_000,
@@ -121,7 +123,7 @@ describe('market feed subscription boundary', () => {
   it('bounds and validates exact option streamer symbols at the DO boundary', () => {
     expect(parseOptionStreamerSymbols(['.NVDA260814C250', '.NVDA260814C250'])).toEqual(['.NVDA260814C250'])
     expect(() => parseOptionStreamerSymbols(['NVDA260814C250'])).toThrow()
-    expect(() => parseOptionStreamerSymbols(Array.from({ length: 11 }, (_, index) => `.NVDA260814C${index}`))).toThrow()
+    expect(() => parseOptionStreamerSymbols(Array.from({ length: MAX_OPTION_GREEKS_CONTRACTS + 1 }, (_, index) => `.NVDA260814C${index}`))).toThrow()
   })
 
   it('waits for every requested symbol and preserves request order', async () => {

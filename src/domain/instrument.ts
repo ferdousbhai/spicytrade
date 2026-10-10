@@ -73,7 +73,7 @@ export function equitySymbolSql(column: string): string {
  * than rejected for a convention it was written in. Anything still unreadable stays refused.
  */
 export function equitySymbolFromModelText(value: string): string | undefined {
-  return EquitySymbolSchema.safeParse(value.trim().replace(/^\$/, '').toUpperCase()).data
+  return EquitySymbolSchema.safeParse(value.trim().replace(/^\$/, '')).data
 }
 
 /** Reads every value as a ticker, or names the first one that is not. */
@@ -103,6 +103,12 @@ export const MAX_PROVIDER_LABEL_LENGTH = 128
  * change together.
  */
 export const MAX_PROVIDER_DESCRIPTION_LENGTH = 512
+/**
+ * The longest provider short description accepted, the broker's abbreviated name line. It is the
+ * `length(short_description) BETWEEN 1 AND 256` CHECK on the instrument catalog (migration 0014),
+ * so the two change together.
+ */
+export const MAX_PROVIDER_SHORT_DESCRIPTION_LENGTH = 256
 
 // Provider description fields are untrusted storage input. These generous text widths bound
 // D1 rows and UI strings without classifying or shortening any valid symbol or trading field.
@@ -121,7 +127,7 @@ export const InstrumentCatalogItemSchema = z.object({
   lendability: z.string().trim().min(1).max(MAX_PROVIDER_LABEL_LENGTH).nullable(),
   listedMarket: z.string().trim().min(1).max(MAX_PROVIDER_LABEL_LENGTH).nullable(),
   resolutionStatus: z.enum(['resolved', 'unresolved']),
-  shortDescription: z.string().trim().min(1).max(256).nullable(),
+  shortDescription: z.string().trim().min(1).max(MAX_PROVIDER_SHORT_DESCRIPTION_LENGTH).nullable(),
   symbol: EquitySymbolSchema,
 })
 

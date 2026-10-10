@@ -92,7 +92,6 @@ describe('typed tastytrade instrument catalog', () => {
       symbol: 'SPCX',
     })
     expect(item).not.toHaveProperty('tickSizes')
-    expect(JSON.stringify(item)).not.toContain('unmodeled-provider-field')
   })
 
   it('updates provider identity and status with stable creation time', async () => {

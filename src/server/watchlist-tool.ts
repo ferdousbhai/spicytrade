@@ -15,7 +15,7 @@ import {
 } from './internal-watchlist'
 import { loadStoredPublicMarketUniverse } from './public-market-universe'
 
-export type WatchlistReadResult =
+type WatchlistReadResult =
   | {
     fetchedAt: string
     mode: 'index'
@@ -46,7 +46,7 @@ export const WatchlistReadParameters = Type.Object({
 }, { additionalProperties: false })
 
 /** The index alone: no parameter a caller could use to ask for provenance. */
-export const WatchlistIndexParameters = Type.Object({}, { additionalProperties: false })
+const WatchlistIndexParameters = Type.Object({}, { additionalProperties: false })
 
 // Symbols only, alphabetized, which reveals nothing about which source put a name there or how
 // strongly. Provenance and instrument type are the detail mode's.

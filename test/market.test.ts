@@ -18,7 +18,7 @@ function liveTicker(...args: Parameters<typeof normalizeTastytradeMarketTicker>)
   return normalizeTastytradeMarketTicker(...args).ticker
 }
 
-describe('volatility classification', () => {
+describe('ticker metric presentation', () => {
   it('formats market metrics with at most one decimal place', () => {
     expect(formatMarketMetric(26.9097222)).toBe('26.9')
     expect(formatMarketMetric(72)).toBe('72')

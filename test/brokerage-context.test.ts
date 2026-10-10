@@ -4,6 +4,7 @@ import { type JsonValue } from '../src/domain/json-payload'
 import { resetBrokerApi, setBrokerApi } from '../src/server/tastytrade'
 import { brokerCredential, stubBroker } from './broker-stub'
 import { loadBrokerageContext } from '../src/server/brokerage-context'
+import { BROKER_ACCOUNT_PAGE_SIZE } from '../src/server/brokers/tastytrade-payload'
 
 const tastytrade = stubBroker()
 
@@ -50,7 +51,7 @@ function payloadFor(path: string): JsonValue {
   return path.endsWith('/balances') ? { data: balance } : pageFor(path)
 }
 
-describe('always-on brokerage context', () => {
+describe('brokerage context', () => {
   beforeEach(() => {
     tastytrade.resolveAccountNumber.mockReset().mockResolvedValue('A1')
     tastytrade.tastyRequest.mockReset().mockImplementation((_env, path: string) => Promise.resolve(payloadFor(path)))
@@ -119,7 +120,7 @@ describe('always-on brokerage context', () => {
   it('fails position completeness closed on a full page without pagination metadata', async () => {
     tastytrade.tastyRequest.mockImplementation((_env, path: string) => {
       if (path.includes('/positions')) {
-        return Promise.resolve({ data: { items: Array.from({ length: 200 }, (_, index) => ({
+        return Promise.resolve({ data: { items: Array.from({ length: BROKER_ACCOUNT_PAGE_SIZE }, (_, index) => ({
           symbol: `POS${index}`, 'underlying-symbol': 'SPY', quantity: '1',
           'quantity-direction': 'Long', 'instrument-type': 'Equity',
         })) } })
@@ -133,7 +134,7 @@ describe('always-on brokerage context', () => {
   it('fails working-order completeness closed on a full page without pagination metadata', async () => {
     tastytrade.tastyRequest.mockImplementation((_env, path: string) => {
       if (path.includes('/orders/live')) {
-        return Promise.resolve({ data: { items: Array.from({ length: 200 }, (_, index) => ({
+        return Promise.resolve({ data: { items: Array.from({ length: BROKER_ACCOUNT_PAGE_SIZE }, (_, index) => ({
           id: String(index + 1), status: 'Filled', 'terminal-at': '2026-08-13T12:00:00Z',
         })) } })
       }

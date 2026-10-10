@@ -11,7 +11,7 @@ import { brokerAdapterFor } from './brokers'
 import { internalWatchlistWriter } from './internal-watchlist'
 import { BrokerCredentialMissingError, type BrokerCredential } from './broker-credential'
 
-export async function rememberTradeIntentSymbol(env: AppEnv, action: FreshOrderPlacement): Promise<void> {
+async function rememberTradeIntentSymbol(env: AppEnv, action: FreshOrderPlacement): Promise<void> {
   const symbol = action.kind === 'place_equity_order' ? action.symbol : action.underlying
   await internalWatchlistWriter().ensureSymbols(env, [symbol], 'trade-intent')
 }

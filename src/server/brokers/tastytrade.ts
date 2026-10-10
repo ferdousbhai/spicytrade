@@ -1,4 +1,5 @@
 import {
+  BROKER_SYMBOL_MAX_LENGTH,
   type BrokerAccountHistoryPage,
   type BrokerAccountRef,
   type BrokerAccountSnapshot,
@@ -60,10 +61,6 @@ import { CallerVisibleError } from '../caller-visible-error'
 // (`FINAL_ABSENCE_DELAY_MS`) many times over for any account spicytrade expects to reconcile.
 const RECONCILIATION_HISTORY_PAGE_SIZE = 100
 
-function segment(value: string): string {
-  return encodeURIComponent(value)
-}
-
 /**
  * What of a record-parsing failure may reach the caller. Only this repository's own codes pass;
  * anything else -- a TypeError or ZodError from a parser, whose message can quote the payload --
@@ -80,9 +77,9 @@ function detail(cause: unknown): string {
  * the account snapshot tool, so they are carried verbatim and only tagged with which read
  * they came from.
  */
-function accountRows(payload: JsonValue, part: BrokerSnapshotPart, label: string): JsonObject[] {
+function accountRows(payload: JsonValue, part: BrokerSnapshotPart): JsonObject[] {
   try {
-    return completeAccountRows(payload, label)
+    return completeAccountRows(payload, part)
   } catch (cause) {
     throw new BrokerSnapshotError(part, 'page', detail(cause))
   }
@@ -118,7 +115,7 @@ function positionFromRecord(row: JsonObject): BrokerPosition | undefined {
 }
 
 function normalizedPositions(payload: JsonValue): BrokerPosition[] {
-  const rows = accountRows(payload, 'positions', 'positions')
+  const rows = accountRows(payload, 'positions')
   try {
     return rows.flatMap((row) => {
       const position = positionFromRecord(row)
@@ -139,8 +136,8 @@ function expandedOrders(rows: readonly JsonObject[], part: BrokerSnapshotPart): 
 
 function normalizedOrders(ordinaryPayload: JsonValue, complexPayload: JsonValue): BrokerWorkingOrder[] {
   const expanded = [
-    ...expandedOrders(accountRows(ordinaryPayload, 'orders', 'orders'), 'orders'),
-    ...expandedOrders(accountRows(complexPayload, 'complex-orders', 'complex-orders'), 'complex-orders'),
+    ...expandedOrders(accountRows(ordinaryPayload, 'orders'), 'orders'),
+    ...expandedOrders(accountRows(complexPayload, 'complex-orders'), 'complex-orders'),
   ]
   return [...new Map(expanded.map((order) => [order.id, order])).values()]
 }
@@ -160,7 +157,7 @@ async function loadAccountSnapshot(
   ref: BrokerAccountRef,
   credential: BrokerCredential | undefined,
 ): Promise<BrokerAccountSnapshot> {
-  const account = segment(ref.accountNumber)
+  const account = encodeURIComponent(ref.accountNumber)
   // Transport failures propagate untouched. "The broker would not answer" is a different
   // fact from "the broker answered something we refuse to believe", and only the second
   // arrives as a BrokerSnapshotError; callers report them differently.
@@ -195,7 +192,7 @@ function historyOrderLeg(value: JsonValue): BrokerHistoryOrderLeg {
     instrumentType: requiredText(row, ['instrument-type'], label, 64),
     quantity: finiteNumber(row.quantity, label),
     remainingQuantity: optionalNumber(row, ['remaining-quantity'], label),
-    symbol: requiredText(row, ['symbol'], label, 128),
+    symbol: requiredText(row, ['symbol'], label, BROKER_SYMBOL_MAX_LENGTH),
   }
 }
 
@@ -247,7 +244,7 @@ function historyTransaction(row: JsonObject): BrokerHistoryTransaction {
     orderId,
     price: optionalNumber(row, ['price'], label),
     quantity: optionalNumber(row, ['quantity'], label),
-    symbol: optionalText(row, ['symbol'], label, 128),
+    symbol: optionalText(row, ['symbol'], label, BROKER_SYMBOL_MAX_LENGTH),
     transactionSubType: optionalText(row, ['transaction-sub-type'], label, 64),
     transactionType,
     underlyingSymbol: optionalText(row, ['underlying-symbol'], label, 64),
@@ -273,7 +270,7 @@ async function readAccountHistory(
   try {
     payload = await brokerApi().tastyRequest(
       env,
-      `/accounts/${segment(ref.accountNumber)}/${request.type}?${query.toString()}`,
+      `/accounts/${encodeURIComponent(ref.accountNumber)}/${request.type}?${query.toString()}`,
       {},
       credential,
     )
@@ -351,7 +348,7 @@ async function readOrder(
 ): Promise<BrokerOrderRecord> {
   return tastytradeOrderFromPayload(await brokerApi().tastyRequest(
     env,
-    `/accounts/${segment(ref.accountNumber)}/orders/${segment(orderId)}`,
+    `/accounts/${encodeURIComponent(ref.accountNumber)}/orders/${encodeURIComponent(orderId)}`,
     {},
     credential,
   ))
@@ -366,7 +363,7 @@ async function cancelOrder(
   try {
     await brokerApi().tastyRequest(
       env,
-      `/accounts/${segment(ref.accountNumber)}/orders/${segment(orderId)}`,
+      `/accounts/${encodeURIComponent(ref.accountNumber)}/orders/${encodeURIComponent(orderId)}`,
       { method: 'DELETE' },
       credential,
     )
@@ -387,7 +384,7 @@ async function readOrderHistory(
 ): Promise<BrokerOrderHistoryPage> {
   const payload = await brokerApi().tastyRequest(
     env,
-    `/accounts/${segment(ref.accountNumber)}/orders?per-page=${RECONCILIATION_HISTORY_PAGE_SIZE}`
+    `/accounts/${encodeURIComponent(ref.accountNumber)}/orders?per-page=${RECONCILIATION_HISTORY_PAGE_SIZE}`
       + `&sort=Desc&start-date=${options.startDate}`,
     {},
     credential,

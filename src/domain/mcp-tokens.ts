@@ -24,7 +24,7 @@ export const McpTokenLabelSchema = z.string().trim().min(1).max(MAX_MCP_TOKEN_LA
 export const TOKEN_ID_HEX_LENGTH = 16
 export const TOKEN_ID_PATTERN = `[0-9a-f]{${TOKEN_ID_HEX_LENGTH}}`
 
-export const McpTokenMetadataSchema = z.strictObject({
+const McpTokenMetadataSchema = z.strictObject({
   createdAt: z.string(),
   label: McpTokenLabelSchema,
   lastUsedAt: z.string().optional(),

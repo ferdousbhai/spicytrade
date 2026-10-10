@@ -21,7 +21,8 @@ const HealthSchema = z.object({ service: z.string() })
 
 export default async function assertServerIsSpice(): Promise<void> {
   const baseUrl = process.env.SPICE_E2E_BASE_URL
-  if (!baseUrl) return
+  // playwright.config.ts always sets it; a run without it would check nothing, so it fails.
+  if (!baseUrl) throw new Error('SPICE_E2E_BASE_URL is unset')
 
   let response: Response
   try {

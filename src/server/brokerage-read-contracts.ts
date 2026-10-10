@@ -1,7 +1,7 @@
 import { type Static, Type } from 'typebox'
 
 import { EquityOptionTupleSchema } from '../domain/equity-option'
-import { EQUITY_SYMBOL_REGEX, ModelTextEquitySymbolType } from '../domain/instrument'
+import { ModelTextEquitySymbolType } from '../domain/instrument'
 import {
   type BrokerBalances,
   type BrokerHistoryOrder,
@@ -43,7 +43,6 @@ export const DEFAULT_SEARCH_RESULTS = 10
 // anomalous upstream fan-out before normalization allocates or processes arbitrary rows.
 export const MAX_SEARCH_ROWS = 200
 export const MAX_CHAIN_ROWS = 50_000
-export const EQUITY_SYMBOL = EQUITY_SYMBOL_REGEX
 /**
  * Deliberately wider than an equity symbol: broker history may be filtered by a futures
  * underlying, which tastytrade writes with a leading `/` (`/ES`), or by a share class, which it

@@ -19,8 +19,8 @@ export async function mergeFavoriteSymbols(
   database: D1Database,
   userId: string,
   symbols: readonly string[],
-  now = new Date(),
 ): Promise<string[]> {
+  const now = new Date()
   const incoming = [...new Set(FavoriteSymbolsSchema.parse(symbols))].sort()
   if (incoming.length) {
     const insert = database.prepare(

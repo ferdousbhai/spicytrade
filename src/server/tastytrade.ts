@@ -1,4 +1,4 @@
-import { MAX_WATCHLIST_SYMBOLS } from '../domain/watchlist'
+import { errorName, toError } from '../domain/failure'
 import {
   MarketSnapshotSchema,
   PublicMarketSnapshotSchema,
@@ -18,7 +18,6 @@ import {
   type RequestOptions,
 } from 'tasty-agent/tastytrade'
 import { type AppEnv } from './env'
-import { toError } from '../domain/failure'
 import {
   catalystsFromMarketMetrics,
   persistAndLoadCatalysts,
@@ -47,7 +46,6 @@ import {
   type InstrumentCatalogRefresh,
   unresolvedInstrumentCatalogItem,
 } from './instrument-catalog'
-import { persistTastytradeMarketSnapshot } from './tastytrade-market-store'
 import {
   catalogTickerInstrument,
   marketClosesAtFromTastytradeSession,
@@ -72,6 +70,7 @@ import {
   persistMarketSession,
   readStoredMarketRecords,
   readStoredMarketSession,
+  persistTastytradeMarketSnapshot,
   releaseMarketRefresh,
   type TastytradeMarketQuoteRecord,
 } from './tastytrade-market-store'
@@ -108,12 +107,12 @@ function safeEndpoint(path: string): string {
 
 type BrokerRequestGate = ReturnType<NonNullable<AppEnv['BROKER_GATE']>['getByName']>
 
-export type BrokerMutationLease = {
+type BrokerMutationLease = {
   renew(): Promise<void>
 }
 
 /** The account's mutation lease lapsed before the next broker step, so nothing further was sent. */
-export class BrokerMutationLeaseExpiredError extends CallerVisibleError {
+class BrokerMutationLeaseExpiredError extends CallerVisibleError {
   constructor() {
     super('BrokerMutationLeaseExpired')
     this.name = 'BrokerMutationLeaseExpiredError'
@@ -231,7 +230,7 @@ function restated(error: Error | undefined, path: string): Error {
   return named(`TastytradeApi:${reason}:${endpoint}`, 'TastytradeApiAmbiguousError')
 }
 
-export type TastyRequestInit = Pick<RequestOptions, 'body' | 'method' | 'signal'>
+type TastyRequestInit = Pick<RequestOptions, 'body' | 'method' | 'signal'>
 
 export async function tastyRequest(
   env: AppEnv,
@@ -313,7 +312,7 @@ async function readOptionalYearCandles(
   } catch (cause) {
     // The missing chart is visible in the response; keep the live price path available while
     // recording only the failure class, never a provider or database body.
-    console.error('YearCandleCacheReadFailed', cause instanceof Error ? cause.name : 'UnknownError')
+    console.error('YearCandleCacheReadFailed', errorName(toError(cause)))
     return new Map()
   }
 }
@@ -398,16 +397,34 @@ async function loadTastytradeInstrumentCatalog(
   )
 }
 
+/** A catalog load's resolved rows, and an unresolved placeholder for every symbol it missed. */
+async function persistLoadedCatalog(
+  env: AppEnv,
+  loaded: Awaited<ReturnType<typeof loadTastytradeInstrumentCatalog>>,
+  now: Date,
+): Promise<void> {
+  await persistInstrumentCatalog(env, [
+    ...loaded.items,
+    ...loaded.missingSymbols.map((symbol) => unresolvedInstrumentCatalogItem(symbol, now)),
+  ])
+}
+
+/** The one list a public snapshot carries, and the one the owner's own snapshot carries. */
+function publicOptionsWatch(symbols: string[]): Watchlist {
+  return { id: 'public-options-watch', kind: 'public', name: 'Options Watch', symbols }
+}
+
+function ownerWatchlist(symbols: string[]): Watchlist {
+  return { id: 'watchlist', kind: 'private', name: 'Watchlist', symbols }
+}
+
 export async function refreshTastytradeInstrumentCatalog(
   env: AppEnv,
   symbols: readonly string[],
   now = new Date(),
 ): Promise<InstrumentCatalogRefresh> {
   const result = await loadTastytradeInstrumentCatalog(env, symbols, now)
-  await persistInstrumentCatalog(env, [
-    ...result.items,
-    ...result.missingSymbols.map((symbol) => unresolvedInstrumentCatalogItem(symbol, now)),
-  ])
+  await persistLoadedCatalog(env, result, now)
   return {
     missingSymbols: result.missingSymbols,
     receivedCount: result.items.length,
@@ -415,7 +432,7 @@ export async function refreshTastytradeInstrumentCatalog(
   }
 }
 
-export type InternalInstrumentCatalogChunkRefresh = InstrumentCatalogRefresh & {
+type InternalInstrumentCatalogChunkRefresh = InstrumentCatalogRefresh & {
   complete: boolean
   nextOffset: number
   totalCount: number
@@ -432,12 +449,7 @@ async function internalInstrumentCatalogChunk(
   if (offset > symbols.length) throw new CallerVisibleError('InstrumentCatalog:invalid-offset')
   const chunk = symbols.slice(offset, offset + BROKER_SYMBOL_CHUNK_SIZE)
   const loaded = await loadTastytradeInstrumentCatalog(env, chunk, now)
-  if (persist) {
-    await persistInstrumentCatalog(env, [
-      ...loaded.items,
-      ...loaded.missingSymbols.map((symbol) => unresolvedInstrumentCatalogItem(symbol, now)),
-    ])
-  }
+  if (persist) await persistLoadedCatalog(env, loaded, now)
   const nextOffset = Math.min(symbols.length, offset + chunk.length)
   return {
     complete: nextOffset >= symbols.length,
@@ -466,11 +478,8 @@ export async function refreshInternalInstrumentCatalogChunkFromTastytrade(
   return internalInstrumentCatalogChunk(env, offset, now, true)
 }
 
-async function refreshMissingTastytradeInstruments(
-  env: AppEnv,
-  symbols: readonly string[],
-  now = new Date(),
-): Promise<void> {
+async function refreshMissingTastytradeInstruments(env: AppEnv, symbols: readonly string[]): Promise<void> {
+  const now = new Date()
   const missing = await missingInstrumentCatalogSymbols(env, symbols, now)
   if (missing.length) await refreshTastytradeInstrumentCatalog(env, missing, now)
 }
@@ -481,14 +490,8 @@ async function loadMarketSnapshot(env: AppEnv): Promise<MarketSnapshot> {
   // longer read positions. Every write to the list already holds it to its cap in the same
   // batch, so this path only reads the focus. The one publish of the public universe is below,
   // after the build succeeds.
-  const symbols = await readInternalWatchlistFocus(env, MAX_WATCHLIST_SYMBOLS)
-  const privateWatchlist: Watchlist = {
-    id: 'watchlist',
-    kind: 'private',
-    name: 'Watchlist',
-    symbols,
-  }
-  const watchlists = [privateWatchlist]
+  const symbols = await readInternalWatchlistFocus(env)
+  const watchlists = [ownerWatchlist(symbols)]
   // New owner and agent symbols get an authoritative name immediately; an unresolved row is put
   // to the broker again by the first snapshot after `UNRESOLVED_INSTRUMENT_RETRY_MS` lapses.
   await refreshMissingTastytradeInstruments(env, symbols)
@@ -612,12 +615,7 @@ export async function loadPublicMarketSnapshot(
   ])
   const syncedAt = new Date().toISOString()
   const session = await cacheProviderSession(env, sessionResult)
-  const watchlists = [{
-    id: 'public-options-watch',
-    kind: 'public' as const,
-    name: 'Options Watch',
-    symbols: storedUniverse.symbols,
-  }]
+  const watchlists = [publicOptionsWatch(storedUniverse.symbols)]
   return PublicMarketSnapshotSchema.parse({
     source: 'tastytrade',
     syncedAt,
@@ -642,7 +640,8 @@ async function refreshPublicMarketSession(
  * Caching the session is best-effort: it is a read optimization for later visitors, never a
  * reason to fail the live build that already has the answer in hand.
  */
-async function cacheProviderSession(env: AppEnv, payload: JsonValue, now = new Date()) {
+async function cacheProviderSession(env: AppEnv, payload: JsonValue) {
+  const now = new Date()
   const session = {
     marketClosesAt: marketClosesAtFromTastytradeSession(payload, now),
     marketOpensAt: marketOpensAtFromTastytradeSession(payload, now),
@@ -651,7 +650,7 @@ async function cacheProviderSession(env: AppEnv, payload: JsonValue, now = new D
   try {
     await persistMarketSession(env, session.marketState, session.marketOpensAt, session.marketClosesAt)
   } catch (error) {
-    console.error('MarketSessionCacheWriteFailed', error instanceof Error ? error.name : 'UnknownError')
+    console.error('MarketSessionCacheWriteFailed', errorName(toError(error)))
   }
   return session
 }
@@ -690,7 +689,11 @@ async function storedSnapshotParts(env: AppEnv, symbols: readonly string[]) {
     catalysts,
     latestObservedAt: records.latestObservedAt,
     observedAt: records.observedAt,
-    session,
+    sessionFields: {
+      marketState: session?.state ?? 'unknown',
+      marketOpensAt: session?.opensAt,
+      marketClosesAt: session?.closesAt,
+    },
     tickers,
   }
 }
@@ -719,15 +722,8 @@ async function loadStoredPublicMarketSnapshot(env: AppEnv): Promise<StoredPublic
   const snapshot = PublicMarketSnapshotSchema.parse({
     source: 'tastytrade',
     syncedAt: parts.observedAt,
-    marketState: parts.session?.state ?? 'unknown',
-    marketOpensAt: parts.session?.opensAt,
-    marketClosesAt: parts.session?.closesAt,
-    watchlists: [{
-      id: 'public-options-watch',
-      kind: 'public' as const,
-      name: 'Options Watch',
-      symbols: storedUniverse.symbols,
-    }],
+    ...parts.sessionFields,
+    watchlists: [publicOptionsWatch(storedUniverse.symbols)],
     tickers: parts.tickers.map(publicTickerFromTicker),
     catalysts: parts.catalysts,
     brief: parts.brief,
@@ -738,16 +734,14 @@ async function loadStoredPublicMarketSnapshot(env: AppEnv): Promise<StoredPublic
 /** The owner's default view, served entirely from the market store. */
 async function loadStoredMarketSnapshot(env: AppEnv): Promise<MarketSnapshot | undefined> {
   if (!env.DB) return undefined
-  const focusSymbols = await readInternalWatchlistFocus(env, MAX_WATCHLIST_SYMBOLS)
+  const focusSymbols = await readInternalWatchlistFocus(env)
   const parts = await storedSnapshotParts(env, focusSymbols)
   if (!parts) return undefined
   return MarketSnapshotSchema.parse({
     source: 'tastytrade',
     syncedAt: parts.observedAt,
-    marketState: parts.session?.state ?? 'unknown',
-    marketOpensAt: parts.session?.opensAt,
-    marketClosesAt: parts.session?.closesAt,
-    watchlists: [{ id: 'watchlist', kind: 'private' as const, name: 'Watchlist', symbols: focusSymbols }],
+    ...parts.sessionFields,
+    watchlists: [ownerWatchlist(focusSymbols)],
     tickers: parts.tickers,
     catalysts: parts.catalysts,
     brief: parts.brief,

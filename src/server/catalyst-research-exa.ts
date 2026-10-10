@@ -16,7 +16,7 @@ import {
   type CatalystCandidateBinding,
   type ResearchCatalystCandidate,
 } from './research-catalyst-output'
-import { type RetainedPage, retainCitedPages } from './research-page-retention'
+import { type ReadPage, retainCitedPages } from './research-page-retention'
 import { citedPageKey } from './research-url'
 import { readStoredSecret } from './secrets'
 
@@ -220,14 +220,13 @@ export async function runExaCatalystSearch(
   // page read rather than by one per page (`CATALYST_RUN_BUDGET_MS`). Each page is its own call: unlike a
   // member's recording, this run is not all-or-nothing -- every event stands or falls on its own
   // page -- so a page that will not open refuses the events that cite it, not the whole run.
-  const readAt = now.toISOString()
   const toRead = [...new Set(cited.map(({ sourceUrl }) => sourceUrl))]
     .filter((key) => returnedPages.has(key))
-  const pages = new Map<string, RetainedPage>()
+  const pages = new Map<string, ReadPage>()
   const unopened = new Set<string>()
   const reads = await Promise.all(toRead.map(async (key) => ({
     key,
-    read: await retainCitedPages(browser, [{ sourceUrl: key }], [0], readAt),
+    read: await retainCitedPages(browser, [{ sourceUrl: key }], [0]),
   })))
   for (const { key, read } of reads) {
     const page = read.retained.get(key)

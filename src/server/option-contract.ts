@@ -17,7 +17,7 @@ type OptionAction = Extract<OrderPlacement, { kind: 'place_option_order' }>
 // Error details show enough alternatives to correct a tuple without echoing a full option chain.
 const MAX_RESOLUTION_SUGGESTIONS = 8
 
-export class OptionContractUnavailableError extends CallerVisibleError {
+class OptionContractUnavailableError extends CallerVisibleError {
   constructor(detail: string) {
     super(`Requested option contract is not available. ${detail}`)
     this.name = 'OptionContractUnavailableError'
@@ -29,10 +29,6 @@ function chainRows(payload: JsonValue): JsonObject[] {
   const items = JsonArraySchema.safeParse(data.items).data
   if (!items) throw new OptionContractUnavailableError('The option chain response was incomplete.')
   return items.map(jsonObjectOrEmpty)
-}
-
-function unavailable(detail: string): Error {
-  return new OptionContractUnavailableError(detail)
 }
 
 function shortList(values: string[]): string {
@@ -69,7 +65,7 @@ type ResolutionOptions = {
   requireStreamerSymbol?: boolean
 }
 
-export type ResolvedEquityOptionTuple = EquityOptionTuple & EquityOptionContract
+type ResolvedEquityOptionTuple = EquityOptionTuple & EquityOptionContract
 
 /** Resolve one exact, standard, active contract without assuming its root equals the underlying. */
 export function equityOptionContractFromChainTuple(
@@ -87,12 +83,12 @@ export function equityOptionContractFromChainTuple(
   if (!expirationRows.length) {
     // Suggestions reach the caller in a caller-visible message, so only values that bind to a
     // calendar date are echoed; any other provider text in that field is dropped, not relayed.
-    throw unavailable(`Available standard expirations: ${shortList(standardRows.map((row) => jsonTextOrEmpty(row['expiration-date'])).filter(isValidIsoDate))}.`)
+    throw new OptionContractUnavailableError(`Available standard expirations: ${shortList(standardRows.map((row) => jsonTextOrEmpty(row['expiration-date'])).filter(isValidIsoDate))}.`)
   }
   const sideRows = expirationRows.filter((row) => jsonTextOrEmpty(row['option-type']) === tuple.optionType)
   const strikeRows = sideRows.filter((row) => jsonNumber(row['strike-price']) === tuple.strike)
   if (!strikeRows.length) {
-    throw unavailable(`Nearest ${tuple.optionType === 'C' ? 'call' : 'put'} strikes: ${nearestStrikes(sideRows, tuple.strike)}.`)
+    throw new OptionContractUnavailableError(`Nearest ${tuple.optionType === 'C' ? 'call' : 'put'} strikes: ${nearestStrikes(sideRows, tuple.strike)}.`)
   }
   const candidates: EquityOptionContract[] = []
   for (const row of strikeRows) {
@@ -109,18 +105,18 @@ export function equityOptionContractFromChainTuple(
     if (streamerSymbol) candidate.streamerSymbol = streamerSymbol
     candidates.push(candidate)
   }
-  if (candidates.length > 1) throw unavailable('The requested tuple is ambiguous: it matched more than one contract.')
+  if (candidates.length > 1) throw new OptionContractUnavailableError('The requested tuple is ambiguous: it matched more than one contract.')
   if (candidates.length === 1) {
     const candidate = candidates[0]!
     if (options.requireStreamerSymbol && !candidate.streamerSymbol) {
-      throw unavailable('The matching contract has no verified market-data streamer symbol.')
+      throw new OptionContractUnavailableError('The matching contract has no verified market-data streamer symbol.')
     }
     return candidate
   }
   if (options.opening && strikeRows.some((row) => row.active === true && row['is-closing-only'] !== false)) {
-    throw unavailable('The matching contract is closing-only or its opening status could not be verified.')
+    throw new OptionContractUnavailableError('The matching contract is closing-only or its opening status could not be verified.')
   }
-  throw unavailable('The matching contract is inactive or its multiplier could not be verified.')
+  throw new OptionContractUnavailableError('The matching contract is inactive or its multiplier could not be verified.')
 }
 
 /** Resolve one exact, standard, active contract for execution. */

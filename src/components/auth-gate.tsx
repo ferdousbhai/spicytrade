@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { z } from 'zod'
 
 import { Alert, AlertDescription, AlertTitle } from '#/components/ui/alert'
@@ -6,6 +6,7 @@ import { Button } from '#/components/ui/button'
 import { Spinner } from '#/components/ui/spinner'
 import { authClient } from '../data/auth-client'
 import { toError } from '../domain/failure'
+import { BrandMark } from './wordmark'
 
 const ViewerSchema = z.object({
   id: z.string().min(1),
@@ -22,10 +23,35 @@ const ViewerResponseSchema = z.object({
   user: ViewerSchema.nullable(),
 })
 
-export type AuthState =
+type AuthState =
   | { phase: 'checking' }
   | { phase: 'ready'; user: Viewer | null }
   | { message: string; phase: 'error' }
+
+/**
+ * The frame every sign-in and approval page shares, so its heading and its unanswered-session
+ * line cannot drift between them. Whose page this is comes first, before anything asks for a
+ * sign-in or an approval; the mark is not a link, which would lead out of a flow the provider or
+ * the terminal expects to finish here. An unanswered session check still says something: without
+ * it the page stopped at its heading, and the member could not tell whether to wait or retry.
+ */
+export function AuthorizeFrame(
+  { children, phase, title }: { children: ReactNode; phase: AuthState['phase']; title: string },
+) {
+  return (
+    <main className="authorize-page">
+      <div className="authorize-brand"><BrandMark /></div>
+      <h1>{title}</h1>
+      {phase === 'checking' && <Spinner />}
+      {phase === 'error' && (
+        <p className="authorize-error">
+          spicytrade could not check whether you are signed in. Reload to try again.
+        </p>
+      )}
+      {children}
+    </main>
+  )
+}
 
 export function useViewer(): AuthState {
   const [state, setState] = useState<AuthState>({ phase: 'checking' })
@@ -63,8 +89,9 @@ function GoogleMark() {
 }
 /**
  * `callbackURL` exists for the OAuth authorization page, which must return the browser to the
- * signed authorization request it arrived with, and for the Connect view, which returns the
- * reader to itself. Anywhere else a sign-in lands on Watch, the application's own address.
+ * signed authorization request it arrived with, for the Connect view, which returns the reader
+ * to itself, and for the terminal sign-in page (`/connect/agent`), which returns with its raw
+ * query. Anywhere else a sign-in lands on Watch, the application's own address.
  */
 export function GoogleSignInButton(
   { callbackURL = '/watch', compact = false }: { callbackURL?: string; compact?: boolean },
@@ -79,7 +106,7 @@ export function GoogleSignInButton(
       if (result.error) throw new Error(result.error.message ?? 'Google sign-in failed')
     } catch (signInFailure) {
       setSubmitting(false)
-      setSignInError(signInFailure instanceof Error ? signInFailure.message : 'Google sign-in failed')
+      setSignInError(toError(signInFailure)?.message ?? 'Google sign-in failed')
     }
   }
 

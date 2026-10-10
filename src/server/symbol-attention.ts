@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { equitySymbolFromModelText } from '../domain/instrument'
+import { errorName, toError } from '../domain/failure'
 import { attemptCatalystRefresh } from './catalyst-refresh'
 import { type AppEnv } from './env'
 
@@ -118,7 +119,7 @@ export async function noteSymbolAttention(env: AppEnv, call: SymbolNamingCall): 
       // not stuck unsearched. A throw may come after the claim, so it counts against the budget:
       // spending one search too few is cheaper than one too many.
       searches += 1
-      console.error('SymbolAttentionRefreshFailed', error instanceof Error ? error.name : 'UnknownError')
+      console.error('SymbolAttentionRefreshFailed', errorName(toError(error)))
     }
   }
   const unvisited = named.length - visited

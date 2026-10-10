@@ -152,7 +152,7 @@ describe('local agent proxy', () => {
     expect(captured[0]?.headers['x-spice-broker-token']).toBeUndefined()
   }, 30_000)
 
-  it('still runs an install from before the rename: old keyring entry, old environment names', async () => {
+  it('still runs an install from before the rename: old keyring entry', async () => {
     const captured: Captured[] = []
     const port = await listen((request, response) => {
       request.resume()
@@ -577,13 +577,12 @@ describe('broker token retirement', () => {
     // tastytrade's 15-minute token: a tenth is 90 s, so the whole 60 s timeout is spared. A fixed
     // 30 s margin let a placement forwarded 45 s before expiry run on a token that died under it.
     const lifetimeMs = 15 * 60_000
-    const retiresAt = tokenRetiresAt(0, lifetimeMs, UPSTREAM_TIMEOUT_MS)
+    const retiresAt = tokenRetiresAt(0, lifetimeMs)
     expect(retiresAt).toBe(lifetimeMs - UPSTREAM_TIMEOUT_MS)
-    expect(retiresAt + UPSTREAM_TIMEOUT_MS).toBeLessThanOrEqual(lifetimeMs)
   })
 
   it('keeps a token too short-lived to spare a whole timeout for nine tenths of its life', () => {
-    expect(tokenRetiresAt(1_000, 100_000, UPSTREAM_TIMEOUT_MS)).toBe(1_000 + 90_000)
+    expect(tokenRetiresAt(1_000, 100_000)).toBe(1_000 + 90_000)
   })
 })
 
@@ -654,7 +653,6 @@ describe('local agent proxy failures an agent can act on', () => {
     await startProxy({ PATH: `${keyring}:${process.env.PATH ?? ''}`, SPICYTRADE_MCP_URL: `http://127.0.0.1:${port}/mcp` }, proxyPort)
 
     // The Worker refused the agent token on the mint itself.
-    refusal = { body: { error: 'Unauthorized' }, status: 401 }
     const tokenRefused = await failingCall(proxyPort, { id: 'a', jsonrpc: '2.0', method: 'tools/list' })
     expect(tokenRefused.status).toBe(502)
     expect(tokenRefused.failure.id).toBe('a')

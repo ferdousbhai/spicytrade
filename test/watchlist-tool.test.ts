@@ -36,7 +36,6 @@ beforeEach(async () => {
       entries: [{ symbol: 'NVDA', metadata: { symbol: 'NVDA', 'instrument-type': 'Equity', rank: 2 } }],
     },
   ])
-  tastytrade.tastyRequest.mockClear()
 })
 
 afterEach(() => {

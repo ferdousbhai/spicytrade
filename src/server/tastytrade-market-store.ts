@@ -1,8 +1,9 @@
 import { z } from 'zod'
 
-import { MarketStateSchema, type MarketSnapshot } from '../domain/market'
+import { type IvTermStructure, MarketStateSchema, type MarketSnapshot } from '../domain/market'
+import { errorName, toError } from '../domain/failure'
 import { type AppEnv } from './env'
-import { D1_MAX_BOUND_PARAMETERS, rowsPerD1Statement } from './d1-limits'
+import { d1InListChunks, d1RowPlaceholders, rowsPerD1Statement } from './d1-limits'
 import { CallerVisibleError } from './caller-visible-error'
 import { ConfigurationError } from './secrets'
 
@@ -19,12 +20,7 @@ export type TastytradeMarketMetricRecord = {
   ivIndex5DayChange?: number
   ivPercentile?: number
   ivRank?: number
-  ivTermStructure?: {
-    backExpiration: string
-    backIv: number
-    frontExpiration: string
-    frontIv: number
-  }
+  ivTermStructure?: IvTermStructure
   liquidity?: number
   marketCap?: number
   /** tastytrade's own instant for these readings; absent only on rows stored before it was kept. */
@@ -69,7 +65,7 @@ export async function persistTastytradeMarketSnapshot(
           iv_hv_30_day_difference_points, front_expiration, front_iv_percent,
           back_expiration, back_iv_percent, liquidity_rating, market_cap,
           earnings_date, provider_updated_at, observed_at
-        ) VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}
+        ) VALUES ${chunk.map(() => d1RowPlaceholders(METRIC_BOUND_PARAMETERS_PER_ROW)).join(', ')}
         ON CONFLICT(symbol) DO UPDATE SET
           iv_index_percent = excluded.iv_index_percent,
           iv_rank_percent = excluded.iv_rank_percent,
@@ -103,7 +99,7 @@ export async function persistTastytradeMarketSnapshot(
         `INSERT INTO tastytrade_market_quotes (
           symbol, price, previous_close, volume, year_low, year_high,
           provider_updated_at, observed_at
-        ) VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}
+        ) VALUES ${chunk.map(() => d1RowPlaceholders(QUOTE_BOUND_PARAMETERS_PER_ROW)).join(', ')}
         ON CONFLICT(symbol) DO UPDATE SET
           price = excluded.price,
           previous_close = excluded.previous_close,
@@ -153,10 +149,6 @@ const StoredQuoteRowSchema = z.object({
   observed_at: z.string(),
 })
 
-// One bound parameter per symbol in the `symbol IN (...)` list, so the chunk is the
-// platform's own statement limit rather than a hand-tuned number beside it.
-const SQL_SYMBOL_CHUNK_SIZE = D1_MAX_BOUND_PARAMETERS
-
 function optional(value: number | null): number | undefined {
   return value === null ? undefined : value
 }
@@ -187,7 +179,7 @@ function storedMetricRecord(row: z.infer<typeof StoredMetricRowSchema>): Tastytr
   }
 }
 
-export type StoredMarketRecords = {
+type StoredMarketRecords = {
   /**
    * The newest reading in the set: when the store was last written for these symbols. This,
    * not the oldest, says whether the provider has been asked lately — a symbol the provider
@@ -219,8 +211,7 @@ export async function readStoredMarketRecords(
     if (observedAt === undefined || value < observedAt) observedAt = value
     if (latestObservedAt === undefined || value > latestObservedAt) latestObservedAt = value
   }
-  for (let start = 0; start < symbols.length; start += SQL_SYMBOL_CHUNK_SIZE) {
-    const chunk = symbols.slice(start, start + SQL_SYMBOL_CHUNK_SIZE)
+  for (const chunk of d1InListChunks(symbols)) {
     const placeholders = chunk.map(() => '?').join(', ')
     const [metricResult, quoteResult] = await Promise.all([
       env.DB.prepare(`SELECT * FROM tastytrade_market_metrics WHERE symbol IN (${placeholders})`)
@@ -309,7 +300,7 @@ export async function claimMarketRefresh(
     ).bind(id, claimedUntil, nowIso).run()
     return result.meta.changes === 1
   } catch (error) {
-    console.error('MarketRefreshLeaseUnavailable', error instanceof Error ? error.name : 'UnknownError')
+    console.error('MarketRefreshLeaseUnavailable', errorName(toError(error)))
     return true
   }
 }
@@ -336,18 +327,18 @@ export async function releaseMarketRefresh(
       'DELETE FROM market_refresh_lease WHERE id = ? AND expires_at = ?',
     ).bind(id, claimedUntil).run()
   } catch (error) {
-    console.error('MarketRefreshLeaseReleaseFailed', error instanceof Error ? error.name : 'UnknownError')
+    console.error('MarketRefreshLeaseReleaseFailed', errorName(toError(error)))
   }
 }
 
 const StoredSessionRowSchema = z.object({
-  state: z.string(),
+  state: MarketStateSchema,
   observed_at: z.string(),
   opens_at: z.string().nullable().optional(),
   closes_at: z.string().nullable().optional(),
 })
 
-export type StoredMarketSession = {
+type StoredMarketSession = {
   closesAt?: string
   observedAt: string
   opensAt?: string
@@ -363,8 +354,7 @@ export async function readStoredMarketSession(env: AppEnv): Promise<StoredMarket
   // An unreadable row is served as no cached session -- the reader falls back to asking the
   // provider -- but never silently: the event says the stored copy was refused.
   const row = StoredSessionRowSchema.safeParse(result)
-  const state = MarketStateSchema.safeParse(row.data?.state)
-  if (!row.success || !state.success) {
+  if (!row.success) {
     console.warn('MarketSessionRowSkipped')
     return undefined
   }
@@ -372,7 +362,7 @@ export async function readStoredMarketSession(env: AppEnv): Promise<StoredMarket
     closesAt: row.data.closes_at ?? undefined,
     observedAt: row.data.observed_at,
     opensAt: row.data.opens_at ?? undefined,
-    state: state.data,
+    state: row.data.state,
   }
 }
 
@@ -380,7 +370,7 @@ export async function persistMarketSession(
   env: AppEnv,
   state: MarketSnapshot['marketState'],
   opensAt: string | undefined,
-  closesAt: string | undefined = undefined,
+  closesAt: string | undefined,
   observedAt = new Date(),
 ): Promise<void> {
   if (!env.DB) return

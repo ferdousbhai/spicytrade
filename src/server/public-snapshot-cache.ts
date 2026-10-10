@@ -5,8 +5,9 @@ import {
 } from '../domain/market'
 import { SPICE_DEPLOYMENT_ID } from '../deployment'
 import { SPICE_DEPLOYMENT_ID_HEADER } from '../domain/deployment'
+import { errorName, toError } from '../domain/failure'
 import { type AppEnv } from './env'
-import { jsonNoStore, jsonPublic, PUBLIC_RESPONSE_CACHE_CONTROL } from './http'
+import { jsonNoStore, jsonPublic, matchesIfNoneMatch, PUBLIC_RESPONSE_CACHE_CONTROL } from './http'
 import { brokerApi, type StoredPublicMarketSnapshot } from './tastytrade'
 import { CallerVisibleError } from './caller-visible-error'
 
@@ -64,10 +65,7 @@ export function snapshotEtag(snapshot: MarketSnapshot | PublicMarketSnapshot): s
 
 function notModified(request: Request, stored: Response): Response | undefined {
   const etag = stored.headers.get('ETag')
-  const inm = request.headers.get('If-None-Match')
-  if (!etag || !inm) return undefined
-  const tags = inm.split(',').map((part) => part.trim())
-  if (!tags.includes(etag) && !tags.includes('*')) return undefined
+  if (!etag || !matchesIfNoneMatch(request, etag)) return undefined
   const headers = new Headers()
   headers.set('Cache-Control', PUBLIC_RESPONSE_CACHE_CONTROL)
   headers.set('ETag', etag)
@@ -81,6 +79,35 @@ function notModified(request: Request, stored: Response): Response | undefined {
 
 /** The only two Cache API methods this module needs, so tests can pass an in-memory copy. */
 export type PublicSnapshotCache = Pick<Cache, 'match' | 'put'>
+
+/** The Worker's edge cache, which every public read path shares. */
+export function edgeCache(): Cache {
+  // SAFETY: the Workers runtime exposes `caches.default`, which the standard `CacheStorage` type
+  // does not declare.
+  return (caches as CacheStorage & { default: Cache }).default
+}
+
+/**
+ * Keeps a copy of `response` in the edge cache for `retentionSeconds` and returns the original.
+ * The header governs only the cached copy; a put that fails is logged under the caller's event
+ * name and the response is still served.
+ */
+export async function storeEdgeCopy(
+  cache: PublicSnapshotCache,
+  cacheKey: Request,
+  response: Response,
+  retentionSeconds: number,
+  failureEvent: string,
+): Promise<Response> {
+  const stored = response.clone()
+  stored.headers.set('Cache-Control', `public, max-age=${retentionSeconds}`)
+  try {
+    await cache.put(cacheKey, stored)
+  } catch (error) {
+    console.error(failureEvent, errorName(toError(error)))
+  }
+  return response
+}
 
 /**
  * Runs work past the end of the response, as `waitUntil` does. Passed in rather than imported
@@ -193,7 +220,7 @@ async function refreshFromProvider(env: AppEnv): Promise<PublicMarketSnapshot | 
   try {
     return await brokerApi().loadPublicMarketSnapshot(env)
   } catch (error) {
-    console.error('PublicMarketSnapshotRefreshFailed', error instanceof Error ? error.name : 'UnknownError')
+    console.error('PublicMarketSnapshotRefreshFailed', errorName(toError(error)))
     return undefined
   }
 }
@@ -232,17 +259,15 @@ async function retain(
     [SNAPSHOT_CACHED_AT_HEADER]: new Date(now).toISOString(),
     [SNAPSHOT_GENERATED_AT_HEADER]: snapshot.syncedAt,
   })
-  const response = jsonPublic(slimPublicSnapshot(snapshot), { headers })
-  const stored = response.clone()
-  // This header governs only the distinct Cache API copy. Visitor cache policy is restored
-  // by responseForVisitor.
-  stored.headers.set('Cache-Control', `public, max-age=${SNAPSHOT_RETENTION_SECONDS}`)
-  try {
-    await edgeCache.put(cacheKey, stored)
-  } catch (error) {
-    console.error('PublicMarketSnapshotCacheWriteFailed', error instanceof Error ? error.name : 'UnknownError')
-  }
-  return response
+  // The retention header governs only the distinct Cache API copy. Visitor cache policy is
+  // restored by responseForVisitor.
+  return await storeEdgeCopy(
+    edgeCache,
+    cacheKey,
+    jsonPublic(slimPublicSnapshot(snapshot), { headers }),
+    SNAPSHOT_RETENTION_SECONDS,
+    'PublicMarketSnapshotCacheWriteFailed',
+  )
 }
 
 /**
@@ -273,12 +298,12 @@ function refreshRetainedCopy(
         try {
           snapshot = await brokerApi().refreshPublicMarketSession(env, stored.snapshot)
         } catch (error) {
-          console.error('PublicMarketSessionRefreshFailed', error instanceof Error ? error.name : 'UnknownError')
+          console.error('PublicMarketSessionRefreshFailed', errorName(toError(error)))
         }
       }
       await retain(edgeCache, cacheKey, snapshot ?? stored.snapshot, now)
     } catch (error) {
-      console.error('PublicMarketSnapshotRefreshFailed', error instanceof Error ? error.name : 'UnknownError')
+      console.error('PublicMarketSnapshotRefreshFailed', errorName(toError(error)))
     } finally {
       refreshInFlight = undefined
     }
@@ -305,7 +330,7 @@ export async function servePublicSnapshot(
   try {
     retained = await edgeCache.match(cacheKey)
   } catch (error) {
-    console.error('PublicMarketSnapshotCacheReadFailed', error instanceof Error ? error.name : 'UnknownError')
+    console.error('PublicMarketSnapshotCacheReadFailed', errorName(toError(error)))
   }
   if (retained) {
     if (copyAgeMs(retained, now) >= SNAPSHOT_FRESH_MS) {
@@ -328,7 +353,7 @@ export async function servePublicSnapshot(
     }
     return await retain(edgeCache, cacheKey, await buildFromColdStore(env), now)
   } catch (error) {
-    console.error('PublicMarketSnapshotUnavailable', error instanceof Error ? error.name : 'UnknownError')
+    console.error('PublicMarketSnapshotUnavailable', errorName(toError(error)))
     return jsonNoStore({ error: 'Public market sync is temporarily unavailable' }, { status: 502 })
   }
 }

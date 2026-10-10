@@ -4,9 +4,9 @@ import { z } from 'zod'
 
 import { Button } from '#/components/ui/button'
 import { Spinner } from '#/components/ui/spinner'
-import { BrandMark } from '../components/wordmark'
-import { useViewer } from '../components/auth-gate'
+import { AuthorizeFrame, useViewer } from '../components/auth-gate'
 import { SUPPORT_EMAIL, pageTitle } from '../domain/site'
+import { toError } from '../domain/failure'
 
 /**
  * The consent step: what stands between a self-registered client and a member's account.
@@ -70,24 +70,12 @@ function ConsentPage() {
       window.location.replace(consented.data.url)
     } catch (error) {
       setSubmitting(undefined)
-      setFailure(error instanceof Error ? error.message : ANSWER_NOT_RECORDED)
+      setFailure(toError(error)?.message ?? ANSWER_NOT_RECORDED)
     }
   }
 
   return (
-    <main className="authorize-page">
-      {/* Whose page this is, before anything asks for a sign-in or an approval. Not a link: it
-          would lead out of a flow the provider expects to finish here. */}
-      <div className="authorize-brand"><BrandMark /></div>
-      <h1>Approve access</h1>
-      {viewer.phase === 'checking' && <Spinner />}
-      {/* Mid-OAuth, an unanswered session check must still say something: without this the
-          page stopped at its heading, and the member could not tell whether to wait or retry. */}
-      {viewer.phase === 'error' && (
-        <p className="authorize-error">
-          spicytrade could not check whether you are signed in. Reload to try again.
-        </p>
-      )}
+    <AuthorizeFrame phase={viewer.phase} title="Approve access">
       {viewer.phase === 'ready' && viewer.user === null && (
         <p>You are not signed in. Start the connection again from your agent.</p>
       )}
@@ -126,6 +114,6 @@ function ConsentPage() {
           </div>
         </>
       )}
-    </main>
+    </AuthorizeFrame>
   )
 }

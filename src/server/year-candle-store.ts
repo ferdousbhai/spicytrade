@@ -2,12 +2,9 @@ import { z } from 'zod'
 
 import { CandlePointSchema, MAX_YEAR_CANDLES, type CandlePoint } from '../domain/candle'
 import { EquitySymbolSchema } from '../domain/instrument'
-import { D1_MAX_BOUND_PARAMETERS } from './d1-limits'
+import { d1InListChunks } from './d1-limits'
 
 const StoredClosesSchema = z.array(CandlePointSchema).max(MAX_YEAR_CANDLES)
-
-// One bound parameter per symbol, so a long watchlist is read in statement-sized chunks.
-const SYMBOL_CHUNK_SIZE = D1_MAX_BOUND_PARAMETERS
 
 // A stored row that no longer parses is treated as absent rather than fatal: the year chart is
 // decoration over live prices, and one poisoned row must not take the whole market read down.
@@ -38,8 +35,8 @@ export async function readYearAgoCloses(
 ): Promise<Map<string, number>> {
   const anchors = new Map<string, number>()
   let skipped = 0
-  for (let start = 0; start < symbols.length; start += SYMBOL_CHUNK_SIZE) {
-    const chunk = symbols.slice(start, start + SYMBOL_CHUNK_SIZE)
+  // One bound parameter per symbol, so a long watchlist is read in statement-sized chunks.
+  for (const chunk of d1InListChunks(symbols)) {
     const placeholders = chunk.map(() => '?').join(', ')
     const { results } = await db.prepare(
       `SELECT symbol, year_ago_close FROM year_candles
@@ -89,7 +86,7 @@ export async function readYearCandleSeries(
   return { asOf, series }
 }
 
-export function yearCandlesUpsertStatement(
+function yearCandlesUpsertStatement(
   db: D1Database,
   symbol: string,
   asOf: string,

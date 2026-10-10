@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { FavoriteMutationSchema } from '../domain/favorites'
+import { errorName, toError } from '../domain/failure'
 import { mergeFavoriteSymbols, readFavoriteSymbols, removeFavoriteSymbols } from '../server/favorites'
 import { authenticateRequest, jsonNoStore } from '../server/http'
 import { appEnv } from '../server/worker-env'
@@ -15,7 +16,7 @@ export const Route = createFileRoute('/api/favorites')({
         try {
           return jsonNoStore({ symbols: await readFavoriteSymbols(appEnv.DB, authenticated.identity.id) })
         } catch (error) {
-          console.error('FavoriteReadFailed', error instanceof Error ? error.name : 'UnknownError')
+          console.error('FavoriteReadFailed', errorName(toError(error)))
           return jsonNoStore({ error: 'Favorite sync is temporarily unavailable' }, { status: 503 })
         }
       },
@@ -31,7 +32,7 @@ export const Route = createFileRoute('/api/favorites')({
             : await removeFavoriteSymbols(appEnv.DB, authenticated.identity.id, parsed.data.symbols)
           return jsonNoStore({ symbols })
         } catch (error) {
-          console.error('FavoriteMutationFailed', error instanceof Error ? error.name : 'UnknownError')
+          console.error('FavoriteMutationFailed', errorName(toError(error)))
           return jsonNoStore({ error: 'Favorite sync is temporarily unavailable' }, { status: 503 })
         }
       },

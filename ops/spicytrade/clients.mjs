@@ -1,20 +1,22 @@
 import { spawnSync } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 
-import { MCP_SERVER_NAME, ORIGIN, PROXY_URL } from './config.mjs'
+import { MCP_SERVER_NAME, ORIGIN, PROXY_URL, TRADING_DIR } from './config.mjs'
+import { UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
 
 /**
  * The agent clients `setup` can point at the proxy, through each client's own CLI rather than by
  * editing its config file, whose format is the client's to change.
  *
- * Every client is added at user scope, so the proxy is there in any directory, but switched off
- * where the client allows it: trading tools are something to turn on when wanted, not a default in
- * every session. The commands run
- * from the home directory: a project's own `.mcp.json` would otherwise answer for the server's name in
- * whatever directory `setup` happened to be run from.
+ * Trading tools are something to turn on when wanted, not a default in every session, so no
+ * client loads the server everywhere. Claude Code cannot add a server switched off, so it gets the
+ * server only in the trading folder, at local scope; Codex has no local scope, so it gets the
+ * server at user scope switched off. Every command runs from a fixed directory -- the trading
+ * folder, or home -- never from wherever `setup` was run: a project's own `.mcp.json` or local
+ * entry would otherwise answer for the server's name.
  *
  * Nothing here carries a credential: the proxy URL is the whole configuration, which is the point
  * of the proxy.
@@ -25,13 +27,13 @@ import { MCP_SERVER_NAME, ORIGIN, PROXY_URL } from './config.mjs'
  * take as long as the proxy's own first call, so the budget is the proxy's for one forwarded
  * call, plus the same again for the client to start.
  */
-const CLIENT_COMMAND_TIMEOUT_MS = 2 * 60_000
+const CLIENT_COMMAND_TIMEOUT_MS = 2 * UPSTREAM_TIMEOUT_MS
 
 const CodexServerSchema = z.object({ transport: z.object({ url: z.string().optional() }) })
 
-function run(command, args) {
+function run(command, args, cwd = homedir()) {
   const result = spawnSync(command, args, {
-    cwd: homedir(),
+    cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: CLIENT_COMMAND_TIMEOUT_MS,
@@ -51,6 +53,34 @@ function lookup(got, urlOf) {
   if (got.failed) return { state: 'failed' }
   if (!got.ok) return { state: 'missing' }
   return { state: 'configured', url: urlOf(got.stdout) }
+}
+
+/**
+ * `claude mcp get` resolves a name across scopes and prints the `Scope:` that answered, so an entry
+ * counts only at the scope asked about. A local entry is keyed by the directory the command runs
+ * in, so it is read from the trading folder; a user entry is read from home. A trading folder that
+ * does not exist yet holds no entry, but whether the CLI is there still has to be asked.
+ */
+function claudeEntry(entry, scope) {
+  let got
+  if (scope === 'local' && !existsSync(TRADING_DIR)) {
+    const probe = run('claude', ['--version'])
+    got = probe.absent || probe.failed ? probe : { ok: false }
+  } else {
+    got = run('claude', ['mcp', 'get', entry], scope === 'local' ? TRADING_DIR : homedir())
+  }
+  const found = lookup(got, (stdout) => stdout.match(/^\s*URL:\s*(\S+)\s*$/m)?.[1] ?? '')
+  if (found.state !== 'configured') return found
+  return got.stdout.match(/^\s*Scope:\s*(\w+)/m)?.[1]?.toLowerCase() === scope ? found : { state: 'missing' }
+}
+
+function addClaudeEntry() {
+  try {
+    mkdirSync(TRADING_DIR, { recursive: true })
+  } catch {
+    return { ok: false }
+  }
+  return run('claude', ['mcp', 'add', '--scope', 'local', '--transport', 'http', MCP_SERVER_NAME, PROXY_URL], TRADING_DIR)
 }
 
 /**
@@ -85,21 +115,25 @@ export function namesSpicytrade(url) {
  * Each client, with its lookup and removal taking the entry name: `setup` asks about both the
  * current name and the one an install from before the rename added (see `config.mjs`), and
  * replaces the old entry once the current one is in place. Only the current name is ever added.
+ *
+ * `everywhere` is the entry a client loads in every directory where that is not where the server
+ * belongs: Claude Code's user scope, which earlier installs wrote. `setup` removes it once the
+ * trading folder's entry is in place.
  */
 export const CLIENTS = [
   {
-    add: () => run('claude', ['mcp', 'add', '--scope', 'user', '--transport', 'http', MCP_SERVER_NAME, PROXY_URL]),
-    addCommand: `claude mcp add --scope user --transport http ${MCP_SERVER_NAME} ${PROXY_URL}`,
+    add: addClaudeEntry,
+    addCommand: `mkdir -p ${TRADING_DIR} && cd ${TRADING_DIR} && claude mcp add --scope local --transport http ${MCP_SERVER_NAME} ${PROXY_URL}`,
     name: 'Claude Code',
-    // Claude Code switches a server off per project only, never for every directory at once.
-    offNote: 'Claude Code cannot switch it off everywhere; turn it off in a project with /mcp',
-    configured: (entry = MCP_SERVER_NAME) => lookup(
-      run('claude', ['mcp', 'get', entry]),
-      (stdout) => stdout.match(/^\s*URL:\s*(\S+)\s*$/m)?.[1] ?? '',
-    ),
-    // Without a scope, Claude Code removes the entry from whichever scope holds it.
-    remove: (entry = MCP_SERVER_NAME) => run('claude', ['mcp', 'remove', entry]),
-    removeCommand: (entry = MCP_SERVER_NAME) => `claude mcp remove ${entry}`,
+    offNote: `only in ${TRADING_DIR}; start a trading session there`,
+    configured: (entry = MCP_SERVER_NAME) => claudeEntry(entry, 'local'),
+    remove: (entry) => run('claude', ['mcp', 'remove', entry, '--scope', 'local'], TRADING_DIR),
+    removeCommand: (entry = MCP_SERVER_NAME) => `cd ${TRADING_DIR} && claude mcp remove ${entry} --scope local`,
+    everywhere: {
+      configured: (entry) => claudeEntry(entry, 'user'),
+      remove: (entry) => run('claude', ['mcp', 'remove', entry, '--scope', 'user']),
+      removeCommand: (entry) => `claude mcp remove ${entry} --scope user`,
+    },
   },
   {
     add: () => {
@@ -117,7 +151,7 @@ export const CLIENTS = [
         return ''
       }
     }),
-    remove: (entry = MCP_SERVER_NAME) => run('codex', ['mcp', 'remove', entry]),
+    remove: (entry) => run('codex', ['mcp', 'remove', entry]),
     removeCommand: (entry = MCP_SERVER_NAME) => `codex mcp remove ${entry}`,
   },
 ]

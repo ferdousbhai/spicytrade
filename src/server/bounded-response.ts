@@ -42,7 +42,7 @@ export async function readBoundedText(response: Response, maxBytes: number, labe
  * structural — decoded length and the offset the parser reported — because provider bodies
  * must never reach Worker logs.
  */
-export function parseLabeledJson(text: string, label: string): JsonValue {
+function parseLabeledJson(text: string, label: string): JsonValue {
   try {
     return JSON.parse(text)
   } catch (cause) {

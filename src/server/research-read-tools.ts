@@ -11,7 +11,7 @@ import { type AppEnv } from './env'
 import { textResult } from './agent-tool-result'
 import { MAX_MARKET_SYMBOLS } from './brokerage-read-contracts'
 import { CATALYST_PROVIDER, CATALYST_RUN_BUDGET_MS } from './catalyst-refresh'
-import { CALENDAR_EVENT_RANK, CURRENT_CATALYSTS } from './catalysts'
+import { CALENDAR_EVENT_RANK, CATALYST_COLUMNS, CURRENT_CATALYSTS } from './catalysts'
 import { readLatestDailyBrief } from './daily-brief-store'
 import { CallerVisibleError } from './caller-visible-error'
 
@@ -55,7 +55,7 @@ const CatalystReadParameters = Type.Object({
  * buys the reader nothing. The domain `CatalystSchema` keeps `id`, because the website orders,
  * de-duplicates and links by it; only this projection drops it.
  */
-export type AgentCatalyst = Omit<Catalyst, 'id'>
+type AgentCatalyst = Omit<Catalyst, 'id'>
 
 function agentCatalyst(catalyst: Catalyst): AgentCatalyst {
   const { id: _id, ...row } = catalyst
@@ -74,7 +74,7 @@ function agentCatalyst(catalyst: Catalyst): AgentCatalyst {
  * written for the owner's eyes and never leaves the server, and nothing here is per-caller, so the
  * same answer is safe for every tier that can call the tool.
  */
-export type CatalystSearchState =
+type CatalystSearchState =
   | { state: 'unsearched'; symbol: string }
   | { ranAt: string; state: 'complete' | 'failed' | 'running'; symbol: string }
 
@@ -84,7 +84,7 @@ const CatalystRunRowSchema = z.object({
   symbol: z.string(),
 })
 
-export type CatalystReadResult = {
+type CatalystReadResult = {
   catalysts: AgentCatalyst[]
   fetchedAt: string
   horizonDays: number
@@ -97,12 +97,12 @@ export type CatalystReadResult = {
 
 const BriefReadParameters = Type.Object({}, { additionalProperties: false })
 
-export type DailyBriefReadResult = {
+type DailyBriefReadResult = {
   fetchedAt: string
   source: 'spice-brief-store'
 } & ({ brief: DailyBrief; status: 'ok' } | { status: 'not_found' })
 
-async function readLatestDailyBriefState(env: AppEnv, now = new Date()): Promise<DailyBriefReadResult> {
+async function readLatestDailyBriefState(env: AppEnv, now: Date): Promise<DailyBriefReadResult> {
   if (!env.DB) throw new CallerVisibleError('Daily brief is unavailable.')
   const brief = await readLatestDailyBrief(env.DB)
   const fetchedAt = now.toISOString()
@@ -141,8 +141,7 @@ export async function readCatalysts(
     `SELECT id, symbol, kind, title, description, date, timing, confidence, source, "sourceUrl",
         "updatedAt", nearest
      FROM (
-       SELECT id, symbol, kind, title, description, event_date AS date, timing, confidence,
-           source_label AS source, source_url AS "sourceUrl", updated_at AS "updatedAt",
+       SELECT ${CATALYST_COLUMNS},
            ${CALENDAR_EVENT_RANK} AS nearest
          FROM ${CURRENT_CATALYSTS}
          WHERE symbol IN (${symbols.map(() => '?').join(', ')})

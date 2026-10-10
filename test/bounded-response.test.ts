@@ -41,8 +41,7 @@ describe('bounded upstream response reader', () => {
 
     expect(message).toContain('TastytradeMemberGrant:invalid-json:')
     expect(message).not.toContain('session-token')
-    // The digest recorded by scheduled-jobs truncates at 160 characters; the label and
-    // the structural hint must both survive it.
+    // A refusal stays short: the label and the structural hint, never the provider body.
     expect(message.length).toBeLessThan(80)
   })
 

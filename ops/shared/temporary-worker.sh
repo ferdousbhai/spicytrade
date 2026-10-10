@@ -77,7 +77,7 @@ temporary_worker_api_retry() {
 
 # A freshly created workers.dev script is not routable the instant its deploy returns:
 # the first request can answer with Cloudflare error 1104 (Script not found) for a few
-# seconds, which aborted the 2026-08-31 apply after its research had already been done.
+# seconds, which aborted an earlier run after its work had already been done.
 # The ops handler answers every unauthenticated request with a plain-text 404 precisely so
 # these endpoints stay undiscoverable, so an HTML body is the edge saying the script is not
 # there yet rather than the Worker refusing the caller.
@@ -106,10 +106,6 @@ temporary_worker_deploy_step() {
   (cd "$1" && SPICE_OPS_WORKER_NAME="$2" npx cf deploy --secrets-file "$temporary_worker_secrets_file")
 }
 
-temporary_worker_details_step() {
-  npx cf workers get "$1"
-}
-
 temporary_worker_start() {
   local worker_name="$1"
   local config_dir="$2"
@@ -134,7 +130,7 @@ temporary_worker_start() {
   temporary_worker_deployed='true'
 
   if ! temporary_worker_api_retry append 'Temporary Worker lookup' \
-    temporary_worker_details_step "$worker_name"; then
+    npx cf workers get "$worker_name"; then
     return 1
   fi
 

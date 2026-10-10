@@ -28,6 +28,14 @@ export type BrokerId = z.infer<typeof BrokerIdSchema>
 export const BROKER_ORDER_ID_MAX_LENGTH = 40
 export const BROKER_ORDER_ID = new RegExp(`^\\d{1,${BROKER_ORDER_ID_MAX_LENGTH}}$`)
 
+/**
+ * The longest symbol spicytrade reads from a broker row: a position, order leg, transaction or
+ * quote of any instrument type, not only an equity. Like the order-id bound, it keeps text a
+ * broker reports from carrying a payload into a stored row or model context. Why 128 in
+ * particular is not recorded; it was carried over from the reads that first applied it.
+ */
+export const BROKER_SYMBOL_MAX_LENGTH = 128
+
 /** The one account a presented credential resolves to. */
 export interface BrokerAccountRef {
   accountNumber: string
@@ -54,7 +62,7 @@ export interface BrokerPosition {
   underlying: string
 }
 
-export interface BrokerOrderLeg {
+interface BrokerOrderLeg {
   action: string
   instrumentType: string
   quantity: number

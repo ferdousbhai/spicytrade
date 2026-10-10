@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { toError } from '../domain/failure'
 import { IsoDateSchema } from '../domain/iso-date'
+import { errorName, toError } from '../domain/failure'
 import { ARCHIVE_RESPONSE_CACHE_CONTROL, jsonNoStore, jsonPublic } from '../server/http'
 import { readDailyBriefBefore } from '../server/daily-brief-store'
 import { appEnv } from '../server/worker-env'
@@ -19,11 +19,9 @@ export const Route = createFileRoute('/api/public-daily-briefs')({
         try {
           // The brief already crosses the public snapshot boundary; this exposes the same
           // validated contract one row at a time and never reads account state.
-          const response = jsonPublic({ brief: (await readDailyBriefBefore(appEnv.DB, cursor.data)) ?? null })
-          response.headers.set('Cache-Control', ARCHIVE_RESPONSE_CACHE_CONTROL)
-          return response
+          return jsonPublic({ brief: (await readDailyBriefBefore(appEnv.DB, cursor.data)) ?? null }, {}, ARCHIVE_RESPONSE_CACHE_CONTROL)
         } catch (error) {
-          console.error('PublicDailyBriefArchiveUnavailable', toError(error)?.name ?? 'UnknownError')
+          console.error('PublicDailyBriefArchiveUnavailable', errorName(toError(error)))
           return jsonNoStore({ error: 'Brief archive is temporarily unavailable' }, { status: 503 })
         }
       },

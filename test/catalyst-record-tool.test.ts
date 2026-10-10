@@ -41,7 +41,7 @@ function recording() {
 
 describe('recording catalysts a member researched', () => {
   it('re-reads the cited page and stores what binds under its own producer', async () => {
-    const result = await recordResearchCatalysts(recordingEnv(), recording(), { now: NOW })
+    const result = await recordResearchCatalysts(recordingEnv(), recording(), NOW)
 
     expect(result).toEqual({ catalystCount: 1, status: 'recorded', symbols: ['NVDA'] })
     // The row names the producer that wrote it, in its id and in what a reader sees.
@@ -74,7 +74,7 @@ describe('recording catalysts a member researched', () => {
     }
     const submitted = { ...bound, catalysts: [...bound.catalysts, unbound] }
 
-    const result = await recordResearchCatalysts(recordingEnv(), submitted, { now: NOW })
+    const result = await recordResearchCatalysts(recordingEnv(), submitted, NOW)
 
     expect(result.status).toBe('rejected')
     if (result.status !== 'rejected') throw new Error('expected rejection')
@@ -88,7 +88,7 @@ describe('recording catalysts a member researched', () => {
     const submitted = recording()
     submitted.catalysts[0]!.sourceIndex = 3
 
-    const result = await recordResearchCatalysts(recordingEnv(), submitted, { now: NOW })
+    const result = await recordResearchCatalysts(recordingEnv(), submitted, NOW)
 
     expect(result).toEqual({
       rejected: ['catalyst 1: source was not read this run'],
@@ -97,14 +97,14 @@ describe('recording catalysts a member researched', () => {
   })
 
   it('reports the page that would not open rather than storing an unverified date', async () => {
-    const result = await recordResearchCatalysts(recordingEnv(unreadableBrowser()), recording(), { now: NOW })
+    const result = await recordResearchCatalysts(recordingEnv(unreadableBrowser()), recording(), NOW)
 
     expect(result).toEqual({ rejected: [`page did not open: ${SOURCE_URL}`], status: 'rejected' })
     expect(store.sqlite.prepare('SELECT COUNT(*) AS rows FROM catalysts').get()).toEqual({ rows: 0 })
   })
 
   it('fails closed when the Worker cannot read a page at all', async () => {
-    await expect(recordResearchCatalysts({ DB: store.database }, recording(), { now: NOW }))
+    await expect(recordResearchCatalysts({ DB: store.database }, recording(), NOW))
       .rejects.toThrow('CatalystRecord:page-reading-unavailable')
   })
 })

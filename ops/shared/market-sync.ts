@@ -1,7 +1,7 @@
 import { type AppEnv } from '../../src/server/env'
 import { brokerApi } from '../../src/server/tastytrade'
 
-export type OwnerMarketSyncSummary = {
+type OwnerMarketSyncSummary = {
   catalystCount: number
   syncedAt: string
   tickerCount: number

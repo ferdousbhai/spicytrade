@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { McpTokenIssueRequestSchema, McpTokenRevokeRequestSchema } from '../domain/mcp-tokens'
+import { errorName, toError } from '../domain/failure'
 import { issueMcpToken, listMcpTokens, McpTokenLimitError, revokeMcpToken } from '../server/mcp-tokens'
 import { authenticateRequest, jsonNoStore } from '../server/http'
 import { appEnv } from '../server/worker-env'
@@ -19,7 +20,7 @@ export const Route = createFileRoute('/api/mcp-tokens')({
         try {
           return jsonNoStore({ tokens: await listMcpTokens(appEnv.DB, authenticated.identity.id) })
         } catch (error) {
-          console.error('McpTokenListFailed', error instanceof Error ? error.name : 'UnknownError')
+          console.error('McpTokenListFailed', errorName(toError(error)))
           return jsonNoStore({ error: 'Agent tokens are temporarily unavailable' }, { status: 503 })
         }
       },
@@ -37,7 +38,7 @@ export const Route = createFileRoute('/api/mcp-tokens')({
           if (error instanceof McpTokenLimitError) {
             return jsonNoStore({ error: error.message }, { status: 409 })
           }
-          console.error('McpTokenIssueFailed', error instanceof Error ? error.name : 'UnknownError')
+          console.error('McpTokenIssueFailed', errorName(toError(error)))
           return jsonNoStore({ error: 'Agent tokens are temporarily unavailable' }, { status: 503 })
         }
       },
@@ -52,7 +53,7 @@ export const Route = createFileRoute('/api/mcp-tokens')({
           if (!revoked) return jsonNoStore({ error: 'No such token' }, { status: 404 })
           return jsonNoStore({ tokens: await listMcpTokens(appEnv.DB, authenticated.identity.id) })
         } catch (error) {
-          console.error('McpTokenRevokeFailed', error instanceof Error ? error.name : 'UnknownError')
+          console.error('McpTokenRevokeFailed', errorName(toError(error)))
           return jsonNoStore({ error: 'Agent tokens are temporarily unavailable' }, { status: 503 })
         }
       },

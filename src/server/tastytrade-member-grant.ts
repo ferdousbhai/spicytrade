@@ -28,7 +28,7 @@ const GRANT_FAILURE_NAMES = {
   unreachable: 'TastytradeMemberGrantUnreachable',
 } as const
 
-export type TastytradeMemberGrantFailure = keyof typeof GRANT_FAILURE_NAMES
+type TastytradeMemberGrantFailure = keyof typeof GRANT_FAILURE_NAMES
 
 /**
  * A refused, unreachable, or unreadable token request. The name says which, because a failure

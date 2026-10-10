@@ -5,6 +5,7 @@ import { jwt } from 'better-auth/plugins/jwt'
 import { type AppEnv } from './env'
 import { ConfigurationError, readBoundSecret, readStoredSecret } from './secrets'
 import { MCP_PATH, SITE_NAME } from '../domain/site'
+import { errorName, toError } from '../domain/failure'
 
 export const OWNER_EMAIL = 'ferdousbd@gmail.com'
 
@@ -223,7 +224,7 @@ export async function handleWellKnownDiscovery(
     const forwarded = rootServed ? url : new URL(`/api/auth${url.pathname}${url.search}`, url.origin)
     return await auth.handler(new Request(forwarded, { headers: request.headers, method: 'GET' }))
   } catch (error) {
-    console.error('AuthDiscoveryUnavailable', error instanceof Error ? error.name : 'UnknownError')
+    console.error('AuthDiscoveryUnavailable', errorName(toError(error)))
     return Response.json({ error: 'Discovery is temporarily unavailable' }, {
       headers: { 'Cache-Control': 'no-store' },
       status: 503,

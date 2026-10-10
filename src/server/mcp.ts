@@ -42,6 +42,7 @@ import {
 } from './watchlist-tool'
 import { brokerCredentialFromHeaders, type BrokerCredential } from './broker-credential'
 import { MCP_PATH } from '../domain/site'
+import { errorName, toError } from '../domain/failure'
 
 /**
  * A thesis is the user's own words for one idea, pasted into a prompt the agent then works from.
@@ -65,7 +66,7 @@ const MAX_THESIS_LENGTH = 2_000
  * their turn. It is required because there is no honest fallback -- dropping the promise would
  * leave that work running detached and unawaited, not done inline.
  */
-export function createSpiceMcpServer(
+function createSpiceMcpServer(
   env: AppEnv,
   caller: McpCaller,
   credential: BrokerCredential | undefined,
@@ -140,7 +141,7 @@ export function createSpiceMcpServer(
           // dispatch, which is exactly the contract `execute` states for its parameters.
           result = await tool.execute(params as never)
         } catch (error) {
-          return toolErrorResult(tool.name, error instanceof Error ? error : undefined)
+          return toolErrorResult(tool.name, toError(error))
         }
         // Reading a symbol is the same signal a reader opening it on the site is, and buys the
         // same bounded catalyst search for everyone. Scheduled after the answer, never blocking
@@ -254,7 +255,7 @@ function createOrderTools(
  * pivot is gone, because it could not be revoked, did not die with the account, sat outside the
  * per-member cap, and left no trace of use.
  */
-export type McpCaller = {
+type McpCaller = {
   owner: boolean
   /** False for a caller who presented no credential at all. */
   signedIn: boolean
@@ -272,7 +273,7 @@ export type McpCaller = {
  * shared watchlist as prunable `visitor-search`, and a query the edge cache has not answered may
  * spend one broker lookup -- claimed one at a time per query, exactly as the website's does.
  */
-export const ANONYMOUS_CALLER: McpCaller = { owner: false, signedIn: false, userId: '' }
+const ANONYMOUS_CALLER: McpCaller = { owner: false, signedIn: false, userId: '' }
 
 /**
  * The token store could not answer: a missing binding or a failed read. Distinct from a token
@@ -403,7 +404,7 @@ export async function handleMcpRequest(request: Request, env: AppEnv, ctx: McpEx
     try {
       minted = await resolveMcpCaller(request, env)
     } catch (error) {
-      return callerLookupFailed(request, error instanceof Error ? error.name : 'UnknownError')
+      return callerLookupFailed(request, errorName(toError(error)))
     }
     if (minted) return serveMcp(request, env, ctx, minted)
     console.error('McpTokenRejected')
@@ -419,7 +420,7 @@ export async function handleMcpRequest(request: Request, env: AppEnv, ctx: McpEx
     // business and is not something they can act on, and answering anything but a refusal here
     // would be the one shape that risks opening the surface. The outage is observable in this log
     // line rather than in the status code.
-    console.error('McpAuthUnavailable', error instanceof Error ? error.name : 'UnknownError')
+    console.error('McpAuthUnavailable', errorName(toError(error)))
     return authChallenge(request, 'spicytrade could not verify this request.')
   }
 
@@ -433,7 +434,7 @@ export async function handleMcpRequest(request: Request, env: AppEnv, ctx: McpEx
     // Refuse, never throw. A 500 from the auth path tells a caller nothing they can act on and
     // loses the challenge that would let them authenticate; it also reads as a broken endpoint
     // rather than a bad token, which is how a whole broken flow stayed invisible.
-    console.error('McpOAuthVerificationFailed', error instanceof Error ? error.name : 'UnknownError')
+    console.error('McpOAuthVerificationFailed', errorName(toError(error)))
     return authChallenge(request, 'spicytrade could not verify this token.')
   }
 
@@ -441,7 +442,7 @@ export async function handleMcpRequest(request: Request, env: AppEnv, ctx: McpEx
   try {
     caller = await callerForUser(runtime.database, claims.sub)
   } catch (error) {
-    return callerLookupFailed(request, error instanceof Error ? error.name : 'UnknownError')
+    return callerLookupFailed(request, errorName(toError(error)))
   }
   // A token whose subject is not a user this server knows authenticates nothing.
   if (!caller) {

@@ -1,8 +1,8 @@
 import { type JsonValue } from '../domain/json-payload'
-import { toError } from '../domain/failure'
 import { SPICE_DEPLOYMENT_ID } from '../deployment'
 import { SPICE_DEPLOYMENT_ID_HEADER, PUBLIC_RESPONSE_MAX_AGE_SECONDS } from '../domain/deployment'
 import { hasStoragePurge, STORAGE_PURGE_COOKIE, STORAGE_PURGE_GENERATION } from '../domain/storage-purge'
+import { errorName, toError } from '../domain/failure'
 import {
   getAuthenticatedIdentity,
   isOwnerEmail,
@@ -20,10 +20,13 @@ export const PUBLIC_RESPONSE_CACHE_CONTROL = `public, max-age=${PUBLIC_RESPONSE_
 export const ARCHIVE_RESPONSE_CACHE_CONTROL = 'public, max-age=3600, s-maxage=86400'
 
 export function jsonNoStore(value: JsonValue, init: ResponseInit = {}): Response {
-  const headers = new Headers(init.headers)
-  headers.set('Cache-Control', 'no-store')
-  headers.set(SPICE_DEPLOYMENT_ID_HEADER, SPICE_DEPLOYMENT_ID)
-  return Response.json(value, { ...init, headers })
+  return jsonPublic(value, init, 'no-store')
+}
+
+/** Whether the request's If-None-Match names this ETag, or any (`*`). */
+export function matchesIfNoneMatch(request: Request, etag: string): boolean {
+  const tags = (request.headers.get('If-None-Match') ?? '').split(',').map((part) => part.trim())
+  return tags.includes(etag) || tags.includes('*')
 }
 
 /** Owner snapshot: never CDN-cached, but ETag lets a sitting tab 304 instead of re-downloading. */
@@ -32,8 +35,7 @@ export function jsonPrivateRevalidate(request: Request, value: JsonValue, etag: 
   headers.set('Cache-Control', 'private, no-cache')
   headers.set('ETag', etag)
   headers.set(SPICE_DEPLOYMENT_ID_HEADER, SPICE_DEPLOYMENT_ID)
-  const tags = (request.headers.get('If-None-Match') ?? '').split(',').map((part) => part.trim())
-  if (tags.includes(etag) || tags.includes('*')) return new Response(null, { headers, status: 304 })
+  if (matchesIfNoneMatch(request, etag)) return new Response(null, { headers, status: 304 })
   return Response.json(value, { headers })
 }
 
@@ -80,10 +82,13 @@ export function finalizeDocumentResponse(request: Request, response: Response): 
   return new Response(response.body, { headers, status: response.status, statusText: response.statusText })
 }
 
-/** Public, account-free market data. Shared caches may retain it briefly to protect broker limits. */
-export function jsonPublic(value: JsonValue, init: ResponseInit = {}): Response {
+/**
+ * Public, account-free market data. Shared caches may retain it briefly to protect broker limits;
+ * a route whose data changes on its own schedule names its own policy.
+ */
+export function jsonPublic(value: JsonValue, init: ResponseInit = {}, cacheControl = PUBLIC_RESPONSE_CACHE_CONTROL): Response {
   const headers = new Headers(init.headers)
-  headers.set('Cache-Control', PUBLIC_RESPONSE_CACHE_CONTROL)
+  headers.set('Cache-Control', cacheControl)
   headers.set(SPICE_DEPLOYMENT_ID_HEADER, SPICE_DEPLOYMENT_ID)
   return Response.json(value, { ...init, headers })
 }
@@ -101,7 +106,7 @@ export async function authenticateRequest(
   try {
     identity = await readIdentity(request, env)
   } catch (cause) {
-    console.error('AuthenticationUnavailable', toError(cause)?.name ?? 'UnknownError')
+    console.error('AuthenticationUnavailable', errorName(toError(cause)))
     return { response: jsonNoStore({ error: 'Authentication is temporarily unavailable' }, { status: 503 }) }
   }
   if (!identity) return { response: jsonNoStore({ error: 'Authentication required' }, { status: 401 }) }

@@ -11,7 +11,7 @@ import { useRetryOnFocus } from './retry-on-focus'
  *
  * One shared request, outside React, so several views asking are one answer.
  */
-export type YearCandlesRead = {
+type YearCandlesRead = {
   failed: boolean
   series: ReadonlyMap<string, readonly number[]>
 }

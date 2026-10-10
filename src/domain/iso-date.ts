@@ -38,7 +38,6 @@ const MONTHS = [
  * one rejects sources that simply spell the month out.
  */
 function isoDateRenderings(date: string): string[] {
-  if (!isValidIsoDate(date)) return []
   const [year, month, day] = date.split('-').map(Number)
   const monthName = MONTHS[month - 1]!
   const short = monthName.slice(0, 3)

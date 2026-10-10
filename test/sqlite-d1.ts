@@ -20,10 +20,9 @@ function sqlInputs(values: readonly unknown[]): SqlInput[] {
   return z.array(SqlInputSchema).parse(values)
 }
 
-function prepared(statement: StatementSync, onExecute: () => void, values: unknown[] = []): BoundStatement {
+function prepared(statement: StatementSync, values: unknown[] = []): BoundStatement {
   const inputs = sqlInputs(values)
   const run = async () => {
-    onExecute()
     const result = statement.run(...inputs)
     return d1Result([], Number(result.changes))
   }
@@ -31,13 +30,11 @@ function prepared(statement: StatementSync, onExecute: () => void, values: unkno
     ...unsupportedStatement(),
     __run: run,
     all: async <T>() => {
-      onExecute()
       // SAFETY: this test adapter mirrors D1: each caller owns the row type supplied to `all<T>()`.
       return d1Result(statement.all(...inputs) as T[])
     },
-    bind: (...nextValues: unknown[]) => prepared(statement, onExecute, nextValues),
+    bind: (...nextValues: unknown[]) => prepared(statement, nextValues),
     first: async <T>(column?: string) => {
-      onExecute()
       const row = statement.get(...inputs)
       if (!row) return null
       // SAFETY: this test adapter mirrors D1: each caller owns the selected `first<T>()` contract.
@@ -54,7 +51,6 @@ function sqliteD1(sql: readonly string[]) {
   // SAFETY: Node's `DatabaseSync#limits` is newer than this repository's @types/node.
   const { limits } = sqlite as DatabaseSync & { limits: { likePatternLength: number } }
   limits.likePatternLength = D1_LIKE_PATTERN_MAX_BYTES
-  let executedQueries = 0
   sqlite.exec('PRAGMA foreign_keys = ON')
   for (const migration of sql) sqlite.exec(migration)
   const database: D1Database = {
@@ -76,9 +72,9 @@ function sqliteD1(sql: readonly string[]) {
       }
       return results
     },
-    prepare: (query) => prepared(sqlite.prepare(query), () => { executedQueries++ }),
+    prepare: (query) => prepared(sqlite.prepare(query)),
   }
-  return { close: () => sqlite.close(), database, queryCount: () => executedQueries, sqlite }
+  return { close: () => sqlite.close(), database, sqlite }
 }
 
 export type SqliteD1Store = ReturnType<typeof sqliteD1>
@@ -105,12 +101,11 @@ export async function migrationStore() {
  * The member row the foreign keys point at. Recording evidence keeps the account behind it, so
  * a store that records needs that account to exist here exactly as it does in production.
  */
-export function seedMember(store: SqliteD1Store, userId: string): string {
+export function seedMember(store: SqliteD1Store, userId: string): void {
   store.sqlite.prepare(
     `INSERT INTO "user" ("id", "name", "email", "emailVerified", "createdAt", "updatedAt")
      VALUES (?, 'Member', ? || '@example.com', 1, 'now', 'now')`,
   ).run(userId, userId)
-  return userId
 }
 
 /** The default row timestamp `seedWatchlist` writes when an item doesn't pass its own. */

@@ -11,6 +11,8 @@ import {
 } from '../src/server/market-feed-core'
 import { resetBrokerApi, setBrokerApi } from '../src/server/tastytrade'
 import { stubBroker } from './broker-stub'
+import { MAX_LIVE_STREAM_SYMBOLS } from '../src/domain/watchlist'
+import { CLIENT_HEARTBEAT_MS } from '../src/server/market-feed-contracts'
 import { migrationStore } from './sqlite-d1'
 import { symbolAt } from './symbols'
 
@@ -165,7 +167,7 @@ beforeEach(() => {
   tasty.loadQuoteToken.mockResolvedValue({ token: 'quote-token', url: 'wss://streamer.test' })
 })
 
-describe('MarketFeed option Greeks RPC', () => {
+describe('MarketFeedCore', () => {
   it('rejects invalid initial and resubscribe requests without accepting a partial symbol list', async () => {
     const context = new FakeContext([])
     const feed = new MarketFeedCore(context, liveEnvironment())
@@ -187,7 +189,7 @@ describe('MarketFeed option Greeks RPC', () => {
     const oversized = downstream(['SPY'])
     await feed.webSocketMessage(oversized, JSON.stringify({
       type: 'subscribe',
-      symbols: Array.from({ length: 101 }, (_, index) => `A${index}`),
+      symbols: Array.from({ length: MAX_LIVE_STREAM_SYMBOLS + 1 }, (_, index) => `A${index}`),
     }))
     expect(oversized.serializeAttachment).not.toHaveBeenCalled()
     expect(oversized.close).toHaveBeenCalledWith(1008, 'Invalid subscription request')
@@ -487,7 +489,7 @@ describe('MarketFeed option Greeks RPC', () => {
     expect(socket.readyState).toBe(FakeUpstreamWebSocket.OPEN)
 
     // The sweep rides the keepalive interval; the socket is still attached, just silent.
-    await vi.advanceTimersByTimeAsync(30_000)
+    await vi.advanceTimersByTimeAsync(CLIENT_HEARTBEAT_MS)
     await context.drain()
     expect(abandoned.close).toHaveBeenCalledWith(1000, 'Idle reader')
 

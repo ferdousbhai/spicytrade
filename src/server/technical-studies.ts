@@ -15,26 +15,12 @@ import {
   roundPrice,
   type StudyInput,
 } from './market-research-contracts'
-import { CallerVisibleError } from './caller-visible-error'
+import { boundedInteger, CallerVisibleError } from './caller-visible-error'
 
 type NormalizedStudy =
   | { kind: 'SMA' | 'EMA' | 'RSI'; period: number }
   | { kind: 'BBANDS'; period: number; standardDeviations: number }
   | { fastPeriod: number; kind: 'MACD'; signalPeriod: number; slowPeriod: number }
-
-export function boundedInteger(
-  value: number | undefined,
-  fallback: number,
-  minimum: number,
-  maximum: number,
-  label: string,
-): number {
-  const result = value ?? fallback
-  if (!Number.isSafeInteger(result) || result < minimum || result > maximum) {
-    throw new CallerVisibleError(`${label} is invalid.`)
-  }
-  return result
-}
 
 /**
  * Position one computed series against the rows the caller will actually receive. Every study

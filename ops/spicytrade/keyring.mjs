@@ -6,8 +6,8 @@ import { promisify } from 'node:util'
 import { AGENT_TOKEN_SERVICE, LEGACY_AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY } from './config.mjs'
 
 /**
- * Keyring access for the local tools, shared so the proxy and `connect-tastytrade.mjs` read the
- * same entries the same way. It is its own module because importing `proxy.mjs` starts the proxy.
+ * Keyring access for the local tools, shared so every one of them (the proxy, setup, doctor,
+ * login and the tastytrade connect step) reads the same entries the same way. It is its own module because importing `proxy.mjs` starts the proxy.
  *
  * Everything goes through the secret-tool binary, and no secret is ever an argv value: a lookup
  * prints the value to our stdout, a store reads it from our stdin.
@@ -57,12 +57,13 @@ export async function keyringSecret(program, service, key) {
 }
 
 /**
- * Store a value, passing it on secret-tool's stdin. Resolves true when secret-tool exits 0; the
- * caller reads the entry back rather than trusting that alone. `label` is only what a keyring UI
- * displays; the service and key attributes are what a lookup finds.
+ * Store a value, passing it on secret-tool's stdin, then read the entry back. Resolves true only
+ * when secret-tool exits 0 and the read-back matches, rather than trusting the exit status alone.
+ * `label` is only what a keyring UI displays; the service and key attributes are what a lookup
+ * finds.
  */
-export function keyringStore(service, key, label, value) {
-  return new Promise((resolve) => {
+export async function keyringStore(program, service, key, label, value) {
+  const stored = await new Promise((resolve) => {
     const child = spawn('secret-tool', ['store', `--label=${label}`, 'service', service, 'key', key], {
       stdio: ['pipe', 'ignore', 'ignore'],
     })
@@ -72,6 +73,7 @@ export function keyringStore(service, key, label, value) {
     child.stdin.on('error', () => {})
     child.stdin.end(value)
   })
+  return stored && await keyringSecret(program, service, key) === value
 }
 
 /**
@@ -101,10 +103,7 @@ export async function agentToken(program) {
  * the legacy entry is then left, since it may be the only token this machine has.
  */
 export async function storeAgentToken(program, token) {
-  if (!await keyringStore(AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY, 'spicytrade agent token', token)
-    || await keyringSecret(program, AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY) !== token) {
-    return false
-  }
+  if (!await keyringStore(program, AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY, 'spicytrade agent token', token)) return false
   await keyringClear(LEGACY_AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY)
   return true
 }
@@ -116,8 +115,8 @@ export async function storeAgentToken(program, token) {
  *                   directly against tastytrade.
  *   app grant       `app-refresh-token`, from `connect-tastytrade.mjs` under spicytrade's OAuth app,
  *                   whose client secret only the Worker holds; minted through the Worker.
- * Both the proxy and `connect-tastytrade.mjs` need to tell these apart the same way, so the key
- * names and the read live here rather than duplicated in each.
+ * Every tool that looks at the grant needs to tell these apart the same way, so the key names and
+ * the read live here rather than duplicated in each.
  */
 export const TASTYTRADE = 'tastytrade'
 export const APP_REFRESH_TOKEN_KEY = 'app-refresh-token'
@@ -131,8 +130,8 @@ export const REFRESH_TOKEN_KEY = 'refresh-token'
  * `'app'` (an app-grant refresh token, nothing else); or `'ambiguous'` (an app grant alongside
  * any personal-grant key -- which account trades would otherwise turn on an ordering nobody
  * chose). The raw values come back alongside `kind` so a caller that needs them to mint -- the
- * proxy -- does not read the keyring twice; `connect-tastytrade.mjs` only inspects `kind`. Never
- * logs a value.
+ * proxy, and doctor's mint check -- does not read the keyring twice; setup and the connect step
+ * only inspect `kind`. Never logs a value.
  */
 export async function tastytradeCredentialKind(program) {
   const [clientSecret, refreshToken, appRefreshToken] = await Promise.all([

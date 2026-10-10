@@ -2,7 +2,7 @@ import { DEPLOYMENT_RELOAD_COOLDOWN_MS } from './data/deployment'
 import { STORAGE_PURGE_COOKIE } from './domain/storage-purge'
 
 /** Long enough that a slow first paint is never mistaken for a build that cannot load. */
-export const BOOT_RECOVERY_DELAY_MS = 10_000
+const BOOT_RECOVERY_DELAY_MS = 10_000
 
 export const BOOT_RECOVERY_COOKIE = 'spice.boot-recovery.v1'
 
@@ -10,7 +10,7 @@ export const BOOT_RECOVERY_COOKIE = 'spice.boot-recovery.v1'
  * How long the cleanup may hold the reload. Unregistering a worker takes a healthy browser
  * well under a second; a wedged one never answers, and the reload is what fixes it.
  */
-export const BOOT_RECOVERY_CLEANUP_TIMEOUT_MS = 3_000
+const BOOT_RECOVERY_CLEANUP_TIMEOUT_MS = 3_000
 
 /**
  * The body is empty until the app hydrates, so anything that stops the entry module from

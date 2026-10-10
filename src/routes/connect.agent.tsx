@@ -4,10 +4,10 @@ import { z } from 'zod'
 
 import { Button } from '#/components/ui/button'
 import { Spinner } from '#/components/ui/spinner'
-import { GoogleSignInButton, useViewer } from '../components/auth-gate'
-import { BrandMark } from '../components/wordmark'
+import { AuthorizeFrame, GoogleSignInButton, useViewer } from '../components/auth-gate'
 import { AgentLoginApproveResponseSchema, AgentLoginPageQuerySchema } from '../domain/agent-login'
 import { pageTitle } from '../domain/site'
+import { toError } from '../domain/failure'
 
 /**
  * Where `spicytrade login` sends the browser: the member approves the terminal on their own
@@ -74,7 +74,7 @@ function ConnectAgentPage() {
       window.location.replace(loopbackReturn(port, { code: approved.data.code, state }))
     } catch (error) {
       setSubmitting(undefined)
-      setFailure(error instanceof Error ? error.message : APPROVAL_NOT_RECORDED)
+      setFailure(toError(error)?.message ?? APPROVAL_NOT_RECORDED)
     }
   }
 
@@ -86,15 +86,7 @@ function ConnectAgentPage() {
   }
 
   return (
-    <main className="authorize-page">
-      <div className="authorize-brand"><BrandMark /></div>
-      <h1>Connect your terminal</h1>
-      {viewer.phase === 'checking' && <Spinner />}
-      {viewer.phase === 'error' && (
-        <p className="authorize-error">
-          spicytrade could not check whether you are signed in. Reload to try again.
-        </p>
-      )}
+    <AuthorizeFrame phase={viewer.phase} title="Connect your terminal">
       {viewer.phase === 'ready' && !query.success && (
         <p className="authorize-error">
           This sign-in link is incomplete or malformed. Run <code>spicytrade login</code> again from your
@@ -142,6 +134,6 @@ function ConnectAgentPage() {
           </div>
         </>
       )}
-    </main>
+    </AuthorizeFrame>
   )
 }

@@ -9,9 +9,9 @@ import {
   type BrokerAccountSnapshot,
   type BrokerOrderHistoryPage,
   type BrokerOrderRecord,
+  type BrokerId,
 } from '../src/domain/broker'
 import { type BrokerAdapter } from '../src/server/brokers'
-import { type BrokerId } from '../src/domain/broker'
 import {
   type MarketSnapshot,
   type PublicMarketSnapshot,

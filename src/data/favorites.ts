@@ -23,7 +23,7 @@ const FavoriteStageMarkerSchema = z.strictObject({
   id: z.literal('primary'),
 })
 
-export type FavoriteStageMarker = z.infer<typeof FavoriteStageMarkerSchema>
+type FavoriteStageMarker = z.infer<typeof FavoriteStageMarkerSchema>
 
 // Consumption lives under its own storage key. An authenticated response can
 // therefore mark only the stage it sent without overwriting a newer preference
@@ -54,12 +54,17 @@ function anonymousFavoriteStage(preference: Preference | undefined): AnonymousFa
   return { id: `legacy:${JSON.stringify([...symbols].sort())}`, symbols }
 }
 
+/** The anonymous stage still waiting to merge: none once the marker records it consumed. */
+function pendingFavoriteStage(preference: Preference | undefined, marker: FavoriteStageMarker | undefined) {
+  const stage = anonymousFavoriteStage(preference)
+  return stage && stage.id !== marker?.consumedStageId ? stage : undefined
+}
+
 export function stagedFavoriteSymbols(
   preference: Preference | undefined,
   marker?: FavoriteStageMarker,
 ): string[] {
-  const stage = anonymousFavoriteStage(preference)
-  return stage && stage.id !== marker?.consumedStageId ? stage.symbols : []
+  return pendingFavoriteStage(preference, marker)?.symbols ?? []
 }
 
 async function requestFavoriteSymbols(
@@ -150,10 +155,10 @@ export function createFavoriteSync(userId: string) {
           preferenceCollection.preload(),
           favoriteStageMarkerCollection.preload(),
         ])
-        const preference = preferenceCollection.get('primary')
-        const stage = anonymousFavoriteStage(preference)
-        const marker = favoriteStageMarkerCollection.get('primary')
-        const pendingStage = stage?.id === marker?.consumedStageId ? undefined : stage
+        const pendingStage = pendingFavoriteStage(
+          preferenceCollection.get('primary'),
+          favoriteStageMarkerCollection.get('primary'),
+        )
         const symbols = pendingStage?.symbols.length
           ? await requestFavoriteSymbols({ kind: 'merge', symbols: pendingStage.symbols }, signal)
           : await requestFavoriteSymbols(undefined, signal)
@@ -185,10 +190,10 @@ export function createFavoriteSync(userId: string) {
     }),
   )
 
-  return { collection }
+  return collection
 }
 
-export type FavoriteSync = ReturnType<typeof createFavoriteSync>
+type FavoriteSync = ReturnType<typeof createFavoriteSync>
 
 /** Reports whether the symbol is favorited now, which is what a caller acts on. */
 export async function toggleFavoriteSymbol(
@@ -198,11 +203,11 @@ export async function toggleFavoriteSymbol(
   const parsed = EquitySymbolSchema.parse(symbol)
   if (!favoriteSync) return toggleAnonymousFavorite(parsed)
 
-  await favoriteSync.collection.preload()
-  const favorited = !favoriteSync.collection.get(parsed)
+  await favoriteSync.preload()
+  const favorited = !favoriteSync.get(parsed)
   const transaction = favorited
-    ? favoriteSync.collection.insert({ symbol: parsed })
-    : favoriteSync.collection.delete(parsed)
+    ? favoriteSync.insert({ symbol: parsed })
+    : favoriteSync.delete(parsed)
   await transaction.isPersisted.promise
   return favorited
 }

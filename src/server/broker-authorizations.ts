@@ -10,8 +10,9 @@ import {
   MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER,
 } from '../domain/broker-authorization'
 import { type BrokerId } from '../domain/broker'
+import { errorName, toError } from '../domain/failure'
 import { requireProductionOrigin } from './auth'
-import { base64Url, sha256Base64Url } from './digest'
+import { randomBase64Url, sha256Base64Url } from './digest'
 import { type AppEnv } from './env'
 import { jsonNoStore } from './http'
 import { authenticateMcpToken, isMintedMcpToken, presentedBearer } from './mcp-tokens'
@@ -75,7 +76,7 @@ function connectConfig(env: AppEnv): ConnectConfig | undefined {
     clientId = readBoundSecret(env.TASTYTRADE_OAUTH_CLIENT_ID, 'TASTYTRADE_OAUTH_CLIENT_ID')
     origin = requireProductionOrigin(env.AUTH_BASE_URL)
   } catch (error) {
-    return unconfigured(error instanceof Error ? error.name : 'UnknownError')
+    return unconfigured(errorName(toError(error)))
   }
   return {
     clientId,
@@ -133,11 +134,6 @@ function grantFailure(error: TastytradeMemberGrantError): Response {
   )
 }
 
-function randomState(): string {
-  const bytes = new Uint8Array(BROKER_AUTHORIZATION_STATE_BYTES)
-  crypto.getRandomValues(bytes)
-  return base64Url(bytes)
-}
 
 /**
  * Open a pending connection and return tastytrade's consent URL. Only the state's digest is
@@ -151,7 +147,7 @@ export async function authorizeTastytrade(request: Request, env: AppEnv, now = n
     if (parsed instanceof Response) return parsed
     const { userId } = parsed
 
-    const state = randomState()
+    const state = randomBase64Url(BROKER_AUTHORIZATION_STATE_BYTES)
     const nowIso = now.toISOString()
     const expiresAt = new Date(now.getTime() + BROKER_AUTHORIZATION_TTL_MS).toISOString()
     // The member's lapsed attempts go first so they never count against the cap, and the cap is
@@ -192,7 +188,7 @@ export async function authorizeTastytrade(request: Request, env: AppEnv, now = n
     }).toString()
     return jsonNoStore({ authorizationUrl: authorizationUrl.toString(), expiresAt, state })
   } catch (error) {
-    console.error('TastytradeAuthorizeFailed', error instanceof Error ? error.name : 'UnknownError')
+    console.error('TastytradeAuthorizeFailed', errorName(toError(error)))
     return unavailable()
   }
 }
@@ -240,7 +236,7 @@ export async function tastytradeCallback(request: Request, env: AppEnv, now = ne
         WHERE state_digest = ? AND broker = ? AND expires_at > ?`,
     ).bind(await sha256Base64Url(state.data), BROKER, now.toISOString()).first<{ loopback_port: number }>()
   } catch (cause) {
-    console.error('TastytradeCallbackFailed', cause instanceof Error ? cause.name : 'UnknownError')
+    console.error('TastytradeCallbackFailed', errorName(toError(cause)))
     return plainNoStore('Connecting tastytrade is unavailable right now.', 503)
   }
   if (!row) return plainNoStore(expired, 400)
@@ -294,7 +290,7 @@ export async function exchangeTastytrade(request: Request, env: AppEnv, now = ne
     // The member's permanent credential, in this response and nowhere else on this side.
     return jsonNoStore({ refreshToken })
   } catch (error) {
-    console.error('TastytradeExchangeFailed', error instanceof Error ? error.name : 'UnknownError')
+    console.error('TastytradeExchangeFailed', errorName(toError(error)))
     if (error instanceof TastytradeMemberGrantError) return grantFailure(error)
     return unavailable()
   }
@@ -315,7 +311,7 @@ export async function tastytradeAccessToken(request: Request, env: AppEnv): Prom
     const access = await refreshTastytradeMemberAccess(env, { clientSecret, refreshToken: parsed.data.refreshToken })
     return jsonNoStore(access)
   } catch (error) {
-    console.error('TastytradeMemberTokenFailed', error instanceof Error ? error.name : 'UnknownError')
+    console.error('TastytradeMemberTokenFailed', errorName(toError(error)))
     if (error instanceof TastytradeMemberGrantError) return grantFailure(error)
     return unavailable()
   }

@@ -38,7 +38,7 @@ export async function checkAgentToken(token) {
   return { status: 'accepted' }
 }
 
-/** One line for a check that did not come back accepted. */
+/** One line describing a token check. */
 export function describeTokenCheck(check) {
   switch (check.status) {
     case 'accepted': return 'spicytrade accepts the agent token'

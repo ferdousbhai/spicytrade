@@ -1,5 +1,6 @@
 import { type AppEnv } from './env'
 import { BROKER_ORDER_ID } from '../domain/broker'
+import { errorName, toError } from '../domain/failure'
 import {
   JsonObjectArraySchema,
   jsonObjectOrEmpty,
@@ -17,9 +18,9 @@ import { tradeGuards } from './trade-guards'
 import { BrokerRefusalError, CallerVisibleError } from './caller-visible-error'
 import { BrokerCredentialMissingError, type BrokerCredential } from './broker-credential'
 
-export type OrderResponseReceipt = { id?: string; warnings: string[] }
-export type PlacedOrderReceipt = { id: string; warnings: string[] }
-export type ReplacementReceipt = { id: string }
+type OrderResponseReceipt = { id?: string; warnings: string[] }
+type PlacedOrderReceipt = { id: string; warnings: string[] }
+type ReplacementReceipt = { id: string }
 
 /**
  * A broker response this repository refuses to believe. The code is our own vocabulary and
@@ -119,7 +120,7 @@ class TastytradeOrderRejectedError extends BrokerRefusalError {
  */
 const UNRECORDED_RESULT = 'spicytrade could not record this result, so this account stays quarantined until reconcile_brokerage_action confirms it.'
 
-export class TastytradeOrderWarningError extends BrokerRefusalError {
+class TastytradeOrderWarningError extends BrokerRefusalError {
   constructor(warnings: readonly string[]) {
     super('broker-warning', 'Tastytrade returned a preflight warning, so the order was not submitted.', { messages: warnings })
     this.name = 'TastytradeOrderWarningError'
@@ -179,7 +180,7 @@ export function validatePlacedOrderResponse(payload: JsonValue, intended: OrderP
 export type SubmissionReceipt = { detail: string; orderId: string; untrustedBrokerWarnings?: string[] }
 
 /** Bookkeeping for an accepted order, and the platform hook that keeps it alive past the reply. */
-export type AcceptedOrderFollowUp = {
+type AcceptedOrderFollowUp = {
   run: (intent: ResolvedOrderIntent) => Promise<void>
   waitUntil: (task: Promise<unknown>) => void
 }
@@ -294,7 +295,7 @@ export async function executeOrderPlacement(
         await onAccepted.run(intent)
       } catch (error) {
         // The order is already at the broker; bookkeeping after it must not read as a refusal.
-        console.error('TradeIntentRememberFailed', error instanceof Error ? error.name : 'UnknownError')
+        console.error('TradeIntentRememberFailed', errorName(toError(error)))
       }
     }
     onAccepted.waitUntil(followUp())

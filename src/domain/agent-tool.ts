@@ -15,7 +15,7 @@ import { type Static, type TSchema } from 'typebox'
  */
 
 /** Text a tool returns to the model: the only content kind MCP is ever handed. */
-export type AgentToolContent = { type: 'text'; text: string }
+type AgentToolContent = { type: 'text'; text: string }
 
 /**
  * What a tool answers. Text only: the MCP surface forwards `content` and nothing else, so a

@@ -17,7 +17,7 @@ import { join } from 'node:path'
  * own token from a broker's credentials, and a stand-in that collapsed them could not notice
  * them being confused.
  */
-export async function fakeSecretTool(entries: Record<string, string> = {}): Promise<string> {
+export async function fakeSecretTool(entries: Record<string, string>): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'spice-secret-tool-'))
   const store = join(directory, 'store')
   await mkdir(store)

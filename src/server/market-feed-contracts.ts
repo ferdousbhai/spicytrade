@@ -13,11 +13,6 @@ import { EquitySymbolSchema, MAX_PROVIDER_LABEL_LENGTH } from '../domain/instrum
 import { jsonNumber, type JsonObject } from '../domain/json-payload'
 import { MAX_LIVE_STREAM_SYMBOLS } from '../domain/watchlist'
 
-export { DXLINK_REMOVE_EVENT }
-export { DXLINK_SNAPSHOT_BEGIN } from '../domain/candle'
-
-const MarketSymbolSchema = EquitySymbolSchema
-
 /**
  * The one relay instance every caller addresses. The name is historical: the relay once ran on
  * an account credential, and it now runs on the Worker's market-data token with no account in
@@ -32,13 +27,13 @@ export const MARKET_FEED_INSTANCE = 'primary-account'
  */
 export const CLIENT_HEARTBEAT_MS = 30_000
 
-export const MarketFeedSymbolsSchema = z.array(MarketSymbolSchema)
+export const MarketFeedSymbolsSchema = z.array(EquitySymbolSchema)
   .min(1)
   .max(MAX_LIVE_STREAM_SYMBOLS)
 
 export const LiveMarketEventSchema = z.object({
   type: z.literal('market'),
-  symbol: MarketSymbolSchema,
+  symbol: EquitySymbolSchema,
   price: z.number().finite().positive().optional(),
   change: z.number().finite().optional(),
   bid: z.number().finite().positive().optional(),
@@ -75,9 +70,6 @@ export type MarketFeedStatus = z.infer<typeof MarketFeedStatusSchema>
 // One interactive Greeks RPC may briefly subscribe and wait for every requested contract;
 // bounding that fan-out keeps its timeout and returned model context predictable.
 export const MAX_OPTION_GREEKS_CONTRACTS = 10
-
-/** ECMAScript's maximum time value: the largest epoch-millisecond instant a `Date` can hold. */
-const MAX_DATE_MS = 8_640_000_000_000_000
 
 export const OptionStreamerSymbolSchema = z.string()
   .trim()
@@ -119,13 +111,23 @@ export function parseOptionStreamerSymbols(value: readonly string[]): string[] {
   return [...new Set(parsed)]
 }
 
+/**
+ * A provider epoch-millisecond instant as ISO text, or undefined for one that is not a positive
+ * safe integer or lies past ECMAScript's maximum time value (the largest instant a `Date` holds).
+ */
+export function isoFromEpoch(epoch: number | undefined): string | undefined {
+  if (epoch === undefined || epoch <= 0 || !Number.isSafeInteger(epoch)) return undefined
+  const date = new Date(epoch)
+  return Number.isFinite(date.getTime()) ? date.toISOString() : undefined
+}
+
 /** Parse one compact dxFeed Greeks row, rejecting partial or non-finite observations. */
 export function optionGreeksFromRow(
   row: JsonObject,
   receivedAt = new Date(),
 ): OptionGreeksEvent | undefined {
   const streamerSymbol = OptionStreamerSymbolSchema.safeParse(row.eventSymbol)
-  const eventTime = jsonNumber(row.time)
+  const eventAt = isoFromEpoch(jsonNumber(row.time))
   const optionPrice = jsonNumber(row.price)
   const impliedVolatility = jsonNumber(row.volatility)
   const delta = jsonNumber(row.delta)
@@ -134,10 +136,7 @@ export function optionGreeksFromRow(
   const rho = jsonNumber(row.rho)
   const vega = jsonNumber(row.vega)
   if (!streamerSymbol.success
-    || eventTime === undefined
-    || eventTime <= 0
-    || !Number.isSafeInteger(eventTime)
-    || eventTime > MAX_DATE_MS
+    || eventAt === undefined
     || optionPrice === undefined
     || optionPrice < 0
     || impliedVolatility === undefined
@@ -150,7 +149,7 @@ export function optionGreeksFromRow(
     || !Number.isFinite(receivedAt.getTime())) return undefined
   return OptionGreeksEventSchema.parse({
     delta,
-    eventAt: new Date(eventTime).toISOString(),
+    eventAt,
     gamma,
     impliedVolatility,
     impliedVolatilityUnit: 'decimal_ratio',
@@ -275,7 +274,7 @@ class SymbolWaitRegistry<T> {
   }
 }
 
-export type OptionGreeksLease = SymbolWaitLease<OptionGreeksEvent[]>
+type OptionGreeksLease = SymbolWaitLease<OptionGreeksEvent[]>
 
 /** Account for overlapping bounded RPC waiters while sharing one upstream subscription. */
 export class OptionGreeksRequestRegistry {
@@ -311,33 +310,28 @@ export class OptionGreeksRequestRegistry {
  * draws, so `tho=true` holds it to the regular session; `daily` carries a year of closes and
  * takes the default scope, since a daily bar has no session to exclude.
  */
-export const CANDLE_FEED_PERIODS = ['intraday', 'daily'] as const
+const CANDLE_FEED_PERIODS = ['intraday', 'daily'] as const
 
-export type CandleFeedPeriod = typeof CANDLE_FEED_PERIODS[number]
+type CandleFeedPeriod = typeof CANDLE_FEED_PERIODS[number]
 
-export const CANDLE_PERIOD_SUFFIXES = {
+const CANDLE_PERIOD_SUFFIXES = {
   intraday: '{=5m,tho=true}',
   daily: '{=d}',
 } as const satisfies Record<CandleFeedPeriod, string>
-
-export const CANDLE_PERIOD_LIMITS = {
-  intraday: MAX_INTRADAY_CANDLES,
-  daily: MAX_YEAR_CANDLES,
-} as const satisfies Record<CandleFeedPeriod, number>
 
 /**
  * The suffix is part of the subscription identity, and both periods share one upstream channel.
  * Adds, removes, and inbound routing must build and read it the same way or a remove silently
  * misses, the upstream subscription leaks, and two periods merge into one corrupted series.
  */
-export function candleStreamerSymbol(symbol: string, period: CandleFeedPeriod = 'intraday'): string {
+function candleStreamerSymbol(symbol: string, period: CandleFeedPeriod): string {
   return `${symbol}${CANDLE_PERIOD_SUFFIXES[period]}`
 }
 
 export function candleSubscription(
   symbol: string,
   fromTime: number,
-  period: CandleFeedPeriod = 'intraday',
+  period: CandleFeedPeriod,
 ) {
   return { type: 'Candle' as const, symbol: candleStreamerSymbol(symbol, period), fromTime }
 }
@@ -360,17 +354,17 @@ export function candleFeedPeriod(streamerSymbol: string): CandleFeedPeriod | und
  */
 export const MAX_DAILY_CANDLE_SYMBOLS = 100
 
-const DailyCandleSymbolsSchema = z.array(MarketSymbolSchema).min(1).max(MAX_DAILY_CANDLE_SYMBOLS)
+const DailyCandleSymbolsSchema = z.array(EquitySymbolSchema).min(1).max(MAX_DAILY_CANDLE_SYMBOLS)
 
 /** Validate a year-candle read before normalization can change its cardinality. */
-export function parseDailyCandleSymbols(value: readonly string[]): string[] {
+function parseDailyCandleSymbols(value: readonly string[]): string[] {
   return [...new Set(DailyCandleSymbolsSchema.parse(value))]
 }
 
 export const DailyCandlesReadResultSchema = z.object({
   asOf: z.string().datetime(),
   series: z.array(z.object({
-    symbol: MarketSymbolSchema,
+    symbol: EquitySymbolSchema,
     closes: z.array(CandlePointSchema).max(MAX_YEAR_CANDLES),
   })),
   source: z.literal('tastytrade-dxlink'),
@@ -378,7 +372,7 @@ export const DailyCandlesReadResultSchema = z.object({
 
 export type DailyCandlesReadResult = z.infer<typeof DailyCandlesReadResultSchema>
 
-export type DailyCandleLease = SymbolWaitLease<Map<string, CandlePoint[]>>
+type DailyCandleLease = SymbolWaitLease<Map<string, CandlePoint[]>>
 
 /**
  * The year series is read once and cached, not streamed, so this registry holds the bounded
@@ -402,7 +396,7 @@ export class DailyCandleRequestRegistry {
   /** Feed one upstream daily row; a completed snapshot settles every reader waiting on it. */
   accept(symbol: string, frame: CandleFrame): void {
     if (!this.waits.isDemanded(symbol)) return
-    const result = this.snapshots.accept(symbol, frame, CANDLE_PERIOD_LIMITS.daily)
+    const result = this.snapshots.accept(symbol, frame, MAX_YEAR_CANDLES)
     // A daily bar outside a snapshot is that day's close ticking; the cached year does not
     // need it, so only a finished snapshot settles a reader.
     if (result.status !== 'complete') return
@@ -419,7 +413,7 @@ export class DailyCandleRequestRegistry {
 }
 
 /** Validate the entire subscription before normalization can change its cardinality. */
-export function parseMarketFeedSymbols(value: readonly string[]): string[] {
+function parseMarketFeedSymbols(value: readonly string[]): string[] {
   return [...new Set(MarketFeedSymbolsSchema.parse(value))]
 }
 

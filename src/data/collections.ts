@@ -34,7 +34,8 @@ import { clearDeploymentReload, DeploymentMismatchError, newerResponseDeployment
 // One versioned row now commits the audience and complete server snapshot together.
 // Earlier versions spread one snapshot across five independently persisted collections.
 export const OFFLINE_SNAPSHOT_VERSION = 9 as const
-export type SnapshotAudience = 'owner' | 'public'
+const SnapshotAudienceSchema = z.enum(['owner', 'public'])
+export type SnapshotAudience = z.infer<typeof SnapshotAudienceSchema>
 
 const OFFLINE_SNAPSHOT_STORAGE_PREFIX = 'spice.snapshot.v'
 export const OFFLINE_SNAPSHOT_STORAGE_KEY = `${OFFLINE_SNAPSHOT_STORAGE_PREFIX}${OFFLINE_SNAPSHOT_VERSION}`
@@ -90,7 +91,7 @@ const PreferenceSchema = z.object({
 export type Preference = z.infer<typeof PreferenceSchema>
 
 const OfflineSnapshotSchema = z.object({
-  audience: z.enum(['owner', 'public']),
+  audience: SnapshotAudienceSchema,
   id: z.literal('snapshot'),
   schemaVersion: z.literal(OFFLINE_SNAPSHOT_VERSION),
   snapshot: MarketSnapshotSchema,
@@ -147,6 +148,10 @@ export function selectLiveMarketSymbols(
     .slice(0, MAX_LIVE_STREAM_SYMBOLS)
 }
 
+function isTickerField(key: string, row: Ticker): key is keyof Ticker {
+  return key in row
+}
+
 /**
  * A refresh row is the whole of what the provider now reports for its symbol, so an optional
  * reading it no longer carries -- IV rank the metrics feed dropped, a market cap gone from the
@@ -155,10 +160,6 @@ export function selectLiveMarketSymbols(
  * undefined rather than deleted: TanStack merges an update's changes over the original row, so
  * a delete on the draft is not a change it can carry, while an explicit undefined is.
  */
-function isTickerField(key: string, row: Ticker): key is keyof Ticker {
-  return key in row
-}
-
 function assignTickerRow(draft: Ticker, next: Ticker): void {
   // Every required field is present on a parsed `next`, so only optional readings are retired.
   const retired: Partial<Ticker> = draft
@@ -170,7 +171,7 @@ function assignTickerRow(draft: Ticker, next: Ticker): void {
 
 async function replaceLiveTickers(
   rows: readonly Ticker[],
-  replaceExisting = false,
+  replaceExisting: boolean,
 ): Promise<void> {
   const mutations: PersistedMutation[] = []
   const incoming = new Set(rows.map((ticker) => ticker.symbol))
@@ -380,9 +381,7 @@ function requestSnapshot(
   const headers = new Headers()
   if (audience === 'owner') headers.set('Accept', 'application/json')
   if (etag) headers.set('If-None-Match', etag)
-  return audience === 'owner'
-    ? fetch(OWNER_SNAPSHOT_URL, { headers, signal })
-    : fetch(PUBLIC_SNAPSHOT_URL, { headers, signal })
+  return fetch(audience === 'owner' ? OWNER_SNAPSHOT_URL : PUBLIC_SNAPSHOT_URL, { headers, signal })
 }
 
 /**

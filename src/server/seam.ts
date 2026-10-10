@@ -1,6 +1,6 @@
 // Production seams replace banned module mocking. Factory resets rebuild the live
 // implementation rather than restoring a stale test stand-in.
-export type Seam<T> = {
+type Seam<T> = {
   current: () => T
   reset: () => void
   set: (next: T) => void

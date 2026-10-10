@@ -24,8 +24,7 @@ import { migrationStore, type SqliteD1Store } from './sqlite-d1'
 
 const NOW = new Date('2026-08-13T16:00:00.000Z')
 
-describe('tastytrade catalyst normalization', () => {
-
+describe('catalyst store reads', () => {
   it('carries at most the nearest events per symbol, however many a producer bound', async () => {
     // The store only grows, and members' agents write to it now, so "every upcoming row" is not
     // a size the snapshot can be left to inherit. What a symbol spends its budget on is its
@@ -110,7 +109,7 @@ describe('tastytrade catalyst normalization', () => {
     }
   })
 
-  it('stays within the D1 parameter limit when refreshing 100 symbols', async () => {
+  it('stays within the D1 parameter limit when refreshing one statement of symbols', async () => {
     const boundParameterCounts: number[] = []
     const batch = vi.fn(async () => [])
     const database: D1Database = {
@@ -120,7 +119,7 @@ describe('tastytrade catalyst normalization', () => {
         ...unsupportedStatement(),
         bind: (...values: unknown[]) => {
           boundParameterCounts.push(values.length)
-          if (values.length > 100) throw new Error('too many SQL variables')
+          if (values.length > D1_MAX_BOUND_PARAMETERS) throw new Error('too many SQL variables')
           return {
             ...unsupportedStatement(),
             all: async () => d1Result([]),
@@ -129,15 +128,17 @@ describe('tastytrade catalyst normalization', () => {
       })),
     }
 
-    const symbols = Array.from({ length: 100 }, (_, index) => `T${index}`)
+    const symbols = Array.from({ length: D1_MAX_BOUND_PARAMETERS }, (_, index) => `T${index}`)
     await expect(persistAndLoadCatalysts({ DB: database }, [], { answered: symbols, requested: symbols }, NOW)).resolves.toEqual([])
 
     expect(batch).toHaveBeenCalledOnce()
     // The delete binds one symbol each; the read that follows binds the market date, the
     // symbols as one JSON array, and the per-symbol cap.
-    expect(boundParameterCounts).toEqual([100, 3])
+    expect(boundParameterCounts).toEqual([D1_MAX_BOUND_PARAMETERS, 3])
   })
+})
 
+describe('tastytrade catalyst normalization', () => {
   it('extracts upcoming earnings and ignores dividend fields', () => {
     const catalysts = catalystsFromMarketMetrics([{
       symbol: 'NVDA',

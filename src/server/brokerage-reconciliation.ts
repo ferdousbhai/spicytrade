@@ -9,7 +9,7 @@ import { type JsonValue } from '../domain/json-payload'
 import { resolveStoredOrderFingerprint } from './order-intent'
 import { brokerAdapterFor, type BrokerAdapter } from './brokers'
 import { brokerApi, TASTYTRADE_REQUEST_TIMEOUT_MS } from './tastytrade'
-import { D1_MAX_BOUND_PARAMETERS } from './d1-limits'
+import { d1InListChunks } from './d1-limits'
 import { textResult } from './agent-tool-result'
 import { BrokerCredentialMissingError, type BrokerCredential } from './broker-credential'
 import { PortfolioRiskError } from './portfolio-risk'
@@ -93,7 +93,7 @@ export async function claimSubmission(
   }
 }
 
-export type SubmissionOutcome =
+type SubmissionOutcome =
   | { providerOrderId: string; status: 'executed' }
   | { errorCode: 'TastytradeApiError' | 'TastytradeOrderRejected'; status: 'failed' }
 
@@ -133,7 +133,7 @@ export async function settleSubmission(env: AppEnv, id: string, outcome: Submiss
   return false
 }
 
-export type ReconciliationResult = {
+type ReconciliationResult = {
   actionId?: string
   detail: string
   providerOrderId?: string
@@ -177,10 +177,8 @@ export const SUBMISSION_TRANSPORT_BUDGET_MS = TASTYTRADE_REQUEST_TIMEOUT_MS
  * any zone, since no zone offset reaches 24 hours.
  */
 const ORDER_HISTORY_DATE_MARGIN_MS = 24 * 60 * 60_000
-/** The account's broker and number bind two parameters; the rest carry candidate order ids. */
-const CLAIMED_ORDER_IDS_PER_STATEMENT = D1_MAX_BOUND_PARAMETERS - 2
 
-export type StoredSubmissionTime = {
+type StoredSubmissionTime = {
   /** True when the row was claimed before its request left (it stores the resolved order). */
   claimed: boolean
   submittedAt: Date
@@ -201,7 +199,7 @@ export function matchesSubmittedOrder(
   row: BrokerOrderRecord,
   intended: OrderPayload,
   submission: StoredSubmissionTime,
-  now = new Date(),
+  now: Date,
   replacedOrderId?: string,
 ): boolean {
   const submittedAt = submission.submittedAt.getTime()
@@ -232,8 +230,8 @@ async function unclaimedOrders(
 ): Promise<BrokerOrderRecord[]> {
   const ids = [...new Set(candidates.flatMap((row) => row.id ? [row.id] : []))]
   const owned = new Set<string>()
-  for (let start = 0; start < ids.length; start += CLAIMED_ORDER_IDS_PER_STATEMENT) {
-    const chunk = ids.slice(start, start + CLAIMED_ORDER_IDS_PER_STATEMENT)
+  // The account's broker and number bind two parameters; the rest carry candidate order ids.
+  for (const chunk of d1InListChunks(ids, 2)) {
     const result = await db.prepare(
       `SELECT provider_order_id FROM broker_submissions
         WHERE broker_id = ? AND account_number = ? AND provider_order_id IN (${chunk.map(() => '?').join(', ')})`,
@@ -267,8 +265,8 @@ async function settledElsewhere(db: D1Database, id: string): Promise<Reconciliat
 export async function reconcileUnknownBrokerageAction(
   env: AppEnv,
   credential: BrokerCredential | undefined,
-  now = new Date(),
 ): Promise<ReconciliationResult> {
+  const now = new Date()
   if (!credential) throw new BrokerCredentialMissingError()
   const db = env.DB
   if (!db) throw new CallerVisibleError('TastytradeReconciliation:store-unavailable')

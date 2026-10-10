@@ -1,9 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 
-import { Spinner } from '#/components/ui/spinner'
-import { GoogleSignInButton, useViewer } from '../components/auth-gate'
-import { BrandMark } from '../components/wordmark'
+import { AuthorizeFrame, GoogleSignInButton, useViewer } from '../components/auth-gate'
 import { pageTitle } from '../domain/site'
 
 /**
@@ -49,17 +47,7 @@ function AuthorizePage() {
   }, [rawSearch, signedIn])
 
   return (
-    <main className="authorize-page">
-      {/* Whose page this is, before anything asks for a sign-in or an approval. Not a link: it
-          would lead out of a flow the provider expects to finish here. */}
-      <div className="authorize-brand"><BrandMark /></div>
-      <h1>Connect your agent</h1>
-      {viewer.phase === 'checking' && <Spinner />}
-      {viewer.phase === 'error' && (
-        <p className="authorize-error">
-          spicytrade could not check whether you are signed in. Reload to try again.
-        </p>
-      )}
+    <AuthorizeFrame phase={viewer.phase} title="Connect your agent">
       {viewer.phase === 'ready' && viewer.user === null && (
         <>
           <p>
@@ -72,6 +60,6 @@ function AuthorizePage() {
       {viewer.phase === 'ready' && viewer.user !== null && (
         <p>Signed in as {viewer.user.name}. Continuing…</p>
       )}
-    </main>
+    </AuthorizeFrame>
   )
 }

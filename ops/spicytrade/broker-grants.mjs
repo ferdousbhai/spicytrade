@@ -20,7 +20,7 @@ const AppGrantResponseSchema = z.object({
   accessToken: z.string().min(1),
   expiresIn: z.number().int().positive(),
 })
-const AppGrantRefusalSchema = z.object({ tastytradeStatus: z.number().int() })
+export const AppGrantRefusalSchema = z.object({ tastytradeStatus: z.number().int() })
 
 // An app grant is minted by the Worker that UPSTREAM names, so it is the same origin: the agent
 // token that authenticates the forwarded call is the one that authenticates the mint.
@@ -56,7 +56,7 @@ function transportCode(error) {
 }
 
 /** A personal grant: the member's own client secret and refresh token, straight to tastytrade. */
-export async function mintPersonalGrant(clientSecret, refreshToken) {
+async function mintPersonalGrant(clientSecret, refreshToken) {
   let response
   try {
     response = await fetch(`${TASTYTRADE_API_BASE}/oauth/token`, {
@@ -103,7 +103,7 @@ export async function mintPersonalGrant(clientSecret, refreshToken) {
  * reads the same in this log whichever kind it is; a refusal of the Worker's own is `spicytrade-`
  * and its status.
  */
-export async function mintAppGrant(agentBearer, refreshToken) {
+async function mintAppGrant(agentBearer, refreshToken) {
   let response
   try {
     response = await fetch(APP_GRANT_TOKEN_URL, {

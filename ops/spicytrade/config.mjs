@@ -1,10 +1,11 @@
 import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
  * What every local tool agrees on: where spicytrade is, where the proxy listens, which keyring
  * entry holds the agent token, and how to name the CLI in a message. One module, so the proxy,
- * `spicytrade`, and `connect-tastytrade.mjs` cannot drift apart on any of them.
+ * `spicytrade`, and `tastytrade-connect.mjs` cannot drift apart on any of them.
  *
  * Importing this starts nothing, unlike `proxy.mjs`.
  */
@@ -26,7 +27,7 @@ export const TASTYTRADE_API_BASE = process.env.TASTYTRADE_API_BASE ?? 'https://a
  * ephemeral port would have to be rewritten into each client on every start.
  */
 export const LISTEN_HOST = '127.0.0.1'
-export const DEFAULT_PORT = 8787
+const DEFAULT_PORT = 8787
 export const PROXY_PORT = Number(process.env.SPICYTRADE_PROXY_PORT ?? DEFAULT_PORT)
 export const PROXY_URL = `http://${LISTEN_HOST}:${PROXY_PORT}/mcp`
 
@@ -38,12 +39,21 @@ export const MCP_TOKEN_KEY = 'mcp-token'
 /** The name agents' MCP configs know the server by. */
 export const MCP_SERVER_NAME = 'spicytrade'
 export const LEGACY_MCP_SERVER_NAME = 'spicy-trade'
+
+/**
+ * The one folder where Claude Code loads the server. Trading tools act on the member's own
+ * account, so they belong to sessions started for trading, not to every session in every
+ * directory -- least of all a checkout of this code, where an agent edits the server it would be
+ * trading through. Claude Code cannot add a server switched off everywhere, so the server is
+ * registered here at local scope instead.
+ */
+export const TRADING_DIR = process.env.SPICYTRADE_TRADING_DIR ?? join(homedir(), 'trading')
 export const UNIT_NAME = 'spicytrade-proxy.service'
 export const LEGACY_UNIT_NAME = 'spicy-trade-proxy.service'
 
 export const PROXY_PATH = fileURLToPath(new URL('./proxy.mjs', import.meta.url))
-export const CLI_PATH = fileURLToPath(new URL('./spicytrade.mjs', import.meta.url))
-export const STORE_CREDENTIALS_PATH = fileURLToPath(new URL('./store-credentials.sh', import.meta.url))
+const CLI_PATH = fileURLToPath(new URL('./spicytrade.mjs', import.meta.url))
+const STORE_CREDENTIALS_PATH = fileURLToPath(new URL('./store-credentials.sh', import.meta.url))
 
 /**
  * How a message tells the member to run the CLI. An npm install puts `spicytrade` on PATH; a

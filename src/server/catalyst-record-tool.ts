@@ -61,25 +61,21 @@ const CatalystRecordParameters = Type.Object({
 
 const RecordValidator = Compile(CatalystRecordParameters)
 
-export type CatalystRecording =
+type CatalystRecording =
   | { catalystCount: number; status: 'recorded'; symbols: string[] }
   | { rejected: string[]; status: 'rejected' }
-
-export interface RecordCatalystsOptions {
-  now?: Date
-}
 
 export async function recordResearchCatalysts(
   env: AppEnv,
   untrustedRecording: JsonValue,
-  options: RecordCatalystsOptions = {},
+  requestedNow?: Date,
 ): Promise<CatalystRecording> {
   const browser = env.BROWSER
   // Without page reading nothing can be bound, so nothing may be written. Fail closed.
   if (!browser) throw new CallerVisibleError('CatalystRecord:page-reading-unavailable')
   // Nothing bound here can be kept without the store, so fail closed before reading a page.
   if (!env.DB) throw new CallerVisibleError('CatalystStoreUnavailable')
-  const now = options.now ?? new Date()
+  const now = requestedNow ?? new Date()
   // Re-parsed at the trust boundary whatever the transport already checked.
   const recording = RecordValidator.Parse(untrustedRecording)
 
@@ -87,7 +83,6 @@ export async function recordResearchCatalysts(
     browser,
     recording.sources,
     recording.catalysts.map((candidate) => candidate.sourceIndex),
-    now.toISOString(),
   )
   if (rejected.length) return { rejected, status: 'rejected' }
 

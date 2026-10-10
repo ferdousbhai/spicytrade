@@ -18,7 +18,7 @@ import { type AppEnv } from '../env'
  * be read".
  */
 export type BrokerSnapshotPart = 'balances' | 'complex-orders' | 'orders' | 'positions'
-export type BrokerSnapshotStage = 'page' | 'record'
+type BrokerSnapshotStage = 'page' | 'record'
 
 /**
  * A broker account snapshot that could not be normalized. `message` is the adapter's own

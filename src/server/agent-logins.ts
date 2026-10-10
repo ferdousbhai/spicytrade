@@ -7,7 +7,7 @@ import {
   MAX_PENDING_AGENT_LOGINS_PER_USER,
 } from '../domain/agent-login'
 import { getAuthenticatedIdentity } from './auth'
-import { base64Url, sha256Base64Url } from './digest'
+import { randomBase64Url, sha256Base64Url } from './digest'
 import { type AppEnv } from './env'
 import { authenticateRequest, jsonNoStore } from './http'
 import {
@@ -18,6 +18,7 @@ import {
   revokeMcpToken,
 } from './mcp-tokens'
 import { ConfigurationError } from './secrets'
+import { errorName, toError } from '../domain/failure'
 
 /*
  * The browser sign-in for a member's terminal (`spicytrade login`); the wire contract and why it
@@ -37,11 +38,6 @@ import { ConfigurationError } from './secrets'
 const unavailable = () => jsonNoStore({ error: 'Agent sign-in is unavailable' }, { status: 503 })
 const invalidGrant = () => jsonNoStore({ error: AGENT_LOGIN_INVALID_GRANT }, { status: 400 })
 
-function randomCode(): string {
-  const bytes = new Uint8Array(AGENT_LOGIN_RANDOM_BYTES)
-  crypto.getRandomValues(bytes)
-  return base64Url(bytes)
-}
 
 /**
  * Record the signed-in member's approval and return the one-time code. Only the code's digest is
@@ -60,7 +56,7 @@ export async function approveAgentLogin(
   if (!parsed.success) return jsonNoStore({ error: 'Invalid agent sign-in request' }, { status: 400 })
   const userId = authenticated.identity.id
   try {
-    const code = randomCode()
+    const code = randomBase64Url(AGENT_LOGIN_RANDOM_BYTES)
     const nowIso = now.toISOString()
     // The member's lapsed approvals go first so they never count against the cap, and the cap is
     // checked inside the insert: two concurrent approvals that each counted a free slot would
@@ -89,7 +85,7 @@ export async function approveAgentLogin(
     }
     return jsonNoStore({ code })
   } catch (error) {
-    console.error('AgentLoginApproveFailed', error instanceof Error ? error.name : 'UnknownError')
+    console.error('AgentLoginApproveFailed', errorName(toError(error)))
     return unavailable()
   }
 }
@@ -140,7 +136,7 @@ export async function exchangeAgentLogin(request: Request, env: AppEnv, now = ne
     // The plaintext token is in this response and nowhere else, ever again.
     return jsonNoStore(issued)
   } catch (error) {
-    console.error('AgentLoginExchangeFailed', error instanceof Error ? error.name : 'UnknownError')
+    console.error('AgentLoginExchangeFailed', errorName(toError(error)))
     if (error instanceof McpTokenLimitError) return jsonNoStore({ error: error.message }, { status: 409 })
     return unavailable()
   }

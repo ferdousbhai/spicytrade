@@ -8,14 +8,14 @@ import { CallerVisibleError } from '../src/server/caller-visible-error'
 import {
   MAX_PRICE_HISTORY_RETURNED_ROWS,
   MAX_PRICE_HISTORY_SPAN_DAYS,
+  type PriceHistoryProvider,
   PriceHistoryReadParameters,
   type PriceHistoryReadResult,
+  type PriceHistoryRow,
 } from '../src/server/market-research-contracts'
 import {
   createMarketResearchTools,
   createYahooPriceHistoryProvider,
-  type PriceHistoryProvider,
-  type PriceHistoryRow,
   readPriceHistory,
 } from '../src/server/market-research-tools'
 

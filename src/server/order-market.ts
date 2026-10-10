@@ -14,8 +14,6 @@ import { parseTickSizes, tickSizeAt as sharedTickSizeAt } from 'tasty-agent/tast
 import { brokerApi } from './tastytrade'
 import { BrokerRefusalError, CallerVisibleError } from './caller-visible-error'
 
-type OrderAction = FreshOrderPlacement
-
 /**
  * The market guard's refusals. Each code is this repository's own and carries no quote value,
  * so it reaches the caller as it stands. The two refusals whose explanation is a broker figure
@@ -45,7 +43,7 @@ function outsideQuote(bid: number, ask: number): BrokerRefusalError {
   )
 }
 
-export type OrderMarket = {
+type OrderMarket = {
   ask: number
   bid: number
   observedAt: string
@@ -131,12 +129,34 @@ function isTickAligned(price: number, tickSize: number): boolean {
   return Math.abs(units - Math.round(units)) <= 1e-7
 }
 
+/**
+ * The checks both order shapes end with: the instrument is the one ordered, and the limit sits on
+ * its tick grid and inside the quote. One copy, so the single-leg and spread guards cannot drift.
+ */
+function checkedLimitTick(
+  instrumentPayload: JsonValue,
+  underlying: string,
+  rules: 'option-tick-sizes' | 'tick-sizes',
+  limitPrice: number,
+  bid: number,
+  ask: number,
+): number {
+  const instrument = exactlyOneRecord(instrumentPayload, 'OrderMarketInstrument')
+  if (jsonText(instrument.symbol)?.toUpperCase() !== underlying) throw new OrderMarketError('OrderMarketInstrument:mismatch')
+  const tickSize = tickSizeAt(instrument[rules], limitPrice)
+  if (!isTickAligned(limitPrice, tickSize)) throw offTick(tickSize)
+  if (limitPrice < bid || limitPrice > ask) {
+    throw outsideQuote(bid, ask)
+  }
+  return tickSize
+}
+
 export function orderMarketFromPayloads(
-  action: OrderAction,
+  action: FreshOrderPlacement,
   quotePayload: JsonValue,
   instrumentPayload: JsonValue,
   resolvedOption: EquityOptionContract | undefined,
-  now = new Date(),
+  now: Date,
 ): OrderMarket {
   if (action.kind === 'place_vertical_spread_order') throw new OrderMarketError('OrderMarket:use-spread-market')
   const expectedSymbol = action.kind === 'place_option_order' ? resolvedOption?.symbol : action.symbol
@@ -150,27 +170,18 @@ export function orderMarketFromPayloads(
   }
   const { ask, bid, observed: observedTime } = validatedQuote(quote, now)
 
-  const instrument = exactlyOneRecord(instrumentPayload, 'OrderMarketInstrument')
-  if (jsonText(instrument.symbol)?.toUpperCase() !== (action.kind === 'place_option_order' ? action.underlying : action.symbol)) {
-    throw new OrderMarketError('OrderMarketInstrument:mismatch')
-  }
-  const tickSize = tickSizeAt(
-    action.kind === 'place_option_order' ? instrument['option-tick-sizes'] : instrument['tick-sizes'],
-    action.limitPrice,
-  )
-  if (!isTickAligned(action.limitPrice, tickSize)) throw offTick(tickSize)
-  if (action.limitPrice < bid || action.limitPrice > ask) {
-    throw outsideQuote(bid, ask)
-  }
+  const tickSize = action.kind === 'place_option_order'
+    ? checkedLimitTick(instrumentPayload, action.underlying, 'option-tick-sizes', action.limitPrice, bid, ask)
+    : checkedLimitTick(instrumentPayload, action.symbol, 'tick-sizes', action.limitPrice, bid, ask)
   return { ask, bid, observedAt: new Date(observedTime).toISOString(), tickSize }
 }
 
 export function spreadOrderMarketFromPayloads(
-  action: Extract<OrderAction, { kind: 'place_vertical_spread_order' }>,
+  action: Extract<FreshOrderPlacement, { kind: 'place_vertical_spread_order' }>,
   quotePayload: JsonValue,
   instrumentPayload: JsonValue,
   resolvedOptions: readonly EquityOptionContract[],
-  now = new Date(),
+  now: Date,
 ): OrderMarket {
   if (resolvedOptions.length !== 2) throw new OrderMarketError('OrderMarket:missing-spread-contracts')
   const quotes = recordRows(quotePayload, 'OrderMarketQuote')
@@ -181,19 +192,12 @@ export function spreadOrderMarketFromPayloads(
     if (jsonText(quote?.['instrument-type'] ?? quote?.instrumentType) !== 'Equity Option') {
       throw new OrderMarketError('OrderMarketQuote:invalid-or-stale')
     }
-    const { ask, bid, observed } = validatedQuote(quote, now)
-    return { ask, bid, observed }
+    return validatedQuote(quote, now)
   })
   const bid = Math.round(Math.max(0, parsed[0]!.bid - parsed[1]!.ask) * 1e8) / 1e8
   const ask = Math.round((parsed[0]!.ask - parsed[1]!.bid) * 1e8) / 1e8
   if (ask <= 0 || bid > ask) throw new OrderMarketError('OrderMarketQuote:invalid-spread-market')
-  const instrument = exactlyOneRecord(instrumentPayload, 'OrderMarketInstrument')
-  if (jsonText(instrument.symbol)?.toUpperCase() !== action.underlying) throw new OrderMarketError('OrderMarketInstrument:mismatch')
-  const tickSize = tickSizeAt(instrument['option-tick-sizes'], action.limitPrice)
-  if (!isTickAligned(action.limitPrice, tickSize)) throw offTick(tickSize)
-  if (action.limitPrice < bid || action.limitPrice > ask) {
-    throw outsideQuote(bid, ask)
-  }
+  const tickSize = checkedLimitTick(instrumentPayload, action.underlying, 'option-tick-sizes', action.limitPrice, bid, ask)
   return {
     ask,
     bid,
@@ -204,8 +208,8 @@ export function spreadOrderMarketFromPayloads(
 
 export async function assertOrderMarketSafe(
   env: AppEnv,
-  action: OrderAction,
-  resolvedOptions: readonly EquityOptionContract[] = [],
+  action: FreshOrderPlacement,
+  resolvedOptions: readonly EquityOptionContract[],
   now = new Date(),
 ): Promise<OrderMarket> {
   if (action.kind === 'place_vertical_spread_order') {

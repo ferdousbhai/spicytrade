@@ -8,15 +8,6 @@ export const nyTime = new Intl.DateTimeFormat('en-US', {
   hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York', timeZoneName: 'short',
 })
 
-const nyIsoDay = new Intl.DateTimeFormat('en-CA', {
-  day: '2-digit', month: '2-digit', timeZone: 'America/New_York', year: 'numeric',
-})
-
-/** The New York calendar day of an instant as `YYYY-MM-DD`, comparable with a date-only value. */
-export function nyCalendarDay(instant: Date): string {
-  return nyIsoDay.format(instant)
-}
-
 /**
  * The calendar day of an instant, in New York. For a stored instant only: a date-only value such
  * as a catalyst's day has no time zone to convert from, and is formatted as the day it names.

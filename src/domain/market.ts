@@ -14,7 +14,7 @@ import { type JsonValue } from './json-payload'
 // search, and removal is an owner-only MCP tool absent from any other caller's tool list.
 const WatchlistKindSchema = z.enum(['private', 'public'])
 
-export const WatchlistSchema = z.object({
+const WatchlistSchema = z.object({
   id: z.string(),
   kind: WatchlistKindSchema,
   name: z.string(),
@@ -162,7 +162,7 @@ export type Ticker = z.infer<typeof TickerSchema>
 export type IvTermStructure = z.infer<typeof IvTermStructureSchema>
 export type MarketSnapshot = z.infer<typeof MarketSnapshotSchema>
 export type PublicMarketSnapshot = z.infer<typeof PublicMarketSnapshotSchema>
-export type PublicTicker = z.infer<typeof PublicTickerSchema>
+type PublicTicker = z.infer<typeof PublicTickerSchema>
 
 export function publicTickerFromTicker(ticker: Ticker): PublicTicker {
   return PublicTickerSchema.parse(ticker)

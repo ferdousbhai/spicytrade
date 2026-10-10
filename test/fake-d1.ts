@@ -1,4 +1,3 @@
-import { vi } from 'vitest'
 
 /**
  * Faithful, fully typed D1 stand-ins. Every call on them throws by default, so a test
@@ -47,5 +46,5 @@ export function d1Result<T>(results: T[], changes = 0): D1Result<T> {
  * snapshot. Every call on this throws, so a guard that starts reading one fails loudly.
  */
 export function untouchedDb(): D1Database {
-  return { ...unsupportedDatabase(), prepare: vi.fn(unsupported) }
+  return unsupportedDatabase()
 }

@@ -13,6 +13,13 @@ export function base64Url(bytes: Uint8Array): string {
   return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
 }
 
+/** `byteCount` fresh random bytes in the same alphabet, for codes, states and secrets. */
+export function randomBase64Url(byteCount: number): string {
+  const bytes = new Uint8Array(byteCount)
+  crypto.getRandomValues(bytes)
+  return base64Url(bytes)
+}
+
 export async function sha256Base64Url(value: string): Promise<string> {
   return base64Url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))))
 }

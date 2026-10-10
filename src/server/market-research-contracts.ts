@@ -47,7 +47,7 @@ export const MAX_PRICE_STUDY_PERIOD = MAX_PRICE_HISTORY_RETURNED_ROWS
  * they are averages of these same closes, and a fifth decimal would claim precision the inputs
  * never had. Volume is a count, not a price, and is never rounded.
  */
-export const PRICE_DECIMAL_PLACES = 4
+const PRICE_DECIMAL_PLACES = 4
 const PRICE_ROUNDING_FACTOR = 10 ** PRICE_DECIMAL_PLACES
 
 /** Applied at the serialization boundary only; studies are computed from full-precision rows. */
@@ -188,15 +188,7 @@ export type PriceStudyResult =
  * against 32,123 of result -- half the payload spent restating the shape of a table. The site's
  * own stored year series has always been spaced by index for the same reason.
  */
-export type PriceHistoryColumns = {
-  adjustedClose: number[]
-  close: number[]
-  date: string[]
-  high: number[]
-  low: number[]
-  open: number[]
-  volume: number[]
-}
+export type PriceHistoryColumns = { [Field in keyof PriceHistoryRow]: Array<PriceHistoryRow[Field]> }
 
 /** Restated in every result, beside the columns it governs, for a reader without the tool list. */
 export const PRICE_COLUMN_NOTE

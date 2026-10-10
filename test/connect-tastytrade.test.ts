@@ -48,7 +48,7 @@ async function fakeTools(entries: Record<string, string>): Promise<string> {
   await writeFile(join(directory, 'xdg-open'), `#!/usr/bin/env bash\necho "$1" > '${directory}/opened'\n`)
   await writeFile(join(directory, 'open'), `#!/usr/bin/env bash\necho "$1" > '${directory}/opened'\n`)
   await writeFile(join(directory, 'systemctl'), '#!/usr/bin/env bash\nexit 1\n')
-  for (const tool of ['secret-tool', 'xdg-open', 'open', 'systemctl']) await chmod(join(directory, tool), 0o755)
+  for (const tool of ['xdg-open', 'open', 'systemctl']) await chmod(join(directory, tool), 0o755)
   return directory
 }
 

@@ -109,7 +109,6 @@ const MAX_ITEM_METADATA_CHARS = JSON.stringify({
 }).length
 const MAX_SEED_MEMBERSHIPS_PER_SYMBOL = 2 * MAX_SOURCE_LISTS_PER_KIND
 
-const SymbolSchema = EquitySymbolSchema
 const INTERNAL_WATCHLIST_ORIGINS = [
   'tastytrade-seed',
   // A reader's lookup is the weakest provenance a live path writes: every other live origin
@@ -141,7 +140,7 @@ const InternalWatchlistMutationOriginSchema = InternalWatchlistOriginSchema.excl
 export type InternalWatchlistOrigin = z.infer<typeof InternalWatchlistOriginSchema>
 type InternalWatchlistMutationOrigin = z.infer<typeof InternalWatchlistMutationOriginSchema>
 
-export type InternalWatchlistItem = {
+type InternalWatchlistItem = {
   createdAt: string
   instrumentType: string
   metadata: JsonObject
@@ -165,7 +164,7 @@ function requiredDatabase(env: AppEnv): D1Database {
 }
 
 function normalizedSymbols(symbols: readonly string[]): string[] {
-  return [...new Set(symbols.map((symbol) => SymbolSchema.safeParse(symbol).data).filter((symbol): symbol is string => Boolean(symbol)))]
+  return [...new Set(symbols.map((symbol) => EquitySymbolSchema.safeParse(symbol).data).filter((symbol): symbol is string => Boolean(symbol)))]
 }
 
 /**
@@ -188,7 +187,7 @@ export async function readInternalWatchlistCatalogCandidates(env: AppEnv): Promi
        AND ${equitySymbolSql('upper(broker_symbol)')}
      ORDER BY symbol ASC LIMIT ${MAX_CATALOG_CANDIDATES + 1}`,
   ).all<{ symbol: string }>()
-  const symbols = z.array(z.object({ symbol: SymbolSchema })).max(MAX_CATALOG_CANDIDATES).parse(result.results)
+  const symbols = z.array(z.object({ symbol: EquitySymbolSchema })).max(MAX_CATALOG_CANDIDATES).parse(result.results)
   return symbols.map((row) => row.symbol)
 }
 
@@ -275,7 +274,7 @@ export async function ensureInternalWatchlistSymbols(
     upsertSymbolsStatement(db, normalized, parsedOrigin, timestamp),
     pruneStatement(db),
   ])
-  const kept = await readInternalWatchlistFocus(env, MAX_WATCHLIST_SYMBOLS)
+  const kept = await readInternalWatchlistFocus(env)
   await publishInternalWatchlistUniverse(env, now)
   const retained = new Set(kept)
   return normalized.filter((symbol) => retained.has(symbol))
@@ -301,7 +300,7 @@ const StoredItemSchema = z.object({
   instrument_type: z.string().min(1).max(MAX_PROVIDER_LABEL_LENGTH),
   metadata_json: z.string().max(MAX_ITEM_METADATA_CHARS),
   origin: InternalWatchlistOriginSchema,
-  symbol: SymbolSchema,
+  symbol: EquitySymbolSchema,
   updated_at: z.string().datetime(),
 })
 
@@ -343,14 +342,14 @@ export async function readInternalWatchlistFocus(
     `${RANKED_ITEMS_CTE}
      SELECT symbol FROM ranked ORDER BY ${RANK_ORDER} LIMIT ?`,
   ).bind(limit).all<{ symbol: string }>()
-  return z.array(z.object({ symbol: SymbolSchema })).max(limit).parse(result.results).map((row) => row.symbol)
+  return z.array(z.object({ symbol: EquitySymbolSchema })).max(limit).parse(result.results).map((row) => row.symbol)
 }
 
 export async function readInternalWatchlistSymbolDetails(
   env: AppEnv,
   untrustedSymbol: string,
 ): Promise<InternalWatchlistSymbolDetails | undefined> {
-  const symbol = SymbolSchema.parse(untrustedSymbol)
+  const symbol = EquitySymbolSchema.parse(untrustedSymbol)
   const items = await readInternalWatchlist(env)
   const item = items.find((candidate) => candidate.symbol === symbol)
   if (!item) return undefined

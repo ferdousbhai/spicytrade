@@ -13,9 +13,9 @@ const ClaimsSchema = z.object({
   sub: z.string().min(1),
 })
 
-export type McpAccessTokenClaims = z.infer<typeof ClaimsSchema>
+type McpAccessTokenClaims = z.infer<typeof ClaimsSchema>
 
-export class McpTokenVerificationError extends Error {
+class McpTokenVerificationError extends Error {
   constructor(reason: string) {
     super(reason)
     this.name = 'McpTokenVerificationError'

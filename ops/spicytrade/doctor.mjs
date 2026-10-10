@@ -43,7 +43,7 @@ function report(out) {
       out.write(`✗ ${label}\n    ${fix}\n`)
     },
     get failed() { return failed },
-    note: (label, hint) => out.write(`· ${label}${hint ? `\n    ${hint}` : ''}\n`),
+    note: (label, hint) => out.write(`· ${label}\n    ${hint}\n`),
     pass: (label) => out.write(`✓ ${label}\n`),
   }
 }
@@ -172,6 +172,12 @@ export async function doctor(out = process.stdout) {
     const legacy = client.configured(LEGACY_MCP_SERVER_NAME)
     if (legacy.state === 'configured' && namesSpicytrade(legacy.url)) {
       checks.fail(`${client.name} still has the old ${LEGACY_MCP_SERVER_NAME} entry`, `Replace it with: ${setup}`)
+    }
+    for (const entry of [MCP_SERVER_NAME, LEGACY_MCP_SERVER_NAME]) {
+      const wide = client.everywhere?.configured(entry)
+      if (wide?.state === 'configured' && namesSpicytrade(wide.url)) {
+        checks.fail(`${client.name} loads ${entry} in every folder, not only the trading folder`, `Move it with: ${setup}`)
+      }
     }
   }
 

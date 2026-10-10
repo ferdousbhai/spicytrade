@@ -42,7 +42,7 @@ export function forgetPublicCatalysts(symbol: string): void {
  * arrived in a shape this bundle cannot parse, leaves the symbol's calendar unknown, and a
  * reader is told so rather than shown nothing as though nothing were on it.
  */
-export type PublicCatalystsRead = {
+type PublicCatalystsRead = {
   catalysts: readonly Catalyst[]
   failed: boolean
 }

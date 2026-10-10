@@ -4,7 +4,7 @@ import {
   bindCatalystCandidates,
   type ResearchCatalystCandidate,
 } from '../src/server/research-catalyst-output'
-import { MAX_PAGE_MARKDOWN_CHARS, type RetainedPage } from '../src/server/research-page-retention'
+import { MAX_PAGE_MARKDOWN_CHARS, type ReadPage } from '../src/server/research-page-retention'
 
 const NOW = new Date('2026-08-31T18:00:00.000Z')
 const PAGE_URL = 'https://investors.example.com/events'
@@ -23,8 +23,8 @@ function candidate(overrides: Partial<ResearchCatalystCandidate> = {}): Research
   }
 }
 
-function retained(markdown: string, truncated = false): Map<string, RetainedPage> {
-  return new Map([[PAGE_URL, { markdown, readAt: NOW.toISOString(), truncated }]])
+function retained(markdown: string, truncated = false): Map<string, ReadPage> {
+  return new Map([[PAGE_URL, { markdown, truncated }]])
 }
 
 describe('structured catalyst output binding', () => {

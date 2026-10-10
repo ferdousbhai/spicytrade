@@ -487,7 +487,6 @@ describe('brokerage submission reconciliation', () => {
     function heldPlacement() {
       let answer: (value: JsonValue) => void = () => undefined
       const brokerage = stubBroker()
-      brokerage.resolveAccountNumber.mockResolvedValue('TEST123')
       brokerage.tastyRequest.mockImplementation(async (_env: AppEnv, path: string): Promise<JsonValue> => (
         path.endsWith('/dry-run') ? accepted : new Promise((resolve) => { answer = resolve })
       ))

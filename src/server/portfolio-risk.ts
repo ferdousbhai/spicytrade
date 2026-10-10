@@ -2,23 +2,18 @@ import { type FreshOrderPlacement } from './agent-contracts'
 import { type AppEnv } from './env'
 import { CallerVisibleError } from './caller-visible-error'
 import { type EquityOptionContract } from './option-contract'
-import { type BrokerAccountRef, type BrokerAccountSnapshot } from '../domain/broker'
+import { type BrokerAccountRef, type BrokerAccountSnapshot, type BrokerPosition } from '../domain/broker'
 import { brokerAdapterFor, BrokerSnapshotError, describeSnapshotError } from './brokers'
 import { BrokerCredentialMissingError, type BrokerCredential } from './broker-credential'
 
-interface RiskPosition {
-  direction: 'Long' | 'Short'
-  instrumentType: string
-  quantity: number
-  symbol: string
-}
+type RiskPosition = Pick<BrokerPosition, 'direction' | 'instrumentType' | 'quantity' | 'symbol'>
 
 interface RiskAccount {
   positions: RiskPosition[]
 }
 
 /** A refusal always carries its reason, so the guard never has to invent one. */
-export type PortfolioActionAssessment =
+type PortfolioActionAssessment =
   | { allowed: true }
   | { allowed: false; reason: string }
 

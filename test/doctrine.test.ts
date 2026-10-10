@@ -8,8 +8,8 @@ import { createBrokerageReconciliationTool } from '../src/server/brokerage-recon
 
 /*
  * The doctrine's wording is free to change. What is pinned here is only what no schema, guard,
- * or state machine enforces, and what changes what reaches the reader if it is lost. With Dan
- * gone the doctrine is split: standing posture rides on the server's MCP `instructions`, and a
+ * or state machine enforces, and what changes what reaches the reader if it is lost. The
+ * doctrine is split: standing posture rides on the server's MCP `instructions`, and a
  * rule that belongs to one tool rides on that tool's description, where a model is choosing
  * whether to call it. Each half is pinned where it actually lives.
  */

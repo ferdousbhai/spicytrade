@@ -23,11 +23,10 @@ import {
 } from './market-research-contracts'
 import { ResearchProviderError } from './research-provider'
 import { textResult } from './agent-tool-result'
-import { boundedInteger, calculateStudies, normalizeStudies } from './technical-studies'
+import { calculateStudies, normalizeStudies } from './technical-studies'
 import { boundedYahooFetch } from './yahoo-finance-transport'
-import { CallerVisibleError } from './caller-visible-error'
+import { boundedInteger, CallerVisibleError } from './caller-visible-error'
 
-export type { PriceHistoryProvider, PriceHistoryRow } from './market-research-contracts'
 
 /**
  * Yahoo is intentionally a credential-free, delayed secondary context source.
@@ -42,10 +41,6 @@ type ResearchYahooClient = {
     period1: string
     period2: string
   }): Promise<ChartResultArray>
-}
-
-function dateString(value: Date | null | undefined): string | undefined {
-  return value instanceof Date && Number.isFinite(value.getTime()) ? value.toISOString().slice(0, 10) : undefined
 }
 
 function finite(value: number | null | undefined): number | undefined {
@@ -67,9 +62,9 @@ function yahooSymbol(symbol: string): string {
   return symbol.replaceAll('/', '-')
 }
 
-function createYahooClient(fetcher: typeof fetch = fetch): ResearchYahooClient {
+function createYahooClient(): ResearchYahooClient {
   return new ResearchYahooFinance({
-    fetch: boundedYahooFetch(fetcher),
+    fetch: boundedYahooFetch(),
     queue: { concurrency: 2 },
     suppressNotices: ['yahooSurvey'],
     validation: { logErrors: false, logOptionsErrors: false },
@@ -83,10 +78,14 @@ function invalidHistory(): never {
   throw new ResearchProviderError('invalid-response', 'yahoo')
 }
 
-/** `dateString` already round-trips through `toISOString`, so only the expanded-year form can slip past. */
+/**
+ * A bar's date as `YYYY-MM-DD`. The date already round-trips through `toISOString`, so only the
+ * expanded-year form can slip past the regex.
+ */
 function historyDate(value: Date): string | undefined {
-  const date = dateString(value)
-  return date && ISO_DATE_REGEX.test(date) ? date : undefined
+  if (!(value instanceof Date) || !Number.isFinite(value.getTime())) return undefined
+  const date = value.toISOString().slice(0, 10)
+  return ISO_DATE_REGEX.test(date) ? date : undefined
 }
 
 /**
@@ -209,9 +208,8 @@ function requestedHistoryRange(input: PriceHistoryReadInput, now: Date) {
   if (!isValidIsoDate(endDate)) throw new CallerVisibleError('Price history end date is invalid.')
   const startDate = input.startDate ?? addDays(endDate, -DEFAULT_PRICE_HISTORY_LOOKBACK_DAYS)
   if (!isValidIsoDate(startDate)) throw new CallerVisibleError('Price history start date is invalid.')
-  const start = Date.parse(`${startDate}T00:00:00.000Z`)
-  const end = Date.parse(`${endDate}T00:00:00.000Z`)
-  if (start > end) throw new CallerVisibleError('Price history range is invalid.')
+  // Both are valid YYYY-MM-DD strings, so they compare as the dates they name.
+  if (startDate > endDate) throw new CallerVisibleError('Price history range is invalid.')
   // The last date an inclusive window of the widest allowed span reaches from startDate.
   if (endDate > addDays(startDate, MAX_PRICE_HISTORY_SPAN_DAYS - 1)) {
     throw new CallerVisibleError(`Price history range is longer than ${MAX_PRICE_HISTORY_SPAN_DAYS} calendar days.`)
@@ -222,8 +220,7 @@ function requestedHistoryRange(input: PriceHistoryReadInput, now: Date) {
   return { endDate, startDate }
 }
 
-function historyPeriodKey(date: string, interval: '1d' | '1mo' | '1wk'): string {
-  if (interval === '1d') return date
+function historyPeriodKey(date: string, interval: '1mo' | '1wk'): string {
   if (interval === '1mo') return date.slice(0, 7)
   const monday = new Date(`${date}T00:00:00.000Z`)
   monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7))

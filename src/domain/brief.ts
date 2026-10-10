@@ -15,16 +15,16 @@ import { IsoDateSchema } from './iso-date'
  * Every bound below is a rendering envelope for untrusted model text, not a research limit.
  */
 
-export const BRIEF_DIRECTIONS = ['bullish', 'bearish', 'neutral'] as const
+const BRIEF_DIRECTIONS = ['bullish', 'bearish', 'neutral'] as const
 /**
  * A thesis is untrusted model markdown rendered in full on the brief card, so this is its
  * rendering envelope: room for an argued page, not an essay the card was never laid out for.
  */
 export const MAX_THESIS_LENGTH = 4_096
 /** A trade line is one short line: `NVDA 1/16/26: Buy 150c Sell 170c` is the long case. */
-export const MAX_TRADE_LABEL_LENGTH = 80
+const MAX_TRADE_LABEL_LENGTH = 80
 /** A morning's hot page yields a few dozen links at most; more than this is a sweep, not a reading list. */
-export const MAX_BRIEF_LINKS = 50
+const MAX_BRIEF_LINKS = 50
 /**
  * A headline is the link's text on the brief: one line on a desktop and at most a few wrapped
  * lines at phone width. Longer than this is a page's body, not its headline.
@@ -36,9 +36,9 @@ export const MAX_BRIEF_LINK_TITLE_LENGTH = 200
  */
 export const MAX_BRIEF_LINK_SNIPPET_LENGTH = 500
 /** High conviction only: a brief that argues more names than this is a screener dump. */
-export const MAX_BRIEF_RECOMMENDATIONS = 10
+const MAX_BRIEF_RECOMMENDATIONS = 10
 /** A model id as its runtime names it, one line on the cover beside the date. */
-export const MAX_BRIEF_MODEL_LENGTH = 80
+const MAX_BRIEF_MODEL_LENGTH = 80
 
 export const BriefRecommendationSchema = z.strictObject({
   symbol: EquitySymbolSchema,
@@ -89,7 +89,6 @@ export function dailyBriefId(marketDate: string): string {
   return `brief-${marketDate}`
 }
 
-export type BriefLink = z.infer<typeof BriefLinkSchema>
 export type BriefRecommendation = z.infer<typeof BriefRecommendationSchema>
 export type DailyBriefSubmission = z.infer<typeof DailyBriefSubmissionSchema>
 export type DailyBrief = z.infer<typeof DailyBriefSchema>

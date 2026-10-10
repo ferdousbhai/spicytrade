@@ -1,7 +1,8 @@
 import { type PublicSymbolLookup } from '../domain/market'
+import { errorName, toError } from '../domain/failure'
 import { type AppEnv } from './env'
 import { jsonNoStore, jsonPublic } from './http'
-import { COLD_STORE_RETRY_DELAYS_MS, type PublicSnapshotCache } from './public-snapshot-cache'
+import { COLD_STORE_RETRY_DELAYS_MS, storeEdgeCopy, type PublicSnapshotCache } from './public-snapshot-cache'
 import { searchableQuery } from './symbol-search'
 import { SYMBOL_REFRESH_LEASE_PREFIX } from './tastytrade-market-store'
 import { brokerApi } from './tastytrade'
@@ -29,27 +30,15 @@ function cacheKeyFor(request: Request, query: string): Request {
   return new Request(cacheUrl, { method: 'GET' })
 }
 
-async function store(
-  edgeCache: PublicSnapshotCache,
-  cacheKey: Request,
-  response: Response,
-  retentionSeconds: number,
-): Promise<Response> {
-  const stored = response.clone()
-  stored.headers.set('Cache-Control', `public, max-age=${retentionSeconds}`)
-  try {
-    await edgeCache.put(cacheKey, stored)
-  } catch (error) {
-    console.error('PublicSymbolSearchCacheWriteFailed', error instanceof Error ? error.name : 'UnknownError')
-  }
-  return response
+function store(edgeCache: PublicSnapshotCache, cacheKey: Request, response: Response, retentionSeconds: number): Promise<Response> {
+  return storeEdgeCopy(edgeCache, cacheKey, response, retentionSeconds, 'PublicSymbolSearchCacheWriteFailed')
 }
 
 async function readStored(env: AppEnv, query: string): Promise<PublicSymbolLookup | undefined> {
   try {
     return await brokerApi().lookupStoredMarketSymbol(env, query)
   } catch (error) {
-    console.error('PublicSymbolSearchStoreReadFailed', error instanceof Error ? error.name : 'UnknownError')
+    console.error('PublicSymbolSearchStoreReadFailed', errorName(toError(error)))
     return undefined
   }
 }
@@ -97,6 +86,16 @@ async function lookupHoldingClaim(
   return await store(edgeCache, cacheKey, jsonPublic(lookup), FOUND_RETENTION_SECONDS)
 }
 
+/** The edge copy, if any; a cache that fails to answer is logged and treated as a miss. */
+async function readEdgeCopy(edgeCache: PublicSnapshotCache, cacheKey: Request): Promise<Response | undefined> {
+  try {
+    return await edgeCache.match(cacheKey)
+  } catch (error) {
+    console.error('PublicSymbolSearchCacheReadFailed', errorName(toError(error)))
+    return undefined
+  }
+}
+
 /**
  * Give the one caller that won the claim time to land its answer, then read it: the edge copy
  * first, which also carries a search that matched nothing, then the store, which a winner in
@@ -113,12 +112,8 @@ async function awaitClaimWinner(
 ): Promise<Response | undefined> {
   for (const delay of COLD_STORE_RETRY_DELAYS_MS) {
     await new Promise((resolve) => setTimeout(resolve, delay))
-    try {
-      const cached = await edgeCache.match(cacheKey)
-      if (cached) return cached
-    } catch (error) {
-      console.error('PublicSymbolSearchCacheReadFailed', error instanceof Error ? error.name : 'UnknownError')
-    }
+    const cached = await readEdgeCopy(edgeCache, cacheKey)
+    if (cached) return cached
     const stored = await readStored(env, query)
     if (stored) return await store(edgeCache, cacheKey, jsonPublic(stored), FOUND_RETENTION_SECONDS)
     const claimedAt = await claimLookup(env, leaseId)
@@ -135,12 +130,8 @@ export async function servePublicSymbolSearch(
   const query = searchableQuery(new URL(request.url).searchParams.get('q') ?? '')
   if (!query) return jsonNoStore({ error: 'Search for a symbol or a company name' }, { status: 400 })
   const cacheKey = cacheKeyFor(request, query)
-  try {
-    const stored = await edgeCache.match(cacheKey)
-    if (stored) return stored
-  } catch (error) {
-    console.error('PublicSymbolSearchCacheReadFailed', error instanceof Error ? error.name : 'UnknownError')
-  }
+  const cached = await readEdgeCopy(edgeCache, cacheKey)
+  if (cached) return cached
 
   // A symbol anyone has already searched is in the store, so losing the claim still answers, and
   // so does a live lookup that fails. Read once: the failure path reuses this answer.
@@ -156,7 +147,7 @@ export async function servePublicSymbolSearch(
     if (awaited) return awaited
     return jsonNoStore({ error: 'Symbol search is busy; try again' }, { status: 503 })
   } catch (error) {
-    console.error('PublicSymbolSearchUnavailable', error instanceof Error ? error.name : 'UnknownError')
+    console.error('PublicSymbolSearchUnavailable', errorName(toError(error)))
     if (stored) return jsonPublic(stored)
     return jsonNoStore({ error: 'Symbol search is temporarily unavailable' }, { status: 503 })
   }

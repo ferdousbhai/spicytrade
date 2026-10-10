@@ -8,7 +8,7 @@ import { type AppEnv } from './env'
  * broker that answered. The account number stays behind the adapter: nothing above this line
  * reads it, and a field no reader needs is one more place it could leak from.
  */
-export type BrokerageContext = BrokerAccountSnapshot & {
+type BrokerageContext = BrokerAccountSnapshot & {
   source: BrokerId
 }
 

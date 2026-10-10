@@ -54,20 +54,19 @@ export function updateCandleSeries(
 export function reconcileCandleSeries(
   current: readonly CandlePoint[],
   incoming: readonly CandlePoint[],
-  limit = MAX_INTRADAY_CANDLES,
 ): CandlePoint[] {
-  if (!current.length) return incoming.slice(-limit)
-  if (!incoming.length) return current.slice(-limit)
+  if (!current.length) return incoming.slice(-MAX_INTRADAY_CANDLES)
+  if (!incoming.length) return current.slice(-MAX_INTRADAY_CANDLES)
 
   const currentLatest = current[current.length - 1]!
   const incomingLatest = incoming[incoming.length - 1]!
-  if (incomingLatest.time <= currentLatest.time) return current.slice(-limit)
-  return (incoming.length >= current.length ? incoming : current).slice(-limit)
+  if (incomingLatest.time <= currentLatest.time) return current.slice(-MAX_INTRADAY_CANDLES)
+  return (incoming.length >= current.length ? incoming : current).slice(-MAX_INTRADAY_CANDLES)
 }
 
 export type CandleFrame = CandlePoint & { eventFlags: number }
 
-export type CandleSnapshotResult =
+type CandleSnapshotResult =
   /** No snapshot is open, so the point is an ordinary live update the caller owns. */
   | { status: 'live' }
   /** The point joined an open snapshot that has not finished arriving. */

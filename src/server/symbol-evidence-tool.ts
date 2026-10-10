@@ -58,19 +58,15 @@ const EvidenceParameters = Type.Object({
 
 const EvidenceValidator = Compile(EvidenceParameters)
 
-export type EvidenceRecording =
+type EvidenceRecording =
   | { id: string; status: 'recorded'; symbol: string }
   | { rejected: string[]; status: 'rejected' }
-
-export interface RecordEvidenceOptions {
-  now?: Date
-}
 
 export async function recordSymbolEvidence(
   env: AppEnv,
   recordedByUserId: string,
   untrustedEvidence: JsonValue,
-  options: RecordEvidenceOptions = {},
+  requestedNow?: Date,
 ): Promise<EvidenceRecording> {
   const browser = env.BROWSER
   // Without page reading the quote cannot be bound, so nothing may be written. Fail closed.
@@ -79,7 +75,7 @@ export async function recordSymbolEvidence(
   if (!db) throw new CallerVisibleError('SymbolEvidenceStoreUnavailable')
   // A card is a row that needs a name behind it, and the caller's is the one the token carries.
   if (!recordedByUserId) throw new CallerVisibleError('SymbolEvidence:unidentified-caller')
-  const now = options.now ?? new Date()
+  const now = requestedNow ?? new Date()
   // Re-parsed at the trust boundary whatever the transport already checked.
   const evidence = EvidenceValidator.Parse(untrustedEvidence)
 
@@ -96,7 +92,7 @@ export async function recordSymbolEvidence(
   if (withoutWords) return { rejected: [withoutWords], status: 'rejected' }
 
   // The one read path every citation surface goes through.
-  const { rejected, retained } = await retainCitedPages(browser, [{ sourceUrl }], [0], now.toISOString())
+  const { rejected, retained } = await retainCitedPages(browser, [{ sourceUrl }], [0])
   if (rejected.length) return { rejected, status: 'rejected' }
   const page = retained.get(sourceUrl)
   // Unreachable while canonicalization is idempotent; refused rather than bound to nothing.

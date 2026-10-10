@@ -4,7 +4,7 @@ import { z } from 'zod'
 
 import { grantMinter, TastytradeAuthError } from './broker-grants.mjs'
 import {
-  cliCommand, LISTEN_HOST, PROXY_PORT, storeCredentialsCommand, UPSTREAM,
+  cliCommand, LISTEN_HOST, PROXY_PORT, PROXY_URL, storeCredentialsCommand, UPSTREAM,
 } from './config.mjs'
 import { agentToken, APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, REFRESH_TOKEN_KEY, TASTYTRADE, tastytradeCredentialKind } from './keyring.mjs'
 import { tokenRetiresAt, UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
@@ -25,14 +25,10 @@ import { tokenRetiresAt, UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
  * It is also why the 15-minute lifetime never surfaces: tastytrade sets it and it cannot be
  * raised, but re-minting happens here, ahead of expiry, so a long session never re-authenticates.
  *
- * A tastytrade credential comes in one of two kinds, told apart by the keyring entries present:
- *   personal grant  `client-secret` + `refresh-token`, from the member's own OAuth app; minted
- *                   directly against tastytrade.
- *   app grant       `app-refresh-token`, from `connect-tastytrade.mjs` under spicytrade's OAuth app,
- *                   whose client secret only the Worker holds; minted through the Worker.
- * Either way only the 15-minute access token is attached to forwarded requests. A keyring holding
- * both is refused rather than resolved by a precedence rule: which account the agent trades
- * would otherwise turn on an ordering nobody chose.
+ * A tastytrade credential comes in one of two kinds, a personal grant or an app grant (see
+ * `keyring.mjs`). Either way only the 15-minute access token is attached to forwarded requests.
+ * A keyring holding both is refused rather than resolved by a precedence rule: which account the
+ * agent trades would otherwise turn on an ordering nobody chose.
  */
 
 /** The only broker with an adapter that can place orders; also its keyring service name. */
@@ -49,7 +45,7 @@ let cachedAccess
 async function brokerAccessToken(mint) {
   if (cachedAccess && Date.now() < cachedAccess.expiresAt) return cachedAccess.token
   const { lifetimeSeconds, token } = await mint()
-  cachedAccess = { expiresAt: tokenRetiresAt(Date.now(), lifetimeSeconds * 1_000, UPSTREAM_TIMEOUT_MS), token }
+  cachedAccess = { expiresAt: tokenRetiresAt(Date.now(), lifetimeSeconds * 1_000), token }
   return token
 }
 
@@ -170,13 +166,12 @@ async function main() {
     process.stderr.write(`${PROGRAM}: no brokerage credential in the keyring; forwarding market tools only\n`)
   }
 
-  const port = PROXY_PORT
   // DNS rebinding: a web page can resolve its own name to 127.0.0.1 and reach this port from the
   // browser, and every request here leaves carrying the spicytrade token and a broker token. A
   // browser always sends that page's name as Host, and sends Origin on a cross-origin request;
   // an MCP client does neither, so a request naming any other host, or carrying an Origin at
   // all, is refused before anything is attached.
-  const allowedHosts = new Set([`${LISTEN_HOST}:${port}`, `localhost:${port}`])
+  const allowedHosts = new Set([`${LISTEN_HOST}:${PROXY_PORT}`, `localhost:${PROXY_PORT}`])
 
   const server = createServer((request, response) => {
     if (!allowedHosts.has(request.headers.host ?? '') || request.headers.origin !== undefined) {
@@ -264,8 +259,8 @@ async function main() {
 
   // Loopback only. This process holds a credential that grants trading, so it must never be
   // reachable from the network, only from processes on this machine.
-  server.listen(port, LISTEN_HOST, () => {
-    process.stdout.write(`${PROGRAM}: http://${LISTEN_HOST}:${port}/mcp -> ${UPSTREAM}\n`)
+  server.listen(PROXY_PORT, LISTEN_HOST, () => {
+    process.stdout.write(`${PROGRAM}: ${PROXY_URL} -> ${UPSTREAM}\n`)
   })
 }
 

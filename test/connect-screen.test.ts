@@ -34,7 +34,8 @@ describe('Connect screen copy', () => {
     expect(html).toContain('./ops/spicytrade/spicytrade.mjs setup')
     expect(html).toContain('./ops/spicytrade/spicytrade.mjs doctor')
     // The manual steps stay documented beneath it, for a machine the command does not fit.
-    expect(html).toContain('claude mcp add --transport http spicytrade http://127.0.0.1:8787/mcp')
+    // From the trading folder, so account tools load there and not in every session.
+    expect(html).toContain('mkdir -p ~/trading &amp;&amp; cd ~/trading &amp;&amp; claude mcp add --transport http spicytrade http://127.0.0.1:8787/mcp')
     expect(html).toContain('./ops/spicytrade/store-credentials.sh mcp-token')
     expect(html).toContain('./ops/spicytrade/store-credentials.sh tastytrade')
     // spicytrade's tastytrade app is the usual way; a personal grant stays documented beside it.

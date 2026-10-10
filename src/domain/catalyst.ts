@@ -122,11 +122,6 @@ const CONFIDENCE_PRIORITY = {
   estimated: 1,
 } satisfies Record<Catalyst['confidence'], number>
 
-/** Soonest date first, then by kind priority; each caller adds its own final tiebreak. */
-function compareCatalystSchedule(left: Catalyst, right: Catalyst): number {
-  return left.date.localeCompare(right.date) || KIND_PRIORITY[left.kind] - KIND_PRIORITY[right.kind]
-}
-
 /**
  * Which of two sightings of the same event a reader is shown. A confirmed row beats an
  * estimated one, whichever producer wrote it; among rows of equal confidence the more recent
@@ -141,8 +136,11 @@ function compareCatalystStanding(left: Catalyst, right: Catalyst): number {
     || left.id.localeCompare(right.id)
 }
 
+/** Soonest date first, then by kind priority, then by standing. */
 function compareCatalystOrder(left: Catalyst, right: Catalyst): number {
-  return compareCatalystSchedule(left, right) || compareCatalystStanding(left, right)
+  return left.date.localeCompare(right.date)
+    || KIND_PRIORITY[left.kind] - KIND_PRIORITY[right.kind]
+    || compareCatalystStanding(left, right)
 }
 
 /**
@@ -170,7 +168,7 @@ export function distinctCatalysts(catalysts: readonly Catalyst[]): Catalyst[] {
 /** One pass that indexes the next dated event for every symbol at once. */
 export function nextCatalystsBySymbol(
   catalysts: readonly Catalyst[],
-  now = new Date(),
+  now: Date,
 ): ReadonlyMap<string, Catalyst> {
   const today = marketDate(now)
   const next = new Map<string, Catalyst>()
@@ -182,14 +180,14 @@ export function nextCatalystsBySymbol(
   return next
 }
 
-function daysUntilCatalyst(catalyst: Catalyst, now = new Date()): number {
+function daysUntilCatalyst(catalyst: Catalyst, now: Date): number {
   return epochDay(catalyst.date) - epochDay(marketDate(now))
 }
 
 export function upcomingCatalystsForSymbol(
   symbol: string,
   catalysts: readonly Catalyst[],
-  now = new Date(),
+  now: Date,
 ): Catalyst[] {
   const today = marketDate(now)
   return distinctCatalysts(catalysts.filter(
@@ -207,13 +205,13 @@ const CATALYST_NEAR_TERM_DAYS = 30
 export function hasNearTermCatalyst(
   symbol: string,
   catalysts: readonly Catalyst[],
-  now = new Date(),
+  now: Date,
 ): boolean {
   const horizon = addDays(marketDate(now), CATALYST_NEAR_TERM_DAYS)
   return upcomingCatalystsForSymbol(symbol, catalysts, now).some((catalyst) => catalyst.date <= horizon)
 }
 
-export function catalystLabel(catalyst: Catalyst, now = new Date()): string {
+export function catalystLabel(catalyst: Catalyst, now: Date): string {
   const days = daysUntilCatalyst(catalyst, now)
   const event = ({
     earnings: 'EARN', 'investor-event': 'INVESTOR', 'product-event': 'PRODUCT', regulatory: 'REG',
@@ -255,7 +253,7 @@ export const CATALYST_KIND_NAMES: readonly string[] = CatalystKindSchema.options
   .sort((left, right) => KIND_PRIORITY[left] - KIND_PRIORITY[right])
   .map((kind) => KIND_NAMES[kind])
 
-export function catalystCountdown(catalyst: Catalyst, now = new Date()): string {
+export function catalystCountdown(catalyst: Catalyst, now: Date): string {
   const days = daysUntilCatalyst(catalyst, now)
   return days <= 0 ? 'TODAY' : `${days}D`
 }

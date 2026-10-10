@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import { EquitySymbolSchema, isTradeableInstrument } from '../domain/instrument'
 import { type CatalystRefresh } from '../domain/catalyst'
+import { errorName, toError } from '../domain/failure'
 import { type CatalystProvider, persistResearchCatalysts } from './catalysts'
 import { EXA_REQUEST_TIMEOUT_MS, runExaCatalystSearch } from './catalyst-research-exa'
 import { PAGE_NAVIGATION_TIMEOUT_MS } from './research-page-retention'
@@ -165,7 +166,7 @@ async function recordRun(
  * threw, and a refusal held back by an earlier failure's backoff, and a reader must see those
  * the same. A caller budgeting searches must not, so this stays server-side and off the wire.
  */
-export type CatalystRefreshAttempt = { claimed: boolean; refresh: CatalystRefresh }
+type CatalystRefreshAttempt = { claimed: boolean; refresh: CatalystRefresh }
 
 /**
  * Run a catalyst search for one symbol unless one was already run for it inside the refresh
@@ -225,8 +226,8 @@ export async function attemptCatalystRefresh(
   } catch (error) {
     // The log line carries the error's name only; the private receipt keeps the message, which
     // is where an owner reconciling a failed run looks.
-    console.error('CatalystRefreshFailed', error instanceof Error ? error.name : 'UnknownError')
-    await recordRun(db, symbol, now, 'failed', 0, error instanceof Error ? error.message : 'UnknownError')
+    console.error('CatalystRefreshFailed', errorName(toError(error)))
+    await recordRun(db, symbol, now, 'failed', 0, toError(error)?.message ?? 'UnknownError')
     return { claimed: true, refresh: { catalysts: [], ran: false, reason: 'failed' } }
   }
 }

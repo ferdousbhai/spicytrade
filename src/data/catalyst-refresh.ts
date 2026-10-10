@@ -66,11 +66,14 @@ function record(symbol: string, refresh: CatalystRefresh): void {
   // A search that ran may have moved a date this browser already holds a copy of, and the copy
   // has no expiry. Only what the search bound comes back here, so the rest of the symbol's
   // calendar is re-read rather than patched: the server is what knows which sighting is current.
-  if (refresh.ran) forgetPublicCatalysts(symbol)
   // Only a search that actually ran can say the calendar is empty. A refusal leaves the
   // question open, so the reader is not told nothing is coming on the strength of a receipt.
-  if (refresh.ran) searched.add(symbol)
-  else searched.delete(symbol)
+  if (refresh.ran) {
+    forgetPublicCatalysts(symbol)
+    searched.add(symbol)
+  } else {
+    searched.delete(symbol)
+  }
   // A failed search releases the symbol's one request for this session, so the next ask -- the
   // window regaining focus, or another look -- tries again rather than leaving the calendar
   // unknown until reload. The server holds a failed receipt for its own retry backoff, so these
@@ -115,7 +118,7 @@ async function forceCatalystSearch(symbol: string): Promise<void> {
   }
 }
 
-export type CatalystSearchState = {
+type CatalystSearchState = {
   catalysts: readonly Catalyst[]
   /** True once a search has run and bound nothing, which is not the same as never having looked. */
   confirmedEmpty: boolean

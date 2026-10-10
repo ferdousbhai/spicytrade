@@ -12,7 +12,7 @@ import { CallerVisibleError } from '../src/server/caller-visible-error'
 import { type JsonValue } from '../src/domain/json-payload'
 
 describe('brokerage input boundary', () => {
-  it('accepts a fully specified, bounded option order draft', () => {
+  it('accepts a fully specified option order', () => {
     expect(OrderPlacementSchema.parse({
       kind: 'place_option_order', underlying: 'SPY', optionType: 'C', strike: 700,
       expiry: '2026-09-18', action: 'Buy to Open', quantity: 1, limitPrice: 5.2,
@@ -53,7 +53,7 @@ describe('brokerage input boundary', () => {
       .toBe('replace_order')
   })
 
-  it('rejects unbounded or incomplete order drafts', () => {
+  it('rejects incomplete or inconsistent orders', () => {
     expect(() => OrderPlacementSchema.parse({
       kind: 'place_option_order', underlying: 'SPY', optionType: 'C', strike: 700,
       expiry: 'tomorrow', action: 'Buy to Open', quantity: 1_000, limitPrice: -1,

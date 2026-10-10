@@ -5,7 +5,7 @@ import { type JsonValue } from '../domain/json-payload'
 import { applyLiveMarketEvent, type SnapshotAudience } from './collections'
 import { CLIENT_HEARTBEAT_MS, MarketFeedStatusSchema } from '../server/market-feed-contracts'
 
-export type LiveFeedIndicator = 'live' | 'snapshot'
+type LiveFeedIndicator = 'live' | 'snapshot'
 
 let indicator: LiveFeedIndicator = 'snapshot'
 const listeners = new Set<() => void>()

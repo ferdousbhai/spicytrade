@@ -16,6 +16,8 @@ import { CopyBlock } from './copy-block'
 import { MCP_ENDPOINT } from '../domain/site'
 
 const PROXY_URL = 'http://127.0.0.1:8787/mcp'
+/** The default of `TRADING_DIR` in `ops/spicytrade/config.mjs`, the one folder Claude Code loads the proxy in. */
+const TRADING_DIR = '~/trading'
 /** The name every client's config knows the server by; `spicytrade setup` adds it under this too. */
 const MCP_SERVER_NAME = 'spicytrade'
 const addCommands = (url: string) => ({
@@ -225,7 +227,11 @@ export function ConnectScreen({ owner }: { owner: boolean }) {
   // nobody ever reaches it.
   const publicCommand = addCommands(MCP_ENDPOINT)[client]
   // No Authorization header: the proxy attaches the keyring token so the agent holds none.
-  const proxyCommand = addCommands(PROXY_URL)[client]
+  // Claude Code adds at local scope by default, so the command runs from the trading folder
+  // `spicytrade setup` uses: account tools load there, not in every session or in a checkout.
+  const proxyCommand = client === 'claude'
+    ? `mkdir -p ${TRADING_DIR} && cd ${TRADING_DIR} && ${addCommands(PROXY_URL).claude}`
+    : addCommands(PROXY_URL)[client]
 
   return (
     <section className="connect-screen">

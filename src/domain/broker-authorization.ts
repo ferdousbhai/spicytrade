@@ -30,8 +30,8 @@ export const MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER = 3
  * allocates below the unprivileged range, so anything under 1024 is not a port this flow ever
  * produces; 65535 is the largest TCP port.
  */
-export const MIN_LOOPBACK_PORT = 1024
-export const MAX_LOOPBACK_PORT = 65_535
+const MIN_LOOPBACK_PORT = 1024
+const MAX_LOOPBACK_PORT = 65_535
 
 /**
  * The `state` value is 32 random bytes in base64url: unguessable, and the only thing the
@@ -41,8 +41,11 @@ export const BROKER_AUTHORIZATION_STATE_BYTES = 32
 const STATE_LENGTH = Math.ceil(BROKER_AUTHORIZATION_STATE_BYTES * 4 / 3)
 export const BrokerAuthorizationStateSchema = z.string().regex(new RegExp(`^[A-Za-z0-9_-]{${STATE_LENGTH}}$`))
 
+/** A loopback port a CLI posts as a number. */
+export const LoopbackPortSchema = z.number().int().min(MIN_LOOPBACK_PORT).max(MAX_LOOPBACK_PORT)
+
 export const BrokerAuthorizeRequestSchema = z.strictObject({
-  port: z.number().int().min(MIN_LOOPBACK_PORT).max(MAX_LOOPBACK_PORT),
+  port: LoopbackPortSchema,
 })
 
 export const BrokerExchangeRequestSchema = z.strictObject({

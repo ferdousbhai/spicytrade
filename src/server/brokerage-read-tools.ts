@@ -1,5 +1,6 @@
 import { type AgentTool } from '../domain/agent-tool'
-import { MAX_EQUITY_SYMBOL_LENGTH } from '../domain/instrument'
+import { BROKER_SYMBOL_MAX_LENGTH } from '../domain/broker'
+import { EQUITY_SYMBOL_REGEX, MAX_EQUITY_SYMBOL_LENGTH } from '../domain/instrument'
 
 import { type AppEnv } from './env'
 import {
@@ -10,7 +11,6 @@ import {
   DEFAULT_ORDER_HISTORY_DAYS,
   DEFAULT_SEARCH_RESULTS,
   DEFAULT_TRANSACTION_HISTORY_DAYS,
-  EQUITY_SYMBOL,
   InstrumentQuoteReadParameters,
   MAX_CHAIN_ROWS,
   MAX_HISTORY_ITEMS,
@@ -43,7 +43,7 @@ import {
 } from './brokerage-read-contracts'
 import { jsonObject, type JsonObject } from '../domain/json-payload'
 import { isValidIsoDate } from '../domain/iso-date'
-import { tupleKey } from '../domain/equity-option'
+import { distinctTuples } from '../domain/equity-option'
 import {
   invalidResponse,
   itemEnvelope,
@@ -68,7 +68,7 @@ import {
 } from './brokers'
 import { loadBrokerageContext } from './brokerage-context'
 import { type BrokerCredential } from './broker-credential'
-import { CallerVisibleError } from './caller-visible-error'
+import { boundedInteger, CallerVisibleError } from './caller-visible-error'
 import { FIND_OPTION_CONTRACTS_MODES } from './doctrine'
 import { tickerSymbolArgument, tickerSymbolsArgument } from './ticker-arguments'
 
@@ -77,13 +77,6 @@ function dateDaysAgo(now: Date, days: number): string {
   result.setUTCDate(result.getUTCDate() - days)
   if (!Number.isFinite(result.getTime())) throw new CallerVisibleError('Account history days is invalid.')
   return result.toISOString().slice(0, 10)
-}
-
-function assertInteger(value: number, minimum: number, maximum: number | undefined, label: string): number {
-  if (!Number.isSafeInteger(value) || value < minimum || maximum !== undefined && value > maximum) {
-    throw new CallerVisibleError(`${label} is invalid.`)
-  }
-  return value
 }
 
 function requestedSnapshotParts(include: AccountSnapshotReadInput['include']): readonly AccountSnapshotPart[] {
@@ -106,7 +99,7 @@ function requestedSnapshotParts(include: AccountSnapshotReadInput['include']): r
  */
 export async function readAccountSnapshot(
   env: AppEnv,
-  input: AccountSnapshotReadInput = {},
+  input: AccountSnapshotReadInput,
   credential: BrokerCredential | undefined,
 ): Promise<AccountSnapshotReadResult> {
   const parts = requestedSnapshotParts(input.include)
@@ -140,9 +133,9 @@ export async function readAccountHistory(
     throw new CallerVisibleError('transactionType is valid only for transaction history.')
   }
   const defaultDays = input.type === 'transactions' ? DEFAULT_TRANSACTION_HISTORY_DAYS : DEFAULT_ORDER_HISTORY_DAYS
-  const days = assertInteger(input.days ?? defaultDays, 0, undefined, 'Account history days')
-  const limit = assertInteger(input.limit ?? DEFAULT_HISTORY_ITEMS, 1, MAX_HISTORY_ITEMS, 'Account history limit')
-  const pageOffset = assertInteger(input.pageOffset ?? 0, 0, undefined, 'Account history page offset')
+  const days = boundedInteger(input.days, defaultDays, 0, Number.MAX_SAFE_INTEGER, 'Account history days')
+  const limit = boundedInteger(input.limit, DEFAULT_HISTORY_ITEMS, 1, MAX_HISTORY_ITEMS, 'Account history limit')
+  const pageOffset = boundedInteger(input.pageOffset, 0, 0, Number.MAX_SAFE_INTEGER, 'Account history page offset')
   const underlyingSymbol = input.underlyingSymbol?.trim().toUpperCase()
   if (underlyingSymbol && !UNDERLYING_SYMBOL.test(underlyingSymbol)) throw new CallerVisibleError('Account history underlying symbol is invalid.')
   if (input.transactionType !== undefined && input.transactionType !== 'Trade' && input.transactionType !== 'Money Movement') {
@@ -187,7 +180,7 @@ function optionalCapitalization(row: JsonObject, label: string): number | undefi
 function compactMetric(row: JsonObject): CompactMarketMetric {
   const label = 'Tastytrade market metrics'
   const symbol = requiredText(row, ['symbol'], label, MAX_EQUITY_SYMBOL_LENGTH).toUpperCase()
-  if (!EQUITY_SYMBOL.test(symbol)) return invalidResponse(label)
+  if (!EQUITY_SYMBOL_REGEX.test(symbol)) return invalidResponse(label)
   const rawEarnings = row.earnings
   let earnings: JsonObject | undefined
   if (rawEarnings !== undefined && rawEarnings !== null) earnings = jsonObject(rawEarnings) ?? invalidResponse(label)
@@ -224,7 +217,7 @@ export async function readMarketMetrics(
   now = new Date(),
 ): Promise<MarketMetricsReadResult> {
   const symbols = [...new Set(requestedSymbols.map((symbol) => symbol.trim().toUpperCase()))]
-  if (symbols.length < 1 || symbols.length > MAX_MARKET_SYMBOLS || symbols.some((symbol) => !EQUITY_SYMBOL.test(symbol))) {
+  if (symbols.length < 1 || symbols.length > MAX_MARKET_SYMBOLS || symbols.some((symbol) => !EQUITY_SYMBOL_REGEX.test(symbol))) {
     throw new CallerVisibleError('Market metric symbols are invalid.')
   }
   const query = symbols.map(encodeURIComponent).join(',')
@@ -241,7 +234,7 @@ export async function readMarketMetrics(
   }
   return {
     asOf: now.toISOString(),
-    metrics: symbols.flatMap((symbol) => bySymbol.has(symbol) ? [bySymbol.get(symbol)!] : []),
+    metrics: symbols.flatMap((symbol) => bySymbol.get(symbol) ?? []),
     missingSymbols: symbols.filter((symbol) => !bySymbol.has(symbol)),
     source: 'tastytrade',
     volatilityUnit: 'percentage_points',
@@ -266,7 +259,7 @@ function quoteFromRecord(
   underlying?: string,
 ) {
   const label = 'Tastytrade market quote'
-  const symbol = requiredText(row, ['symbol'], label, 128)
+  const symbol = requiredText(row, ['symbol'], label, BROKER_SYMBOL_MAX_LENGTH)
   const responseType = requiredText(row, ['instrumentType', 'instrument-type'], label, 64)
   if (symbol !== expectedSymbol || responseType !== instrumentType) return invalidResponse(label)
   const bid = optionalNumber(row, ['bid'], label)
@@ -298,11 +291,11 @@ export async function readInstrumentQuotes(
   const symbols = [...new Set((input.symbols ?? []).map((symbol) => symbol.trim().toUpperCase()))]
   // Two identical tuples resolve to one OCC symbol and one quote row; counted twice they read
   // as a broker that answered short.
-  const contracts = [...new Map((input.contracts ?? []).map((contract) => [tupleKey(contract), contract])).values()]
+  const contracts = distinctTuples(input.contracts ?? [])
   if ((!symbols.length && !contracts.length)
     || symbols.length + contracts.length > MAX_QUOTE_INSTRUMENTS
-    || symbols.some((symbol) => !EQUITY_SYMBOL.test(symbol))
-    || contracts.some((contract) => !EQUITY_SYMBOL.test(contract.underlying)
+    || symbols.some((symbol) => !EQUITY_SYMBOL_REGEX.test(symbol))
+    || contracts.some((contract) => !EQUITY_SYMBOL_REGEX.test(contract.underlying)
       || !isValidIsoDate(contract.expiry)
       || (contract.optionType !== 'C' && contract.optionType !== 'P')
       || !Number.isFinite(contract.strike)
@@ -319,7 +312,7 @@ export async function readInstrumentQuotes(
     'Tastytrade market quote',
     MAX_QUOTE_INSTRUMENTS,
   )
-  const bySymbol = new Map(envelope.rows.map((row) => [requiredText(row, ['symbol'], 'Tastytrade market quote', 128), row]))
+  const bySymbol = new Map(envelope.rows.map((row) => [requiredText(row, ['symbol'], 'Tastytrade market quote', BROKER_SYMBOL_MAX_LENGTH), row]))
   const requested = [
     ...symbols.map((symbol) => ({ instrumentType: 'Equity' as const, symbol })),
     ...resolvedContracts.map((contract) => ({
@@ -343,12 +336,12 @@ export async function readInstrumentQuotes(
 export async function searchSymbols(
   env: AppEnv,
   requestedQuery: string,
-  requestedLimit = DEFAULT_SEARCH_RESULTS,
+  requestedLimit?: number,
   now = new Date(),
 ): Promise<SymbolSearchResult> {
   const query = requestedQuery.trim()
   if (!isSymbolSearchQuery(query)) throw new SymbolSearchQueryError()
-  const limit = assertInteger(requestedLimit, 1, MAX_SEARCH_RESULTS, 'Symbol search limit')
+  const limit = boundedInteger(requestedLimit, DEFAULT_SEARCH_RESULTS, 1, MAX_SEARCH_RESULTS, 'Symbol search limit')
   const envelope = itemEnvelope(
     await brokerApi().tastyRequest(env, `/symbols/search/${encodeURIComponent(query)}`),
     'Tastytrade symbol search',
@@ -402,7 +395,7 @@ function parseActiveStandardOption(row: JsonObject, underlying: string): ParsedO
     return invalidResponse(label)
   }
   return {
-    brokerSymbol: requiredText(row, ['symbol'], label, 128),
+    brokerSymbol: requiredText(row, ['symbol'], label, BROKER_SYMBOL_MAX_LENGTH),
     expirationDate,
     isClosingOnly: optionalBoolean(row, ['is-closing-only'], label),
     optionType,
@@ -444,7 +437,6 @@ async function readOptionActivity(
   symbols: readonly string[],
 ): Promise<Map<string, OptionActivity>> {
   const activity = new Map<string, OptionActivity>()
-  if (!symbols.length) return activity
   const label = 'Tastytrade option activity'
   for (let start = 0; start < symbols.length; start += BROKER_SYMBOL_CHUNK_SIZE) {
     const chunk = symbols.slice(start, start + BROKER_SYMBOL_CHUNK_SIZE)
@@ -457,7 +449,7 @@ async function readOptionActivity(
     const requested = new Set(chunk)
     const seen = new Set<string>()
     for (const row of envelope.rows) {
-      const symbol = requiredText(row, ['symbol'], label, 128)
+      const symbol = requiredText(row, ['symbol'], label, BROKER_SYMBOL_MAX_LENGTH)
       if (!requested.has(symbol)) continue
       if (seen.has(symbol) || activity.has(symbol)) return invalidResponse(label)
       seen.add(symbol)
@@ -479,7 +471,7 @@ export async function findOptionContracts(
   now = new Date(),
 ): Promise<OptionContractFindResult> {
   const underlying = input.underlying.trim().toUpperCase()
-  if (!EQUITY_SYMBOL.test(underlying)) throw new CallerVisibleError('Option underlying is invalid.')
+  if (!EQUITY_SYMBOL_REGEX.test(underlying)) throw new CallerVisibleError('Option underlying is invalid.')
   if (input.expiry !== undefined && !isValidIsoDate(input.expiry)) throw new CallerVisibleError('Option expiry is invalid.')
   if (input.optionType !== undefined && input.optionType !== 'C' && input.optionType !== 'P') {
     throw new CallerVisibleError('Option type is invalid.')

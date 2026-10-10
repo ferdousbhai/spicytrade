@@ -100,7 +100,7 @@ function requireDirectionalPriceEffect(
   }
 }
 
-export const FreshOrderPlacementSchema = z.discriminatedUnion('kind', [
+const FreshOrderPlacementSchema = z.discriminatedUnion('kind', [
   OptionActionSchema,
   EquityActionSchema,
   VerticalSpreadActionSchema,

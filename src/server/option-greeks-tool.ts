@@ -3,8 +3,8 @@ import { type Static, Type } from 'typebox'
 import { Compile } from 'typebox/compile'
 
 import {
+  distinctTuples,
   EquityOptionTupleSchema,
-  tupleKey,
   type EquityOptionTuple,
 } from '../domain/equity-option'
 import { isValidIsoDate } from '../domain/iso-date'
@@ -12,6 +12,7 @@ import { type AppEnv } from './env'
 import {
   MARKET_FEED_INSTANCE,
   MAX_OPTION_GREEKS_CONTRACTS,
+  type OptionGreeksEvent,
   OptionGreeksReadResultSchema,
   OptionStreamerSymbolSchema,
 } from './market-feed-contracts'
@@ -28,26 +29,11 @@ export const ExactOptionGreeksReadParameters = Type.Object({
 
 const ExactOptionGreeksReadValidator = Compile(ExactOptionGreeksReadParameters)
 
-export type ExactOptionGreeksReadInput = Static<typeof ExactOptionGreeksReadParameters>
+type ExactOptionGreeksReadInput = Static<typeof ExactOptionGreeksReadParameters>
 
-export type ExactOptionGreeksReadResult = {
+type ExactOptionGreeksReadResult = {
   asOf: string
-  contracts: Array<EquityOptionTuple & {
-    delta: number
-    eventAt: string
-    gamma: number
-    impliedVolatility: number
-    impliedVolatilityUnit: 'decimal_ratio'
-    optionPrice: number
-    receivedAt: string
-    rho: number
-    sharesPerContract: number
-    source: 'tastytrade-dxlink'
-    streamerSymbol: string
-    symbol: string
-    theta: number
-    vega: number
-  }>
+  contracts: Array<EquityOptionTuple & OptionGreeksEvent & { sharesPerContract: number; symbol: string }>
   impliedVolatilityUnit: 'decimal_ratio'
   source: 'tastytrade-dxlink'
 }
@@ -61,19 +47,11 @@ export async function readExactOptionGreeks(
   if (parsed.contracts.some((contract) => !isValidIsoDate(contract.expiry))) {
     throw new CallerVisibleError('Option expiry is invalid.')
   }
-  const contracts = [...new Map(parsed.contracts.map((contract) => [tupleKey(contract), contract])).values()]
-  const resolved = (await resolveEquityOptionTuples(env, contracts, { requireStreamerSymbol: true })).map((instrument) => {
-    return {
-      contract: {
-        expiry: instrument.expiry,
-        optionType: instrument.optionType,
-        strike: instrument.strike,
-        underlying: instrument.underlying,
-      },
-      ...instrument,
-      streamerSymbol: OptionStreamerSymbolSchema.parse(instrument.streamerSymbol),
-    }
-  })
+  const contracts = distinctTuples(parsed.contracts)
+  const resolved = (await resolveEquityOptionTuples(env, contracts, { requireStreamerSymbol: true })).map((instrument) => ({
+    ...instrument,
+    streamerSymbol: OptionStreamerSymbolSchema.parse(instrument.streamerSymbol),
+  }))
   const streamerSymbols = resolved.map((contract) => contract.streamerSymbol)
   if (new Set(streamerSymbols).size !== streamerSymbols.length) {
     throw new CallerVisibleError('Requested option contracts did not resolve to unique market-data instruments.')
@@ -90,8 +68,11 @@ export async function readExactOptionGreeks(
   }
   return {
     asOf: observation.asOf,
-    contracts: resolved.map(({ contract, sharesPerContract, streamerSymbol, symbol }) => ({
-      ...contract,
+    contracts: resolved.map(({ expiry, optionType, strike, underlying, sharesPerContract, streamerSymbol, symbol }) => ({
+      expiry,
+      optionType,
+      strike,
+      underlying,
       ...byStreamerSymbol.get(streamerSymbol)!,
       sharesPerContract,
       streamerSymbol,

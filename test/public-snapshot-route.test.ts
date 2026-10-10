@@ -442,7 +442,7 @@ describe('pre-market session refresh', () => {
     expect(sessionRefreshDue(agedPublicSnapshot(12 * hour, { ...after, marketState: 'pre' }), NOW)).toBe(false)
   })
 
-  it('retags a named open that already rang without rebuilding quotes', async () => {
+  it('retags a named open that already rang when rebuilding quotes fails', async () => {
     const stored = storedPublicSnapshot(18 * hour, {
       marketOpensAt: new Date(NOW - hour).toISOString(),
       marketState: 'closed',

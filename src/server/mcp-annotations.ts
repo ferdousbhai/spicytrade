@@ -13,13 +13,10 @@
  * Every registered tool must appear here. `toolAnnotations` throws on a name it does not know,
  * so a new tool cannot reach the wire without someone deciding what it does.
  */
-export interface McpToolAnnotations {
-  destructiveHint?: boolean
-  idempotentHint?: boolean
-  openWorldHint?: boolean
-  readOnlyHint?: boolean
-  title: string
-}
+import type { ToolAnnotations } from '@modelcontextprotocol/server'
+
+/** The SDK's annotations, with a title every tool must state. */
+type McpToolAnnotations = ToolAnnotations & { title: string }
 
 /** A read that leaves our stores and the broker untouched. `openWorld` is about where it reads from. */
 function read(title: string, openWorld: boolean): McpToolAnnotations {

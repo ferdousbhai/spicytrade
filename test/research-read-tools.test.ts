@@ -13,12 +13,11 @@ import { migrationStore } from './sqlite-d1'
 function d1WithResults(results: unknown[]) {
   const all = vi.fn().mockResolvedValue({ results })
   const bind = vi.fn(() => ({ ...unsupportedStatement(), all }))
-  const first = vi.fn().mockResolvedValue(results[0])
   // The search receipts are a second read; these fakes have none, so every symbol is unsearched.
   const noRuns = { ...unsupportedStatement(), bind: () => ({ ...unsupportedStatement(), all: vi.fn().mockResolvedValue({ results: [] }) }) }
-  const prepare = vi.fn((sql: string) => sql.includes('status AS state') ? noRuns : { ...unsupportedStatement(), bind, first })
+  const prepare = vi.fn((sql: string) => sql.includes('status AS state') ? noRuns : { ...unsupportedStatement(), bind })
   const DB: D1Database = { ...unsupportedDatabase(), prepare }
-  return { all, bind, env: { DB }, first, prepare }
+  return { bind, env: { DB }, prepare }
 }
 
 describe('research read tools', () => {

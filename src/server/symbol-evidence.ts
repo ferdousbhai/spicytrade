@@ -17,7 +17,7 @@ import { normalizedCitationText } from './research-citation-binding'
  * re-runs its research idempotent by construction, which is what stops a name from filling up
  * with the same quote worded three ways.
  */
-export type SymbolEvidenceRecord = {
+type SymbolEvidenceRecord = {
   byline: string | null
   note: string | null
   quote: string

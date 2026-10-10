@@ -6,8 +6,9 @@ import { Button } from '#/components/ui/button'
 import { Spinner } from '#/components/ui/spinner'
 import { loadPreviousDailyBrief } from '../data/brief-archive'
 import { type DailyBrief } from '../domain/brief'
+import { marketDate } from '../domain/catalyst'
 import { RecommendationCard } from './brief-card'
-import { formatCalendarDay, nyCalendarDay, nyDateTime, nyTime } from './ny-time'
+import { formatCalendarDay, nyDateTime, nyTime } from './ny-time'
 
 function BriefNavigation({ index, loading, onNewer, onOlder, olderDisabled }: {
   index: number
@@ -42,7 +43,7 @@ function BriefNavigation({ index, loading, onNewer, onOlder, olderDisabled }: {
 
 export function publishedLabel(brief: Pick<DailyBrief, 'marketDate' | 'publishedAt'>): string {
   const published = new Date(brief.publishedAt)
-  return nyCalendarDay(published) === brief.marketDate ? nyTime.format(published) : nyDateTime.format(published)
+  return marketDate(published) === brief.marketDate ? nyTime.format(published) : nyDateTime.format(published)
 }
 
 function BriefIssue({ brief, focusTarget, onSymbol }: {

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { MAX_LOOPBACK_PORT, MIN_LOOPBACK_PORT } from './broker-authorization'
+import { LoopbackPortSchema } from './broker-authorization'
 import { McpTokenLabelSchema } from './mcp-tokens'
 
 /**
@@ -43,7 +43,7 @@ export const AGENT_LOGIN_RANDOM_BYTES = 32
 const ENCODED_LENGTH = Math.ceil(AGENT_LOGIN_RANDOM_BYTES * 4 / 3)
 const Base64Url32Schema = z.string().regex(new RegExp(`^[A-Za-z0-9_-]{${ENCODED_LENGTH}}$`))
 
-export const AgentLoginPortSchema = z.coerce.number().int().min(MIN_LOOPBACK_PORT).max(MAX_LOOPBACK_PORT)
+const AgentLoginPortSchema = z.coerce.number().pipe(LoopbackPortSchema)
 
 /** What the CLI puts in the `/connect/agent` address. The state is the CLI's and is never posted. */
 export const AgentLoginPageQuerySchema = z.object({
@@ -56,7 +56,7 @@ export const AgentLoginPageQuerySchema = z.object({
 export const AgentLoginApproveRequestSchema = z.strictObject({
   codeChallenge: Base64Url32Schema,
   label: McpTokenLabelSchema,
-  port: z.number().int().min(MIN_LOOPBACK_PORT).max(MAX_LOOPBACK_PORT),
+  port: LoopbackPortSchema,
 })
 
 export const AgentLoginApproveResponseSchema = z.strictObject({ code: Base64Url32Schema })

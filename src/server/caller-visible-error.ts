@@ -14,8 +14,23 @@ export class CallerVisibleError extends Error {
   }
 }
 
+/** A tool's integer argument, defaulted when omitted and refused by name when out of range. */
+export function boundedInteger(
+  value: number | undefined,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+  label: string,
+): number {
+  const result = value ?? fallback
+  if (!Number.isSafeInteger(result) || result < minimum || result > maximum) {
+    throw new CallerVisibleError(`${label} is invalid.`)
+  }
+  return result
+}
+
 /** The checks a broker-sourced refusal can name, in this repository's vocabulary. */
-export type BrokerRefusalCheck =
+type BrokerRefusalCheck =
   | 'broker-rejected'
   | 'broker-warning'
   | 'limit-off-tick'
@@ -27,7 +42,7 @@ export type BrokerRefusalCheck =
  * useful to the caller and are not ours, so they never enter the message; the boundary renders
  * them in a field whose name says they are untrusted.
  */
-export type UntrustedBrokerData =
+type UntrustedBrokerData =
   | { messages: readonly string[] }
   | { ask: number; bid: number }
   | { tickSize: number }

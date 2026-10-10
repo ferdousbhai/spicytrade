@@ -12,7 +12,7 @@ import { replaceYearCandles } from './year-candle-store'
  * zero, because a refresh that ran and stored nothing -- an empty focus, a feed that answered for
  * no symbol -- is worth noticing, and a skip that logs the same line would hide it every day.
  */
-export type YearCandleRefresh =
+type YearCandleRefresh =
   | { status: 'refreshed'; symbolCount: number }
   | { reason: 'not-cash-open'; status: 'skipped' }
 

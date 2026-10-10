@@ -13,7 +13,7 @@ import { CallerVisibleError } from './caller-visible-error'
  * Only the catalog answers here. A symbol the catalog has never heard of is resolved
  * against the broker by the caller, so this module stays a pure read.
  */
-export type SymbolSearchMatch = {
+type SymbolSearchMatch = {
   name: string
   symbol: string
 }

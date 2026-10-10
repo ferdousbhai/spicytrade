@@ -35,16 +35,16 @@ export function snapshotSyncQueryOptions(audience: SnapshotAudience) {
   }
 }
 
-type AudienceSnapshotRecord<TSnapshot> = {
+type AudienceSnapshotRecord = {
   audience: SnapshotAudience
   id: string
-  snapshot: TSnapshot
+  snapshot: MarketSnapshot
 }
 
-export function audienceMarketView<TSnapshot extends MarketSnapshot, TTicker extends Ticker>(
+export function audienceMarketView(
   audience: SnapshotAudience,
-  snapshots: readonly AudienceSnapshotRecord<TSnapshot>[],
-  tickers: readonly TTicker[],
+  snapshots: readonly AudienceSnapshotRecord[],
+  tickers: readonly Ticker[],
 ) {
   const storedSnapshot = snapshots.find((candidate) => candidate.id === 'snapshot')
   // The live ticker collection can still hold the prior audience during a transition.
@@ -59,10 +59,6 @@ export function applySnapshotQueryResult(
 ): void {
   if (!result.isFetched) return
   const failure = toError(result.error)
-  if (!failure || failure.name === 'AbortError') {
-    setWarning(undefined)
-    return
-  }
   if (failure instanceof DeploymentMismatchError) {
     // The snapshot has already been hydrated when it could be read, so a reload that is
     // declined costs the reader nothing and is not worth a banner -- nor is one an earlier,

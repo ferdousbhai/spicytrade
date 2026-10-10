@@ -21,7 +21,7 @@ export function useWorkspaceFavorites(viewerId: string | undefined, preference: 
     (query) => query.from({ favoriteStageMarker: favoriteStageMarkerCollection }),
   )
   const favoriteQuery = useLiveQuery(
-    () => favoriteSync?.collection,
+    () => favoriteSync,
     [favoriteSync],
   )
   const [mutationError, setMutationError] = useState<string>()

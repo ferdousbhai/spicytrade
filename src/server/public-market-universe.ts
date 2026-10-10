@@ -10,7 +10,7 @@ const PublicMarketUniverseSchema = z.strictObject({
 })
 const StoredPublicMarketUniverseRowSchema = z.strictObject({ payload_json: z.string() })
 
-export type PublicMarketUniverse = z.infer<typeof PublicMarketUniverseSchema>
+type PublicMarketUniverse = z.infer<typeof PublicMarketUniverseSchema>
 
 /** Publish only the current source-neutral D1 projection, never a stale caller snapshot. */
 export async function publishInternalWatchlistUniverse(

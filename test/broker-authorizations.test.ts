@@ -349,7 +349,7 @@ describe('tastytrade connect: configuration', () => {
   const missing: Array<[string, (base: AppEnv) => AppEnv]> = [
     ['DB', ({ DB: _, ...rest }) => rest],
     ['TASTYTRADE_OAUTH_CLIENT_ID', ({ TASTYTRADE_OAUTH_CLIENT_ID: _, ...rest }) => rest],
-    // cloudflare.config.ts commits the var empty until the owner fills in the issued id.
+    // An empty var is refused like a missing one, so a deployment without the issued id fails closed.
     ['an empty TASTYTRADE_OAUTH_CLIENT_ID', (base) => ({ ...base, TASTYTRADE_OAUTH_CLIENT_ID: '' })],
     ['a blank TASTYTRADE_OAUTH_CLIENT_ID', (base) => ({ ...base, TASTYTRADE_OAUTH_CLIENT_ID: ' \t' })],
     ['TASTYTRADE_OAUTH_CLIENT_SECRET', ({ TASTYTRADE_OAUTH_CLIENT_SECRET: _, ...rest }) => rest],

@@ -106,7 +106,7 @@ export class BrokerGateCore {
    */
   async renewMutation(token: string): Promise<boolean> {
     const value = await this.ctx.storage.get(MUTATION_LEASE_KEY)
-    const stored = value === undefined ? undefined : StoredMutationLeaseSchema.safeParse(value).data
+    const stored = StoredMutationLeaseSchema.safeParse(value).data
     if (!stored || stored.token !== token || stored.expiresAt <= this.now()) return false
     await this.ctx.storage.put(MUTATION_LEASE_KEY, {
       expiresAt: this.now() + MUTATION_LEASE_MS,
@@ -121,7 +121,7 @@ export class BrokerGateCore {
 
   async releaseMutation(token: string): Promise<void> {
     const value = await this.ctx.storage.get(MUTATION_LEASE_KEY)
-    const stored = value === undefined ? undefined : StoredMutationLeaseSchema.safeParse(value).data
+    const stored = StoredMutationLeaseSchema.safeParse(value).data
     if (value !== undefined && (!stored || stored.token !== token)) return
     if (stored) await this.ctx.storage.delete(MUTATION_LEASE_KEY)
     if (this.activeMutation?.token !== token) return
@@ -133,7 +133,7 @@ export class BrokerGateCore {
 
   private async expireMutation(token: string): Promise<void> {
     const value = await this.ctx.storage.get(MUTATION_LEASE_KEY)
-    const stored = value === undefined ? undefined : StoredMutationLeaseSchema.safeParse(value).data
+    const stored = StoredMutationLeaseSchema.safeParse(value).data
     if (!stored || stored.token !== token) return
     const remaining = stored.expiresAt - this.now()
     if (remaining > 0) {

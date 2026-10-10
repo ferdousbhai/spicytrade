@@ -14,9 +14,9 @@ export class UnreadableTickerError extends CallerVisibleError {
 }
 
 /** Every entry of a `symbols` argument as a ticker, or a refusal naming the first that is not. */
-export function tickerSymbolsArgument(values: readonly string[], argument = 'symbols'): string[] {
+export function tickerSymbolsArgument(values: readonly string[]): string[] {
   const parsed = equitySymbolsFromModelText(values)
-  if ('unreadable' in parsed) throw new UnreadableTickerError(`${argument}[${values.indexOf(parsed.unreadable)}]`)
+  if ('unreadable' in parsed) throw new UnreadableTickerError(`symbols[${values.indexOf(parsed.unreadable)}]`)
   return parsed.symbols
 }
 

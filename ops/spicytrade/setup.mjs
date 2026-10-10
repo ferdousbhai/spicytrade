@@ -61,6 +61,29 @@ function replaceLegacyEntry(out, client, inPlace) {
   }
 }
 
+/**
+ * An entry that loads the server in every directory, which earlier installs wrote, under either
+ * name. Like the old name, it is removed only once the trading folder's entry is in place and only
+ * when it names the proxy or spicytrade.
+ */
+function removeEverywhereEntries(out, client, inPlace) {
+  if (!client.everywhere) return
+  for (const entry of [MCP_SERVER_NAME, LEGACY_MCP_SERVER_NAME]) {
+    const wide = client.everywhere.configured(entry)
+    if (wide.state !== 'configured') continue
+    if (!namesSpicytrade(wide.url)) {
+      out.write(`! ${client.name} has a ${entry} server in every folder that is not spicytrade's; left as it is\n`)
+    } else if (!inPlace) {
+      out.write(`· ${client.name} keeps its ${entry} entry in every folder until the trading folder's is in place\n`)
+    } else if (client.everywhere.remove(entry).ok) {
+      out.write(`✓ ${client.name}: removed the ${entry} entry that loaded it in every folder\n`)
+    } else {
+      out.write(`✗ ${client.name} did not remove the ${entry} entry that loads it in every folder; remove it yourself with:\n`
+        + `    ${client.everywhere.removeCommand(entry)}\n`)
+    }
+  }
+}
+
 /** Runs every step, writing progress to `out`; resolves true when the closing doctor passes. */
 export async function setup(out = process.stdout) {
   if (process.platform !== 'linux') {
@@ -153,6 +176,7 @@ export async function setup(out = process.stdout) {
       out.write(`✗ ${client.name} refused to add the server; add it yourself with:\n    ${client.addCommand}\n`)
     }
     replaceLegacyEntry(out, client, inPlace)
+    removeEverywhereEntries(out, client, inPlace)
   }
   if (!clientsFound) {
     out.write(`· no Claude Code or Codex found. Point any MCP client at ${PROXY_URL} (streamable HTTP, no credentials).\n`)

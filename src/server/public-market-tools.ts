@@ -7,7 +7,7 @@ import { EquitySymbolSchema, ModelTextEquitySymbolType } from '../domain/instrum
 import { type AgentTool } from '../domain/agent-tool'
 import { textResult } from './agent-tool-result'
 import { type AppEnv } from './env'
-import { type BackgroundScheduler, servePublicSnapshot } from './public-snapshot-cache'
+import { type BackgroundScheduler, edgeCache, servePublicSnapshot } from './public-snapshot-cache'
 import { servePublicSymbolSearch } from './public-symbol-search'
 import { MarketMetricsReadParameters, MAX_QUOTE_INSTRUMENTS, SymbolSearchQueryError, SymbolSearchQueryType } from './brokerage-read-contracts'
 import { CallerVisibleError } from './caller-visible-error'
@@ -110,12 +110,6 @@ async function readCachedSnapshot(env: AppEnv, schedule: BackgroundScheduler): P
   const response = await servePublicSnapshot(new Request(`${origin}/api/public-snapshot`), env, edgeCache(), schedule)
   if (!response.ok) throw new CallerVisibleError('PublicSnapshotUnavailable')
   return PublicQuoteBookSchema.parse(await response.json())
-}
-
-function edgeCache(): Cache {
-  // SAFETY: the Workers runtime exposes `caches.default`, which the standard `CacheStorage` type
-  // does not declare; `api.public-snapshot` reaches it the same way for the same reason.
-  return (caches as CacheStorage & { default: Cache }).default
 }
 
 function requiredOrigin(env: AppEnv): string {

@@ -5,6 +5,7 @@ import {
   InstrumentCatalogItemSchema,
   MAX_PROVIDER_DESCRIPTION_LENGTH,
   MAX_PROVIDER_LABEL_LENGTH,
+  MAX_PROVIDER_SHORT_DESCRIPTION_LENGTH,
   searchFold,
   type InstrumentCatalogItem,
 } from '../domain/instrument'
@@ -16,11 +17,10 @@ import {
   type JsonValue,
 } from '../domain/json-payload'
 import { type AppEnv } from './env'
-import { D1_MAX_BOUND_PARAMETERS, rowsPerD1Statement } from './d1-limits'
+import { d1InListChunks, d1RowPlaceholders, rowsPerD1Statement } from './d1-limits'
 import { CallerVisibleError } from './caller-visible-error'
 import { ConfigurationError } from './secrets'
 
-const SQL_SYMBOL_CHUNK_SIZE = D1_MAX_BOUND_PARAMETERS
 // The one-time seed can retain far more provenance than the live watchlist;
 // this rejects an unexpected provider fan-out before it consumes a Worker isolate.
 export const MAX_INSTRUMENT_CATALOG_ITEMS = 10_000
@@ -45,7 +45,7 @@ export type InstrumentCatalogRefresh = {
   requestedCount: number
 }
 
-export type InstrumentCatalogLoader = (symbols: readonly string[]) => Promise<JsonValue>
+type InstrumentCatalogLoader = (symbols: readonly string[]) => Promise<JsonValue>
 
 // This persisted provider contract repeats the domain display-field widths and bounds the
 // additional raw catalog labels before they enter D1; none is used to authorize a trade.
@@ -74,7 +74,7 @@ const InstrumentCatalogRecordSchema = InstrumentCatalogItemSchema.extend({
   updatedAt: z.string().datetime(),
 })
 
-export type InstrumentCatalogRecord = z.infer<typeof InstrumentCatalogRecordSchema>
+type InstrumentCatalogRecord = z.infer<typeof InstrumentCatalogRecordSchema>
 
 function optionalText(value: JsonValue, max: number, field: string): string | null {
   if (value === undefined || value === null) return null
@@ -163,7 +163,7 @@ export function instrumentCatalogFromPayload(
       ),
       preIpo: optionalBoolean(row['pre-ipo'], 'pre-ipo'),
       resolutionStatus: 'resolved',
-      shortDescription: optionalText(row['short-description'], 256, 'short-description'),
+      shortDescription: optionalText(row['short-description'], MAX_PROVIDER_SHORT_DESCRIPTION_LENGTH, 'short-description'),
       source: 'tastytrade',
       statusRefreshedAt: timestamp,
       stopsTradingAt: optionalDateTime(row['stops-trading-at'], 'stops-trading-at'),
@@ -233,7 +233,7 @@ function catalogUpserts(
   const statements: D1PreparedStatement[] = []
   for (let start = 0; start < items.length; start += CATALOG_ROWS_PER_STATEMENT) {
     const chunk = items.slice(start, start + CATALOG_ROWS_PER_STATEMENT)
-    const row = `(${Array.from({ length: CATALOG_BOUND_PARAMETERS_PER_ROW }, () => '?').join(', ')})`
+    const row = d1RowPlaceholders(CATALOG_BOUND_PARAMETERS_PER_ROW)
     statements.push(db.prepare(
       `INSERT INTO instrument_catalog (
         symbol, source_name, description, short_description, instrument_type, instrument_sub_type,
@@ -296,7 +296,7 @@ const StoredCatalogRowSchema = z.object({
   overnight_trading_permitted: z.number().int().min(0).max(1).nullable(),
   pre_ipo: z.number().int().min(0).max(1).nullable(),
   resolution_status: z.enum(['resolved', 'unresolved']),
-  short_description: z.string().min(1).max(256).nullable(),
+  short_description: z.string().min(1).max(MAX_PROVIDER_SHORT_DESCRIPTION_LENGTH).nullable(),
   source_name: z.literal('tastytrade'),
   status_refreshed_at: z.string().datetime(),
   stops_trading_at: z.string().datetime().nullable(),
@@ -310,17 +310,22 @@ function storedBoolean(value: number | null): boolean | null {
   return value === null ? null : value === 1
 }
 
+/** Requested symbols, deduplicated and parsed, refused above the catalog's per-call item bound. */
+function catalogSymbols(requested: readonly string[]): string[] {
+  const symbols = [...new Set(requested.map((symbol) => EquitySymbolSchema.parse(symbol)))]
+  if (symbols.length > MAX_INSTRUMENT_CATALOG_ITEMS) throw new CallerVisibleError('InstrumentCatalog:too-many-symbols')
+  return symbols
+}
+
 export async function readInstrumentCatalog(
   env: AppEnv,
   requestedSymbols: readonly string[],
 ): Promise<Map<string, InstrumentCatalogItem>> {
   if (!env.DB) throw new CallerVisibleError('InstrumentCatalog:store-unavailable')
-  const symbols = [...new Set(requestedSymbols.map((symbol) => EquitySymbolSchema.parse(symbol)))]
-  if (symbols.length > MAX_INSTRUMENT_CATALOG_ITEMS) throw new CallerVisibleError('InstrumentCatalog:too-many-symbols')
+  const symbols = catalogSymbols(requestedSymbols)
   if (!symbols.length) return new Map()
   const catalogRows: z.infer<typeof StoredCatalogRowSchema>[] = []
-  for (let start = 0; start < symbols.length; start += SQL_SYMBOL_CHUNK_SIZE) {
-    const chunk = symbols.slice(start, start + SQL_SYMBOL_CHUNK_SIZE)
+  for (const chunk of d1InListChunks(symbols)) {
     const placeholders = chunk.map(() => '?').join(', ')
     const catalog = await env.DB.prepare(
       `SELECT * FROM instrument_catalog WHERE symbol IN (${placeholders})`,
@@ -353,10 +358,9 @@ export async function loadInstrumentCatalog(
   requestedSymbols: readonly string[],
   load: InstrumentCatalogLoader,
   symbolsPerRequest: number,
-  now = new Date(),
+  now: Date,
 ): Promise<{ items: InstrumentCatalogRecord[]; missingSymbols: string[]; requestedCount: number }> {
-  const symbols = [...new Set(requestedSymbols.map((symbol) => EquitySymbolSchema.parse(symbol)))]
-  if (symbols.length > MAX_INSTRUMENT_CATALOG_ITEMS) throw new CallerVisibleError('InstrumentCatalog:too-many-symbols')
+  const symbols = catalogSymbols(requestedSymbols)
   if (!symbols.length) return { items: [], missingSymbols: [], requestedCount: 0 }
   const received: InstrumentCatalogRecord[] = []
   if (!Number.isSafeInteger(symbolsPerRequest) || symbolsPerRequest < 1) {
@@ -386,17 +390,14 @@ function unresolvedRetryCutoff(now: Date): string {
 export async function missingInstrumentCatalogSymbols(
   env: AppEnv,
   symbols: readonly string[],
-  now = new Date(),
+  now: Date,
 ): Promise<string[]> {
   if (!env.DB) throw new CallerVisibleError('InstrumentCatalog:store-unavailable')
-  const normalized = [...new Set(symbols.map((symbol) => EquitySymbolSchema.parse(symbol)))]
-  if (normalized.length > MAX_INSTRUMENT_CATALOG_ITEMS) throw new CallerVisibleError('InstrumentCatalog:too-many-symbols')
+  const normalized = catalogSymbols(symbols)
   const cutoff = unresolvedRetryCutoff(now)
   const answered = new Set<string>()
   // One parameter is the cutoff, so a chunk carries one fewer symbol than D1 admits.
-  const chunkSize = SQL_SYMBOL_CHUNK_SIZE - 1
-  for (let start = 0; start < normalized.length; start += chunkSize) {
-    const chunk = normalized.slice(start, start + chunkSize)
+  for (const chunk of d1InListChunks(normalized, 1)) {
     const result = await env.DB.prepare(
       `SELECT symbol FROM instrument_catalog
         WHERE symbol IN (${chunk.map(() => '?').join(', ')})

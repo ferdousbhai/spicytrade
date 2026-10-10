@@ -21,7 +21,8 @@ for (let attempt = 0; attempt < DEPLOYMENT_READY_ATTEMPTS; attempt += 1) {
   const text = await response.text()
   // The shared ops gate answers an unauthorized or unknown request with the same
   // 404 a freshly deployed Worker returns before its route propagates, so the
-  // only safe reading here is "not ready yet": retry, then fail on the timeout.
+  // only safe reading here is "not ready yet": retry, and fail with the last
+  // response once the attempts run out.
   if (response.status === 404 && attempt + 1 < DEPLOYMENT_READY_ATTEMPTS) {
     await new Promise((resolve) => setTimeout(resolve, DEPLOYMENT_RETRY_DELAY_MS))
     continue

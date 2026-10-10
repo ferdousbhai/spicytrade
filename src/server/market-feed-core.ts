@@ -1,6 +1,8 @@
 import { z } from 'zod'
 
 import {
+  DXLINK_REMOVE_EVENT,
+  DXLINK_SNAPSHOT_BEGIN,
   DXLINK_SNAPSHOT_END,
   DXLINK_SNAPSHOT_SNIP,
   MAX_INTRADAY_CANDLES,
@@ -13,13 +15,12 @@ import { MAX_WATCHLIST_SYMBOLS } from '../domain/watchlist'
 import { type AppEnv } from './env'
 import {
   CLIENT_HEARTBEAT_MS,
-  DXLINK_REMOVE_EVENT,
-  DXLINK_SNAPSHOT_BEGIN,
   DailyCandleRequestRegistry,
   type DailyCandlesReadResult,
   DailyCandlesReadResultSchema,
   candleFeedPeriod,
   candleSubscription,
+  isoFromEpoch,
   type LiveMarketEvent,
   MarketFeedSymbolsSchema,
   type MarketFeedStatus,
@@ -28,8 +29,6 @@ import {
   OptionGreeksRequestRegistry,
   optionGreeksFromRow,
   OptionStreamerSymbolSchema,
-  parseDailyCandleSymbols,
-  parseOptionStreamerSymbols,
   parseRequestedSymbols,
 } from './market-feed-contracts'
 // dxFeed COMPACT rows encode absent numeric slots as null or empty strings, which
@@ -62,6 +61,11 @@ const FIELDS = {
 type FeedType = keyof typeof FIELDS
 
 const FEED_TYPES = ['Quote', 'Trade', 'Candle', 'Greeks'] as const satisfies readonly FeedType[]
+
+/** The feed type a dxLink channel number carries, or undefined for a channel we never open. */
+function feedTypeForChannel(channel: number): FeedType | undefined {
+  return FEED_TYPES.find((candidate) => CHANNELS[candidate] === channel)
+}
 
 /**
  * A browser that crashes, sleeps, or loses its network never sends a close frame, so the relay
@@ -214,8 +218,6 @@ export type FeedClientSocket = {
   /** Hibernation hands the attachment back undecoded; `socketSymbols` parses it. */
   deserializeAttachment(): JsonValue
   send(message: string): void
-  /** Present on every accepted socket; optional so a test fake may omit it. */
-  serializeAttachment?(attachment: JsonValue): void
 }
 
 export type FeedControlSocket = FeedClientSocket & {
@@ -234,12 +236,6 @@ export type FeedContext = {
     setAlarm(scheduledTime: number): Promise<void>
   }
   waitUntil(task: Promise<unknown>): void
-}
-
-function isoFromEpoch(epoch: number | undefined): string | undefined {
-  if (epoch === undefined || epoch <= 0 || !Number.isSafeInteger(epoch)) return undefined
-  const date = new Date(epoch)
-  return Number.isFinite(date.getTime()) ? date.toISOString() : undefined
 }
 
 function eventTimestamp(row: JsonObject): string | undefined {
@@ -423,8 +419,7 @@ export class MarketFeedCore {
   }
 
   async readOptionGreeks(streamerSymbols: readonly string[]): Promise<OptionGreeksReadResult> {
-    const symbols = parseOptionStreamerSymbols(streamerSymbols)
-    const lease = this.greekRequests.register(symbols, OPTION_GREEKS_TIMEOUT_MS)
+    const lease = this.greekRequests.register(streamerSymbols, OPTION_GREEKS_TIMEOUT_MS)
     try {
       await this.reconcile()
       const greeks = await lease.promise
@@ -446,8 +441,7 @@ export class MarketFeedCore {
    * every connect would cost far more than storing it.
    */
   async readDailyCandles(requestedSymbols: readonly string[]): Promise<DailyCandlesReadResult> {
-    const symbols = parseDailyCandleSymbols(requestedSymbols)
-    const lease = this.dailyRequests.register(symbols, DAILY_CANDLE_TIMEOUT_MS)
+    const lease = this.dailyRequests.register(requestedSymbols, DAILY_CANDLE_TIMEOUT_MS)
     try {
       await this.reconcile()
       const series = await lease.promise
@@ -743,7 +737,7 @@ export class MarketFeedCore {
       throw new FeedProtocolError('Upstream authorization failed')
     }
     if (messageType === 'CHANNEL_OPENED') {
-      const type = FEED_TYPES.find((candidate) => CHANNELS[candidate] === messageChannel)
+      const type = feedTypeForChannel(messageChannel)
       if (!type) throw new FeedFrameError('Unexpected feed channel.')
       if (message.service !== 'FEED') throw new FeedFrameError('Unexpected channel service.')
       JsonObjectSchema.parse(message.parameters)
@@ -758,7 +752,7 @@ export class MarketFeedCore {
       return
     }
     if (messageType === 'FEED_CONFIG') {
-      const type = FEED_TYPES.find((candidate) => CHANNELS[candidate] === messageChannel)
+      const type = feedTypeForChannel(messageChannel)
       if (!type || !this.openedChannels.has(messageChannel)) throw new FeedFrameError('Unexpected feed config channel.')
       z.number().finite().nonnegative().parse(message.aggregationPeriod)
       if (message.dataFormat !== 'COMPACT') throw new FeedFrameError('Unexpected feed data format.')
@@ -787,7 +781,7 @@ export class MarketFeedCore {
       return
     }
     if (messageType === 'FEED_DATA') {
-      const type = FEED_TYPES.find((candidate) => CHANNELS[candidate] === messageChannel)
+      const type = feedTypeForChannel(messageChannel)
       if (!type || !this.configuredChannels.has(messageChannel)) throw new FeedFrameError('Unconfigured feed data channel.')
       this.broadcastFeedData(JsonArraySchema.parse(message.data), type)
       return
@@ -882,7 +876,7 @@ export class MarketFeedCore {
     if (mapped.some((event) => event === undefined)) {
       throw new FeedFrameError(`Malformed upstream ${type} row.`)
     }
-    const events = mapped.filter((event) => event !== null).filter(isPresent)
+    const events = mapped.filter((event) => event !== null && event !== undefined)
     for (const event of events) {
       this.cacheCandle(event)
       const serialized = JSON.stringify(event)
@@ -1014,9 +1008,9 @@ export class MarketFeedCore {
    * Restamp a reader's heartbeat. A socket whose hibernation attachment does not parse is left
    * as it is -- not closed, and not rewritten with an attachment invented here.
    */
-  private markSeen(socket: FeedClientSocket): void {
+  private markSeen(socket: FeedControlSocket): void {
     const attachment = SocketAttachmentSchema.safeParse(socket.deserializeAttachment())
-    if (!attachment.success || !socket.serializeAttachment) return
+    if (!attachment.success) return
     socket.serializeAttachment({ ...attachment.data, seenAt: Date.now() } satisfies SocketAttachment)
   }
 

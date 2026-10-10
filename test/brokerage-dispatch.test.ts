@@ -66,7 +66,6 @@ function response(warnings: Array<{ message: string }> = [], id = 123) {
 describe('brokerage dispatch warnings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.resolveAccountNumber.mockResolvedValue('TEST123')
     mocks.assertPortfolioActionAllowed.mockResolvedValue(undefined)
     mocks.assertOrderMarketSafe.mockResolvedValue({})
   })

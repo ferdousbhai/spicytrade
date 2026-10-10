@@ -7,7 +7,7 @@ import {
   unresolvedInstrumentCatalogItem,
 } from '../src/server/instrument-catalog'
 import { stubBrokerGate } from './broker-stub'
-import { searchInstrumentCatalog, searchableQuery, symbolCandidate } from '../src/server/symbol-search'
+import { MAX_QUERY_LENGTH, searchInstrumentCatalog, searchableQuery, symbolCandidate } from '../src/server/symbol-search'
 import { readInternalWatchlist } from '../src/server/internal-watchlist'
 
 afterEach(() => {
@@ -39,7 +39,7 @@ describe('symbol search query shape', () => {
 
   it('refuses an empty or oversized search and neutralizes LIKE wildcards', () => {
     expect(searchableQuery('   ')).toBeUndefined()
-    expect(searchableQuery('a'.repeat(49))).toBeUndefined()
+    expect(searchableQuery('a'.repeat(MAX_QUERY_LENGTH + 1))).toBeUndefined()
     expect(searchableQuery('  bloom   energy ')).toBe('BLOOM ENERGY')
     expect(searchableQuery('%_%')).toBeUndefined()
     expect(searchableQuery('blo%om')).toBe('BLO OM')
@@ -100,8 +100,8 @@ describe('instrument catalog fallback search', () => {
   it('answers a full-length search with accented letters instead of failing D1\'s pattern limit', async () => {
     const store = await migrationStore()
     const env = { DB: store.database }
-    // 48 characters, the most a search may have, but over 48 bytes once accents are UTF-8.
-    const longest = 'Soci\u00e9t\u00e9 G\u00e9n\u00e9rale '.padEnd(48, 'x')
+    // The most characters a search may have, but over that many bytes once accents are UTF-8.
+    const longest = 'Soci\u00e9t\u00e9 G\u00e9n\u00e9rale '.padEnd(MAX_QUERY_LENGTH, 'x')
     await expect(searchInstrumentCatalog(env, longest)).resolves.toEqual([])
     store.close()
   })

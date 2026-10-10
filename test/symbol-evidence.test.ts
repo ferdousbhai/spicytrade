@@ -44,7 +44,7 @@ function evidence() {
 
 describe('recording a quoted passage under a symbol', () => {
   it('binds the quote to the page the Worker read and returns it to every reader', async () => {
-    const result = await recordSymbolEvidence(recordingEnv(), RECORDER, evidence(), { now: NOW })
+    const result = await recordSymbolEvidence(recordingEnv(), RECORDER, evidence(), NOW)
 
     expect(result.status).toBe('recorded')
     const cards = await readSymbolEvidence(store.database, 'NVDA')
@@ -66,14 +66,14 @@ describe('recording a quoted passage under a symbol', () => {
   })
 
   it('refreshes the card when the same passage is recorded again, rather than duplicating it', async () => {
-    const first = await recordSymbolEvidence(recordingEnv(), RECORDER, evidence(), { now: NOW })
+    const first = await recordSymbolEvidence(recordingEnv(), RECORDER, evidence(), NOW)
     // The same passage, spelled with the markdown emphasis the page renders it with, and
     // cited through the uncanonicalized address: the same card either way.
     const again = await recordSymbolEvidence(
       recordingEnv(),
       RECORDER,
       { ...evidence(), quote: '**signed a multi-year supply agreement**', sourceUrl: SOURCE_URL },
-      { now: LATER },
+      LATER,
     )
 
     expect(again).toEqual(first)
@@ -83,13 +83,13 @@ describe('recording a quoted passage under a symbol', () => {
   })
 
   it('returns the newest cards first', async () => {
-    await recordSymbolEvidence(recordingEnv(), RECORDER, evidence(), { now: NOW })
+    await recordSymbolEvidence(recordingEnv(), RECORDER, evidence(), NOW)
     const { byline: _byline, note: _note, ...unsigned } = evidence()
     await recordSymbolEvidence(
       recordingEnv(),
       RECORDER,
       { ...unsigned, quote: 'signed a multi-year' },
-      { now: LATER },
+      LATER,
     )
 
     const cards = await readSymbolEvidence(store.database, 'NVDA')
@@ -106,7 +106,7 @@ describe('recording a quoted passage under a symbol', () => {
       recordingEnv(markdownBrowser('# NVIDIA\n\nA page about something else entirely.')),
       RECORDER,
       evidence(),
-      { now: NOW },
+      NOW,
     )
 
     expect(result).toEqual({
@@ -121,7 +121,7 @@ describe('recording a quoted passage under a symbol', () => {
       recordingEnv(),
       RECORDER,
       { ...evidence(), quote: '** _ `> # |' },
-      { now: NOW },
+      NOW,
     )
 
     expect(result).toEqual({ rejected: ['quote has no words to find on its source'], status: 'rejected' })
@@ -133,19 +133,19 @@ describe('recording a quoted passage under a symbol', () => {
       recordingEnv(),
       RECORDER,
       { ...evidence(), sourceUrl: 'http://192.168.1.4/internal' },
-      { now: NOW },
+      NOW,
     )).resolves.toEqual({
       rejected: ['sourceUrl: not a readable https page address'],
       status: 'rejected',
     })
-    await expect(recordSymbolEvidence(recordingEnv(unreadableBrowser()), RECORDER, evidence(), { now: NOW }))
+    await expect(recordSymbolEvidence(recordingEnv(unreadableBrowser()), RECORDER, evidence(), NOW))
       .resolves.toEqual({ rejected: [`page did not open: ${SOURCE_URL}`], status: 'rejected' })
     expect(store.sqlite.prepare('SELECT COUNT(*) AS rows FROM symbol_evidence').get()).toEqual({ rows: 0 })
   })
 
   it('names a quote past the part of a long page it read as unread, not as absent', async () => {
     const longPage = `${'filler '.repeat(MAX_PAGE_MARKDOWN_CHARS / 'filler '.length + 1)}${PAGE_MARKDOWN}`
-    await expect(recordSymbolEvidence(recordingEnv(markdownBrowser(longPage)), RECORDER, evidence(), { now: NOW }))
+    await expect(recordSymbolEvidence(recordingEnv(markdownBrowser(longPage)), RECORDER, evidence(), NOW))
       .resolves.toEqual({
         rejected: [
           `quote not found in a read cut at ${MAX_PAGE_MARKDOWN_CHARS} characters of its source: "signed a multi-year supply agreement"`,
@@ -156,7 +156,7 @@ describe('recording a quoted passage under a symbol', () => {
   })
 
   it('fails closed when the Worker cannot read a page at all', async () => {
-    await expect(recordSymbolEvidence({ DB: store.database }, RECORDER, evidence(), { now: NOW }))
+    await expect(recordSymbolEvidence({ DB: store.database }, RECORDER, evidence(), NOW))
       .rejects.toThrow('SymbolEvidence:page-reading-unavailable')
   })
 
@@ -166,7 +166,7 @@ describe('recording a quoted passage under a symbol', () => {
   })
 
   it('drops a member\'s cards with their account', async () => {
-    await recordSymbolEvidence(recordingEnv(), RECORDER, evidence(), { now: NOW })
+    await recordSymbolEvidence(recordingEnv(), RECORDER, evidence(), NOW)
     store.sqlite.prepare('DELETE FROM "user" WHERE "id" = ?').run(RECORDER)
 
     expect(await readSymbolEvidence(store.database, 'NVDA')).toEqual([])

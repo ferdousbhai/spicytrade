@@ -38,10 +38,6 @@ export function normalizedCitationText(text: string): string {
  */
 const REJECTED_QUOTE_EXCERPT_CHARS = 80
 
-export function quoteAbsentFromSourceReason(quote: string): string {
-  return `quote absent from its source: "${quote.slice(0, REJECTED_QUOTE_EXCERPT_CHARS)}"`
-}
-
 /**
  * A quote made only of markup or whitespace normalizes to nothing, and every page "contains"
  * nothing: left to `includes`, it would bind any page it named. So a quote has to carry words
@@ -61,7 +57,8 @@ export function quoteBindingRefusal(page: ReadPage, quote: string): string | und
   const withoutWords = quoteWithoutWordsReason(quote)
   if (withoutWords) return withoutWords
   if (normalizedCitationText(page.markdown).includes(normalizedCitationText(quote))) return undefined
+  const excerpt = quote.slice(0, REJECTED_QUOTE_EXCERPT_CHARS)
   return page.truncated
-    ? `quote ${TRUNCATED_READ_MISS} its source: "${quote.slice(0, REJECTED_QUOTE_EXCERPT_CHARS)}"`
-    : quoteAbsentFromSourceReason(quote)
+    ? `quote ${TRUNCATED_READ_MISS} its source: "${excerpt}"`
+    : `quote absent from its source: "${excerpt}"`
 }

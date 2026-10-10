@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 import { CatalystRefreshSchema } from '../domain/catalyst'
 import { EquitySymbolSchema } from '../domain/instrument'
+import { errorName, toError } from '../domain/failure'
 import { refreshCatalystsForSymbol } from '../server/catalyst-refresh'
 import { authorizePersonalRequest, jsonNoStore } from '../server/http'
 import { appEnv } from '../server/worker-env'
@@ -40,7 +41,7 @@ export const Route = createFileRoute('/api/public-catalyst-refresh')({
           )
           return jsonNoStore(CatalystRefreshSchema.parse(refresh))
         } catch (error) {
-          console.error('CatalystRefreshUnavailable', error instanceof Error ? error.name : 'UnknownError')
+          console.error('CatalystRefreshUnavailable', errorName(toError(error)))
           return jsonNoStore({ error: 'Catalyst research is temporarily unavailable' }, { status: 503 })
         }
       },

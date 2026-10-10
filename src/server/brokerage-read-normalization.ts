@@ -34,7 +34,7 @@ export function optionalText(
   row: JsonObject,
   keys: readonly string[],
   label: string,
-  maxLength = 160,
+  maxLength: number,
 ): string | undefined {
   for (const key of keys) {
     const value = row[key]
@@ -52,7 +52,7 @@ export function requiredText(
   row: JsonObject,
   keys: readonly string[],
   label: string,
-  maxLength = 160,
+  maxLength: number,
 ): string {
   return optionalText(row, keys, label, maxLength) ?? invalidResponse(label)
 }

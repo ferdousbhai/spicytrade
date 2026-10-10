@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { YearCandlesSchema } from '../domain/market'
+import { errorName, toError } from '../domain/failure'
 import { jsonNoStore, jsonPublic } from '../server/http'
 import { loadStoredPublicMarketUniverse } from '../server/public-market-universe'
 import { appEnv } from '../server/worker-env'
@@ -32,17 +33,13 @@ export const Route = createFileRoute('/api/public-year-candles')({
           const { asOf, series } = await readYearCandleSeries(appEnv.DB, universe.symbols)
           // The instant is the store's, never the request's: a reader asking when this was
           // refreshed is not asking when they asked.
-          const response = jsonPublic(YearCandlesSchema.parse({
-            asOf,
-            series: [...series].map(([symbol, closes]) => ({ closes, symbol })),
-          }))
-          response.headers.set(
-            'Cache-Control',
+          return jsonPublic(
+            YearCandlesSchema.parse({ asOf, series: [...series].map(([symbol, closes]) => ({ closes, symbol })) }),
+            {},
             `public, max-age=${YEAR_CANDLES_BROWSER_MAX_AGE_SECONDS}, s-maxage=${YEAR_CANDLES_EDGE_MAX_AGE_SECONDS}`,
           )
-          return response
         } catch (error) {
-          console.error('YearCandlesUnavailable', error instanceof Error ? error.name : 'UnknownError')
+          console.error('YearCandlesUnavailable', errorName(toError(error)))
           return jsonNoStore({ error: 'Year history is temporarily unavailable' }, { status: 503 })
         }
       },
