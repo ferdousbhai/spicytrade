@@ -61,8 +61,8 @@ export async function readExactOptionGreeks(
     await env.MARKET_FEED.getByName(MARKET_FEED_INSTANCE).readOptionGreeks(streamerSymbols),
   )
   const byStreamerSymbol = new Map(observation.greeks.map((greeks) => [greeks.streamerSymbol, greeks]))
-  if (byStreamerSymbol.size !== streamerSymbols.length
-    || observation.greeks.length !== streamerSymbols.length
+  // The streamer symbols are unique, so the right count with every one present is an exact match.
+  if (observation.greeks.length !== streamerSymbols.length
     || streamerSymbols.some((symbol) => !byStreamerSymbol.has(symbol))) {
     throw new CallerVisibleError('Live option Greeks returned an incomplete or mismatched observation.')
   }

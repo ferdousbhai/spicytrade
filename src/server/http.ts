@@ -112,7 +112,7 @@ export async function authenticateRequest(
   if (!identity) return { response: jsonNoStore({ error: 'Authentication required' }, { status: 401 }) }
   if (write) {
     const origin = request.headers.get('Origin')
-    if (!origin || origin !== new URL(request.url).origin) {
+    if (origin !== new URL(request.url).origin) {
       return { response: jsonNoStore({ error: 'Cross-origin request rejected' }, { status: 403 }) }
     }
   }

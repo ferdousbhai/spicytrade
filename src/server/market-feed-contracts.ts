@@ -425,5 +425,5 @@ export function parseRequestedSymbols(url: URL): string[] {
 
 export function isSameOriginWebSocketRequest(request: Request): boolean {
   const origin = request.headers.get('Origin')
-  return Boolean(origin && origin === new URL(request.url).origin)
+  return origin === new URL(request.url).origin
 }

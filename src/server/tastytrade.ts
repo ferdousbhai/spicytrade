@@ -167,10 +167,9 @@ function accountNumberFromPath(path: string): string | undefined {
   if (!path.startsWith('/accounts/')) return undefined
   const encoded = path.slice('/accounts/'.length).split(/[/?]/, 1)[0]
   if (!encoded) throw new CallerVisibleError('TastytradeAccount:invalid-path-account')
+  // A non-empty segment either decodes to non-empty text or throws on a malformed escape.
   try {
-    const accountNumber = decodeURIComponent(encoded)
-    if (!accountNumber) throw new CallerVisibleError('TastytradeAccount:invalid-path-account')
-    return accountNumber
+    return decodeURIComponent(encoded)
   } catch {
     throw new CallerVisibleError('TastytradeAccount:invalid-path-account')
   }

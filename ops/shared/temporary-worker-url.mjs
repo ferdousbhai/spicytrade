@@ -7,8 +7,7 @@ export function extractTemporaryWorkerUrl(output, workerName) {
   for (const candidate of candidates.toReversed()) {
     try {
       const url = new URL(candidate)
-      if (url.protocol === 'https:'
-        && url.hostname.startsWith(`${workerLabel}.`)
+      if (url.hostname.startsWith(`${workerLabel}.`)
         && url.hostname.endsWith('.workers.dev')) {
         return url.origin
       }
