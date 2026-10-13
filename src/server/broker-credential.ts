@@ -1,5 +1,5 @@
 import { BrokerIdSchema, type BrokerId } from '../domain/broker'
-import { INSTALL_SCRIPT_URL } from '../domain/site'
+import { CONNECT_GUIDE_URL } from '../domain/site'
 import { CallerVisibleError } from './caller-visible-error'
 
 export type BrokerCredential = {
@@ -12,15 +12,9 @@ export type BrokerCredential = {
 export class BrokerCredentialMissingError extends CallerVisibleError {
   constructor() {
     super(
-      // Its first sentence is matched by `ops/spicytrade/mcp.mjs` (NO_BROKERAGE_PREFIX), which swaps in
-      // an installed computer's own fix; change them together. So the rest is read only by agents
-      // connected without the install, for whom reconnecting can never bring a brokerage: the
-      // install (which also repairs an existing one) can, and it ends by naming how to start each
-      // agent it set up, which differs between them. The command comes last, with nothing after
-      // it, so copying it takes no trailing punctuation.
-      'No brokerage is connected. Positions and orders need spicytrade installed on the computer your agent runs'
-        + ' on (Linux, with Claude Code or Codex). Run this in a terminal there, then start your agent the way it says at the end:'
-        + ` curl -fsSL ${INSTALL_SCRIPT_URL} | bash`,
+      // The local relay recognizes this prefix and offers its in-conversation connection tool.
+      'No brokerage is connected. Connect Spicytrade in your current agent conversation using '
+        + `${CONNECT_GUIDE_URL}. Account access needs the local Linux connector; research can use the remote MCP server.`,
     )
     this.name = 'BrokerCredentialMissingError'
   }

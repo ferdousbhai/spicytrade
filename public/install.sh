@@ -8,6 +8,16 @@
 # is touched; setup then asks before it connects your brokerage. Run it again to update.
 set -euo pipefail
 
+# Agent-driven onboarding installs only the connector; the current harness handles its own
+# MCP registration and browser connection. No other installed agents are inspected or changed.
+connector_only=false
+case "${1:-}" in
+  --connector-only) connector_only=true; shift ;;
+  '') ;;
+  *) fail_arg="Unknown option: $1"; printf '%s\n' "$fail_arg" >&2; exit 2 ;;
+esac
+[[ $# == 0 ]] || { echo 'Unexpected install arguments' >&2; exit 2; }
+
 origin=${SPICYTRADE_ORIGIN:-https://spicy.trade}
 share=${XDG_DATA_HOME:-$HOME/.local/share}/spicytrade
 bin=$HOME/.local/bin
@@ -65,6 +75,11 @@ path_hint() {
       ;;
   esac
 }
+
+if [[ $connector_only == true ]]; then
+  echo "Connector ready. Your current agent can run: $bin/spicytrade connect"
+  exit 0
+fi
 
 # Piped into bash, this script's stdin is the download, so setup's question is asked on the
 # terminal instead. Without one -- an unattended run -- setup is left for the member.

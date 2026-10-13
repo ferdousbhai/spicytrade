@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { MCP_ENDPOINT } from '../src/domain/site'
+import { CONNECT_GUIDE_URL, MCP_ENDPOINT } from '../src/domain/site'
+import { connectGuide } from '../src/server/connect-guide'
 import { llmsFullTxt, llmsTxt } from '../src/server/llms-txt'
 
 describe('llms.txt', () => {
@@ -17,6 +18,16 @@ describe('llms.txt', () => {
     const text = llmsTxt()
     expect(text.indexOf('## MCP server')).toBeLessThan(text.indexOf('## Public JSON'))
     expect(text).toContain(`(${MCP_ENDPOINT})`)
+  })
+
+  it('gives an existing agent a connector-only setup path and explicit refresh limits', () => {
+    expect(llmsTxt()).toContain(CONNECT_GUIDE_URL)
+    const guide = connectGuide()
+    expect(guide).toContain('--connector-only')
+    expect(guide).toContain('connect_spicytrade')
+    expect(guide).toContain('Configure only this harness')
+    expect(guide).toContain('Do not promise that every harness supports hot reload')
+    expect(guide).toContain('spicytrade integration')
   })
 
   it('carries the MCP guide in the full version, under the index rather than a second title', () => {

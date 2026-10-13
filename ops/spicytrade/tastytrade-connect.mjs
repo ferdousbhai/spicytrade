@@ -119,7 +119,7 @@ export async function connectTastytrade(out = process.stdout) {
 
   const listener = await loopbackListener(PROGRAM, {
     forbidden: 'This listener only answers the tastytrade return.',
-    received: 'tastytrade approved. Return to the terminal to finish.',
+    received: 'tastytrade approved. Return to your agent conversation or terminal while the connection finishes.',
     refused: 'Not connected. You can close this tab.',
   })
   let authorization

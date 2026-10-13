@@ -37,6 +37,7 @@ import { Route as ApiViewerRouteImport } from './routes/api.viewer'
 import { Route as AuthorizeIndexRouteImport } from './routes/authorize.index'
 import { Route as AuthorizeConsentRouteImport } from './routes/authorize.consent'
 import { Route as ConnectAgentRouteImport } from './routes/connect.agent'
+import { Route as ConnectGuideRouteImport } from './routes/connect.guide'
 import { Route as ApiAgentLoginsExchangeRouteImport } from './routes/api.agent-logins.exchange'
 import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
 import { Route as ApiBrokersTastytradeAuthorizeRouteImport } from './routes/api.brokers.tastytrade.authorize'
@@ -184,6 +185,11 @@ const ConnectAgentRoute = ConnectAgentRouteImport.update({
   path: '/connect/agent',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConnectGuideRoute = ConnectGuideRouteImport.update({
+  id: '/connect/guide',
+  path: '/connect/guide',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAgentLoginsExchangeRoute = ApiAgentLoginsExchangeRouteImport.update({
   id: '/exchange',
   path: '/exchange',
@@ -246,6 +252,7 @@ export interface FileRoutesByFullPath {
   '/api/viewer': typeof ApiViewerRoute
   '/authorize/consent': typeof AuthorizeConsentRoute
   '/connect/agent': typeof ConnectAgentRoute
+  '/connect/guide': typeof ConnectGuideRoute
   '/authorize/': typeof AuthorizeIndexRoute
   '/api/agent-logins/exchange': typeof ApiAgentLoginsExchangeRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -280,6 +287,7 @@ export interface FileRoutesByTo {
   '/api/viewer': typeof ApiViewerRoute
   '/authorize/consent': typeof AuthorizeConsentRoute
   '/connect/agent': typeof ConnectAgentRoute
+  '/connect/guide': typeof ConnectGuideRoute
   '/authorize': typeof AuthorizeIndexRoute
   '/api/agent-logins/exchange': typeof ApiAgentLoginsExchangeRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -317,6 +325,7 @@ export interface FileRoutesById {
   '/api/viewer': typeof ApiViewerRoute
   '/authorize/consent': typeof AuthorizeConsentRoute
   '/connect/agent': typeof ConnectAgentRoute
+  '/connect/guide': typeof ConnectGuideRoute
   '/authorize/': typeof AuthorizeIndexRoute
   '/api/agent-logins/exchange': typeof ApiAgentLoginsExchangeRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -354,6 +363,7 @@ export interface FileRouteTypes {
     | '/api/viewer'
     | '/authorize/consent'
     | '/connect/agent'
+    | '/connect/guide'
     | '/authorize/'
     | '/api/agent-logins/exchange'
     | '/api/auth/$'
@@ -388,6 +398,7 @@ export interface FileRouteTypes {
     | '/api/viewer'
     | '/authorize/consent'
     | '/connect/agent'
+    | '/connect/guide'
     | '/authorize'
     | '/api/agent-logins/exchange'
     | '/api/auth/$'
@@ -424,6 +435,7 @@ export interface FileRouteTypes {
     | '/api/viewer'
     | '/authorize/consent'
     | '/connect/agent'
+    | '/connect/guide'
     | '/authorize/'
     | '/api/agent-logins/exchange'
     | '/api/auth/$'
@@ -457,6 +469,7 @@ export interface RootRouteChildren {
   ApiStreamRoute: typeof ApiStreamRoute
   ApiViewerRoute: typeof ApiViewerRoute
   ConnectAgentRoute: typeof ConnectAgentRoute
+  ConnectGuideRoute: typeof ConnectGuideRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBrokersTastytradeAuthorizeRoute: typeof ApiBrokersTastytradeAuthorizeRoute
   ApiBrokersTastytradeCallbackRoute: typeof ApiBrokersTastytradeCallbackRoute
@@ -662,6 +675,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConnectAgentRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/connect/guide': {
+      id: '/connect/guide'
+      path: '/connect/guide'
+      fullPath: '/connect/guide'
+      preLoaderRoute: typeof ConnectGuideRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/agent-logins/exchange': {
       id: '/api/agent-logins/exchange'
       path: '/exchange'
@@ -771,6 +791,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiStreamRoute: ApiStreamRoute,
   ApiViewerRoute: ApiViewerRoute,
   ConnectAgentRoute: ConnectAgentRoute,
+  ConnectGuideRoute: ConnectGuideRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBrokersTastytradeAuthorizeRoute: ApiBrokersTastytradeAuthorizeRoute,
   ApiBrokersTastytradeCallbackRoute: ApiBrokersTastytradeCallbackRoute,

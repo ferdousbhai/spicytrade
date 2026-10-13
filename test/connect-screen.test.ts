@@ -29,11 +29,13 @@ function renderInteractive(signedIn = true) {
 }
 
 describe('Connect screen copy', () => {
-  it('leads with the one install command, fetched from this site', () => {
+  it('leads with a message for the existing agent and folds manual setup', () => {
     const html = renderToStaticMarkup(createElement(ConnectScreen, { owner: false, signedIn: true }))
     expect(html).toContain('curl -fsSL https://spicy.trade/install.sh | bash')
-    // One launcher handles both supported agents.
-    expect(html).toContain('spicytrade start')
+    expect(html).toContain('Message to your agent')
+    expect(html).toContain('https://spicy.trade/connect/guide')
+    expect(html).not.toContain('spicytrade start')
+    expect(html.indexOf('Start in your agent')).toBeLessThan(html.indexOf('Manual installation'))
     expect(html).not.toContain('codex -c mcp_servers.spicytrade.enabled=true')
     expect(html).toContain('run the install again to update.')
     // The install is the path; nothing on the page asks for a checkout or a hand-run step.

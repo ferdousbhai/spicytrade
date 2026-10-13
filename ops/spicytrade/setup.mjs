@@ -253,15 +253,15 @@ export async function setup(out = process.stdout) {
   // Whatever else is wrong, the missing agent is the step that matters most here, so it is always said.
   if (!agentInstalled) out.write(`\n${healthy ? 'Signed in. ' : ''}Install Claude Code or Codex, then run: ${cliCommand('setup')}\n`)
   if (ready.length) {
-    const starts = `  ${cliCommand('start')}\n`
+    const starts = '  Return to your agent conversation and ask it to connect Spicytrade.\n'
     const { kind } = await tastytradeCredentialKind()
     // An agent that was added can start whatever else failed, so how to start it is always said;
     // "Ready" is kept for a run with nothing left to fix.
     out.write(!healthy
-      ? `\nStart your agent with:\n${starts}`
+      ? `\nContinue in your agent:\n${starts}`
       : kind === 'app' || kind === 'personal'
-        ? `\nAccount connected. Open your trading agent with:\n${starts}`
-        : `\nReady for market data and research. Start your agent with:\n${starts}`
+        ? `\nAccount connected. Continue in your agent:\n${starts}`
+        : `\nReady for market data and research. Continue in your agent:\n${starts}`
           + `To see positions and place orders, run this in a terminal and connect tastytrade: ${cliCommand('setup')}\n`)
     // Only an agent that already had the server can be running on the credentials this run replaced.
     if (credentialsChanged && alreadyInPlace) out.write(reconnectNote(ready.map((client) => client.id)))

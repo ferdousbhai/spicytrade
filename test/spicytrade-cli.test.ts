@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { chmod, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { createServer, request as httpRequest, type IncomingMessage, type Server } from 'node:http'
 import { type AddressInfo } from 'node:net'
 import { dirname, join, resolve } from 'node:path'
@@ -433,7 +433,7 @@ describe('spicytrade setup', () => {
     expect(firstOut).not.toContain('✓ signed in to spicytrade')
     expect(firstOut).not.toContain('Everything is connected.')
     // tastytrade was not connected, so ready means market data and research, and says how to go further.
-    expect(firstOut).toContain(`Ready for market data and research. Start your agent with:\n  ${resolve(CLI)} start\n`)
+    expect(firstOut).toContain(`Ready for market data and research. Continue in your agent:\n  Return to your agent conversation and ask it to connect Spicytrade.\n`)
     expect(firstOut).toMatch(/To see positions and place orders, run this in a terminal and connect tastytrade: \S+ setup\n/)
     // Nothing was running on an older sign-in, so there is no reconnect advice to give.
     expect(firstOut).not.toContain('reconnects')
@@ -586,7 +586,7 @@ describe('setup with a problem left over', () => {
     const cli = run(machine, port, ['setup'])
     expect(await cli.exited).toBe(1)
     const { stdout } = cli.output()
-    expect(stdout).toContain(`Start your agent with:\n  ${resolve(CLI)} start\n`)
+    expect(stdout).toContain(`Continue in your agent:\n  Return to your agent conversation and ask it to connect Spicytrade.\n`)
     expect(stdout).not.toContain('Ready')
   }, 60_000)
 })
@@ -774,5 +774,92 @@ describe('opening a trading session', () => {
     expect(await cli.exited).toBe(1)
     expect(cli.output().stderr).toContain('setup')
     expect(await readFile(join(machine.state, 'codex-calls'), 'utf8')).not.toContain('-c mcp_servers')
+  })
+})
+
+
+describe('connecting from the current agent without a terminal', () => {
+  it('completes browser sign-in and broker approval without launching or configuring a harness', async () => {
+    const machine = await fakeMachine({})
+    const calls: string[] = []
+    const state = 'B'.repeat(43)
+    let brokerPort: number | undefined
+    const port = await serve((request, body) => {
+      const path = request.url ?? ''
+      calls.push(path)
+      if (path === '/api/agent-logins/exchange') return { status: 200, body: { token: NEW_TOKEN } }
+      if (path === '/api/brokers/tastytrade/authorize') {
+        brokerPort = JSON.parse(body).port
+        return { status: 200, body: { authorizationUrl: `https://my.tastytrade.com/auth.html?state=${state}`, state, expiresAt: new Date(Date.now() + 60_000).toISOString() } }
+      }
+      if (path === '/api/brokers/tastytrade/exchange') return { status: 200, body: { refreshToken: APP_REFRESH_TOKEN } }
+      if (path === '/api/brokers/tastytrade/token') return { status: 200, body: { accessToken: 'minted', expiresIn: 900 } }
+      const { id, method, params } = JSON.parse(body)
+      if (method === 'tools/call') expect(params.name).toBe('read_account_snapshot')
+      return { status: id === undefined ? 202 : 200, body: id === undefined ? undefined : { id, jsonrpc: '2.0', result: method === 'initialize'
+        ? { protocolVersion: '2025-06-18' }
+        : method === 'tools/call' ? { content: [{ type: 'text', text: JSON.stringify({ asOf: new Date().toISOString(), source: 'tastytrade', balances: { netLiquidatingValue: 1234 } }) }] }
+        : { tools: [] } } }
+    })
+    const cli = run(machine, port, ['connect'])
+    const approval = await approvalUrl(cli.output)
+    await visit(Number(approval.searchParams.get('port')), `/callback?code=${CODE}&state=${approval.searchParams.get('state')}`)
+    await expect.poll(() => cli.output().stdout).toContain('Approve spicytrade on tastytrade')
+    if (brokerPort === undefined) throw new Error('No broker callback was started')
+    await visit(brokerPort, `/callback?code=broker-code&state=${state}`)
+    expect(await cli.exited).toBe(0)
+    expect(cli.output().stdout).toContain('Account connected and live snapshot verified. Continue in your existing agent conversation.')
+    expect(calls.filter(path => path === '/api/brokers/tastytrade/authorize')).toHaveLength(1)
+    const files = await readdir(machine.state)
+    expect(files).not.toContain('claude-calls')
+    expect(files).not.toContain('codex-calls')
+    for (const secret of [NEW_TOKEN, APP_REFRESH_TOKEN, CODE, 'broker-code']) expect(JSON.stringify(cli.output())).not.toContain(secret)
+    expect(await readFile(join(machine.bin, 'store', 'tastytrade_app-refresh-token'), 'utf8')).toBe(APP_REFRESH_TOKEN)
+  }, 30_000)
+
+  it('does not report a connection ready when the live snapshot cannot be verified', async () => {
+    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN })
+    const worker = await fakeWorker([OLD_TOKEN])
+    const cli = run(machine, worker.port, ['connect'])
+    expect(await cli.exited).toBe(1)
+    expect(cli.output().stdout).not.toContain('Account connected and live snapshot verified')
+    expect(cli.output().stderr).toContain('could not be verified')
+  })
+
+  it('prints only a credential-free stdio manifest without inspecting or launching clients', async () => {
+    const machine = await fakeMachine({})
+    const cli = run(machine, 1, ['integration'])
+    expect(await cli.exited).toBe(0)
+    expect(JSON.parse(cli.output().stdout)).toEqual({ command: resolve(CLI), args: ['mcp'] })
+  })
+})
+
+
+describe('connector-only installation', () => {
+  it('installs without running setup, choosing an agent, or changing harness configuration', async () => {
+    const machine = await fakeMachine({})
+    await writeFile(join(machine.bin, 'curl'), `#!/usr/bin/env bash
+while (( $# )); do
+  if [[ $1 == -o ]]; then
+    printf '%s\\n' '#!/usr/bin/env node' 'throw new Error("Installer must not run setup")' > "$2"
+    exit 0
+  fi
+  shift
+done
+exit 1
+`)
+    await chmod(join(machine.bin, 'curl'), 0o755)
+    const child = spawn('bash', ['public/install.sh', '--connector-only'], {
+      env: { ...process.env, HOME: machine.home, XDG_DATA_HOME: join(machine.home, '.local', 'share'), PATH: TEST_PATH(machine.bin) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    children.push(child)
+    let output = ''
+    child.stdout.on('data', chunk => { output += chunk })
+    child.stderr.on('data', chunk => { output += chunk })
+    expect(await new Promise(resolve => child.once('exit', resolve))).toBe(0)
+    expect(output).toContain('Connector ready. Your current agent can run:')
+    expect(await readFile(join(machine.home, '.local', 'share', 'spicytrade', 'spicytrade.mjs'), 'utf8')).toContain('Installer must not run setup')
+    expect(await readdir(machine.state)).toEqual([])
   })
 })

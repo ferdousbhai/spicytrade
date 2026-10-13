@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { cliCommand } from './config.mjs'
+import { connect } from './connect.mjs'
+import { cliCommand, MCP_COMMAND } from './config.mjs'
 import { doctor } from './doctor.mjs'
 import { login } from './login.mjs'
 import { CliFailure, reconnectNote } from './loopback.mjs'
@@ -22,12 +23,13 @@ const SUPPORT_EMAIL = 'support@spicy.trade'
 
 const USAGE = `Usage: spicytrade <command>
 
-  start    Open your trading agent.
-  setup    Sign in, connect tastytrade, and add spicytrade to your agents.
-           Run it again any time to repair. To update, run the install again:
-           curl -fsSL https://spicy.trade/install.sh | bash
+  connect  Connect your account from the agent you already have open.
+           Your agent handles MCP registration; approve sign-in in your browser.
 
 Advanced:
+  setup                   Manual setup and repair for installed agent clients.
+  integration             Print the credential-free local MCP configuration.
+  start                   Optional: open a trading agent.
   doctor                  Check everything without changing anything.
   login                   Sign this computer in again.
   connect-tastytrade      Reconnect tastytrade.
@@ -36,9 +38,10 @@ Advanced:
   uninstall               Remove spicytrade and its credentials from this computer.
 `
 
-// A credential changed on its own reaches a session already running only once it reconnects;
-// `setup` says so itself, at its end, once.
+// The local MCP server can reload credentials with setup_required; older clients may reconnect.
 const COMMANDS = {
+  integration: async () => { process.stdout.write(`${JSON.stringify({ command: MCP_COMMAND[0], args: MCP_COMMAND.slice(1) })}\n`) },
+  connect,
   start,
   'connect-tastytrade': async () => { await connectTastytrade(); process.stdout.write(reconnectNote()) },
   'disconnect-tastytrade': async () => { if (await disconnectTastytrade()) process.stdout.write(reconnectNote()) },

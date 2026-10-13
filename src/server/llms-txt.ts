@@ -1,4 +1,4 @@
-import { INSTALL_SCRIPT_URL, MCP_ENDPOINT, MCP_PATH, SITE_NAME } from '../domain/site'
+import { CONNECT_GUIDE_URL, INSTALL_SCRIPT_URL, MCP_ENDPOINT, MCP_PATH, SITE_NAME } from '../domain/site'
 import { SPICE_GUIDE } from './doctrine'
 
 /**
@@ -29,7 +29,8 @@ what is admissible.
 ## MCP server
 
 - [MCP endpoint (Streamable HTTP)](${MCP_ENDPOINT}): Connect directly with no credential for the public tier: the site's cached snapshot quotes, catalysts, research reads and the daily brief.
-- [Local MCP server installer](${INSTALL_SCRIPT_URL}): For a member's own account, \`curl -fsSL ${INSTALL_SCRIPT_URL} | bash\` installs the \`spicytrade\` CLI and runs \`spicytrade setup\`. The agent client then launches \`spicytrade mcp\` as a stdio MCP server, which relays to the endpoint above with the member's sign-in and short-lived brokerage token read from the OS keyring, so no agent configuration holds a credential. Live broker quotes, chains and Greeks, account reads and guarded order placement all come through it; the brokerage credential is never stored on the server.
+- [Connect in the current agent](${CONNECT_GUIDE_URL}): Follow this guide to install the local connector, register only the current harness in its workspace, and approve browser authorization without launching a new agent. The connector keeps credentials in the OS keyring; no MCP configuration holds a credential.
+- [Local MCP server installer](${INSTALL_SCRIPT_URL}): Use \`--connector-only\` for agent-driven onboarding. Manual terminal setup remains available.
 - [OAuth protected resource metadata](${at(`/.well-known/oauth-protected-resource${MCP_PATH}`)}): How an HTTP MCP client discovers sign-in for the endpoint.
 - [Full agent guide](${at('/llms-full.txt')}): This file plus the guide the MCP server publishes as its \`spicytrade://guide\` resource.
 

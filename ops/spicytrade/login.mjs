@@ -98,7 +98,7 @@ export async function login(out = process.stdout) {
   const listener = await loopbackListener(PROGRAM, {
     forbidden: 'This listener only answers the spicytrade sign-in.',
     // Said before the code is redeemed, so it promises nothing the terminal may yet refuse.
-    received: 'Approved. Return to the terminal to finish.',
+    received: 'Approved. Return to your agent conversation or terminal while the connection finishes.',
     refused: 'Sign-in cancelled. You can close this tab.',
   })
   listener.expect(state)

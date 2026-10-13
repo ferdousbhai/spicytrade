@@ -295,6 +295,8 @@ test('unauthenticated visitors can read market data and the install, and sign in
 
   await navigateTo(page, 'Connect')
   // Installing needs no web session: the CLI's own sign-in opens the browser.
+  await expect(page.getByText('Message to your agent', { exact: true })).toBeVisible()
+  await page.getByRole('heading', { name: 'Manual installation' }).click()
   await expect(page.getByText('curl -fsSL https://spicy.trade/install.sh | bash')).toBeVisible()
   await page.getByRole('heading', { name: 'Signed-in computers' }).click()
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible()

@@ -14,6 +14,7 @@ export const SITE_NAME = WORDMARK.join('')
 export const MCP_PATH = '/mcp'
 export const MCP_ENDPOINT = `${SITE_ORIGIN}${MCP_PATH}`
 /** The local agent's installer, served from `public/install.sh`. */
+export const CONNECT_GUIDE_URL = `${SITE_ORIGIN}/connect/guide`
 export const INSTALL_SCRIPT_URL = `${SITE_ORIGIN}/install.sh`
 
 /** Where readers write: support, privacy requests, and legal notices, all on the site's own domain. */

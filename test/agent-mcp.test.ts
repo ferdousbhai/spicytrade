@@ -88,6 +88,7 @@ type JsonRpcMessage = {
     name?: string
     protocolVersion?: string
     uri?: string
+    arguments?: { action: string }
   }
 }
 
@@ -149,12 +150,14 @@ async function notReady(server: ReturnType<typeof startServer>) {
   expect(instructions.startsWith('spicytrade is not ready on this computer. ')).toBe(true)
   const fix = instructions.slice('spicytrade is not ready on this computer. '.length)
   const { tools } = ToolListSchema.parse(byId.get(2))
-  expect(tools.map((tool) => tool.name)).toEqual(['setup_required'])
+  expect(tools.map((tool) => tool.name)).toEqual(['setup_required', 'connect_spicytrade'])
   expect(tools[0]!.description).toContain(fix)
   expect(ToolCallSchema.parse(byId.get(3))).toEqual({ content: [{ text: fix, type: 'text' }], isError: true })
   return { error: { message: fix } }
 }
 
+const ConnectionReplySchema = z.object({ result: z.object({ content: z.array(z.object({ text: z.string() })) }) })
+const ConnectionStatusSchema = z.object({ status: z.enum(['not_started', 'pending', 'connected', 'failed']) })
 const NotReadyReplySchema = z.object({ id: z.number(), result: z.unknown() })
 const InitializeSchema = z.object({ instructions: z.string(), protocolVersion: z.literal('2025-06-18') })
 const ToolListSchema = z.object({ tools: z.array(z.object({ description: z.string(), name: z.string() })) })
@@ -260,8 +263,8 @@ describe('spicytrade mcp', () => {
     })
     const server = startServer(await fakeKeyring({ 'spicytrade/mcp-token': AGENT_TOKEN }), port)
     const failure = await notReady(server)
-    expect(failure.error.message).toMatch(/^This computer was signed out of spicytrade \(revoked under Signed-in computers\)\. .*\S*spicytrade(\.mjs)? setup\. When it finishes, tell your agent "setup is done" to continue\.$/)
-    expect(failure.error.message).toMatch(/If you no longer use spicytrade here, remove it with `\S*spicytrade(\.mjs)? uninstall`\. To keep using it, run this in a terminal/)
+    expect(failure.error.message).toMatch(/^This computer was signed out of spicytrade \(revoked under Signed-in computers\)\. .*\S*spicytrade(\.mjs)? connect\. Then call setup_required to reload the connection\.$/)
+    expect(failure.error.message).toMatch(/If you no longer use spicytrade here, remove it with `\S*spicytrade(\.mjs)? uninstall`\. To keep using it, use connect_spicytrade/)
     expect(JSON.stringify(server.replies) + server.log.stderr).not.toContain(AGENT_TOKEN)
   }, 30_000)
 
@@ -291,7 +294,7 @@ describe('spicytrade mcp', () => {
       id: 1,
       jsonrpc: '2.0',
       result: {
-        content: [{ text: expect.stringMatching(/^tastytrade is not connected on this computer\. Run this in a terminal, then reconnect \(in Claude Code, run \/mcp, pick spicytrade and choose Reconnect; or in Codex, quit and run codex resume --last -c mcp_servers\.spicytrade\.enabled=true\): \S*spicytrade(\.mjs)? setup$/), type: 'text' }],
+        content: [{ text: expect.stringMatching(/^tastytrade is not connected on this computer\. Use connect_spicytrade with action=start.*connect\. Then call setup_required to reload the connection\.$/), type: 'text' }],
         isError: true,
       },
     })
@@ -441,7 +444,7 @@ describe('spicytrade mcp', () => {
     }), port)
     server.send(request(1))
     const text = ToolErrorReplySchema.parse(await server.reply(0)).result.content[0]!.text
-    expect(text).toMatch(/personal grant \(HTTP 401\).* \S*spicytrade(\.mjs)? store-personal-grant$/)
+    expect(text).toMatch(/personal grant \(HTTP 401\).* \S*spicytrade(\.mjs)? store-personal-grant\. Then call setup_required to reload the connection\.$/)
     await expect.poll(() => server.log.stderr).toContain('SpicytradeMcp: tools/call TastytradeAuth 401\n')
     expect(server.log.stderr + text).not.toContain(REFRESH_TOKEN)
     expect(server.log.stderr + text).not.toContain(CLIENT_SECRET)
@@ -511,7 +514,7 @@ esac
     const { captured, port } = await worker()
     const server = startServer(directory, port)
     const failure = await notReady(server)
-    expect(failure.error.message).toMatch(/^Your password storage is locked\..* Run this in a terminal: \S*spicytrade(\.mjs)? setup\. When it finishes, tell your agent "setup is done" to continue\.$/)
+    expect(failure.error.message).toMatch(/^Your password storage is locked\..* Use connect_spicytrade with action=start.*run \S*spicytrade(\.mjs)? connect\. Then call setup_required to reload the connection\.$/)
     expect(captured).toHaveLength(0)
   }, 30_000)
 
@@ -570,7 +573,7 @@ esac
         ...personal,
       }), port)
       const failure = await notReady(server)
-      expect(failure.error.message).toMatch(/^Two tastytrade connections are saved.* Run this in a terminal: \S*spicytrade(\.mjs)? setup\. When it finishes, tell your agent "setup is done" to continue\.$/)
+      expect(failure.error.message).toMatch(/^Two tastytrade connections are saved.* Use connect_spicytrade with action=start.*run \S*spicytrade(\.mjs)? connect\. Then call setup_required to reload the connection\.$/)
       expect(JSON.stringify(failure) + server.log.stderr).not.toContain(CLIENT_SECRET)
       expect(JSON.stringify(failure) + server.log.stderr).not.toContain('app-refresh-token-value')
       expect(captured).toHaveLength(0)
@@ -582,7 +585,7 @@ esac
     const { captured, port } = await worker()
     const server = startServer(await fakeKeyring({ 'spicytrade/mcp-token': AGENT_TOKEN, 'tastytrade/refresh-token': REFRESH_TOKEN }), port)
     const failure = await notReady(server)
-    expect(failure.error.message).toMatch(/^An incomplete tastytrade connection is saved on this computer\. Run this in a terminal: \S*spicytrade(\.mjs)? setup\. When it finishes, tell your agent "setup is done" to continue\.$/)
+    expect(failure.error.message).toMatch(/^An incomplete tastytrade connection is saved on this computer\. Use connect_spicytrade with action=start.*run \S*spicytrade(\.mjs)? connect\. Then call setup_required to reload the connection\.$/)
     expect(captured).toHaveLength(0)
   }, 30_000)
 
@@ -591,7 +594,7 @@ esac
     const server = startServer(await fakeKeyring({}), port)
     server.send({ ...request(1, 'initialize'), params: { clientInfo: { name: 'claude-code' }, protocolVersion: '2025-06-18' } })
     const { instructions } = InitializeSchema.parse(NotReadyReplySchema.parse(await server.reply(0)).result)
-    expect(instructions).toMatch(/\S*spicytrade(\.mjs)? setup\. When it finishes, tell your agent "setup is done" to continue\.$/)
+    expect(instructions).toMatch(/\S*spicytrade(\.mjs)? connect\. Then call setup_required to reload the connection\.$/)
     expect(instructions).not.toContain('Codex')
   }, 30_000)
 
@@ -619,7 +622,7 @@ esac
     expect(FailureSchema.parse(await server.reply(0)).error.code).toBe(-32601)
     server.send({ ...request(2, 'initialize'), params: { protocolVersion: '2025-06-18' } })
     const { instructions } = InitializeSchema.parse(NotReadyReplySchema.parse(await server.reply(1)).result)
-    expect(instructions).toMatch(/\S*spicytrade(\.mjs)? setup\. When it finishes, tell your agent "setup is done" to continue\.$/)
+    expect(instructions).toMatch(/\S*spicytrade(\.mjs)? connect\. Then call setup_required to reload the connection\.$/)
     expect(instructions).not.toContain('Claude Code')
   }, 30_000)
 
@@ -638,7 +641,7 @@ esac
     const { captured, port } = await worker()
     const server = startServer(await fakeKeyring({}), port)
     const failure = await notReady(server)
-    expect(failure.error.message).toMatch(/not signed in to spicytrade\. Run this in a terminal: \S*spicytrade(\.mjs)? setup\. When it finishes, tell your agent "setup is done" to continue\.$/)
+    expect(failure.error.message).toMatch(/not signed in to spicytrade\. Use connect_spicytrade with action=start.*run \S*spicytrade(\.mjs)? connect\. Then call setup_required to reload the connection\.$/)
     expect(captured).toHaveLength(0)
   }, 30_000)
 
@@ -653,7 +656,7 @@ esac
     const failure = FailureSchema.parse(await server.reply(0))
     expect(failure.id).toBe(7)
     expect(failure.error.code).toBe(-32001)
-    expect(failure.error.message).toMatch(/^This computer was signed out of spicytrade \(revoked under Signed-in computers\)\. .*then reconnect \(in Claude Code, run \/mcp, pick spicytrade and choose Reconnect; or in Codex, quit and run codex resume --last -c mcp_servers\.spicytrade\.enabled=true\): \S*spicytrade(\.mjs)? setup$/)
+    expect(failure.error.message).toMatch(/^This computer was signed out of spicytrade \(revoked under Signed-in computers\)\. .*Use connect_spicytrade with action=start.*connect\. Then call setup_required to reload the connection\.$/)
     await expect.poll(() => server.log.stderr).toContain('SpicytradeMcp: tools/call AgentTokenRefused 401\n')
     expect(JSON.stringify(failure) + server.log.stderr).not.toContain(AGENT_TOKEN)
   }, 30_000)
@@ -693,7 +696,7 @@ esac
     refusal = { body: { error: 'tastytrade refused the grant', tastytradeStatus: 401 }, status: 502 }
     server.send(request('b'))
     const text = ToolErrorReplySchema.parse(await server.reply(1)).result.content[0]!.text
-    expect(text).toMatch(/^tastytrade refused this computer's brokerage connection \(HTTP 401\)\. Run this in a terminal, then reconnect \(in Claude Code, run \/mcp, pick spicytrade and choose Reconnect; or in Codex, quit and run codex resume --last -c mcp_servers\.spicytrade\.enabled=true\): \S*spicytrade(\.mjs)? setup$/)
+    expect(text).toMatch(/^tastytrade refused this computer's brokerage connection \(HTTP 401\)\. Use connect_spicytrade with action=start.*connect\. Then call setup_required to reload the connection\.$/)
     expect(text).not.toContain(REFRESH_TOKEN)
   }, 30_000)
 
@@ -752,10 +755,60 @@ describe('repairing an existing MCP session', () => {
     } })
     expect(await server.reply(4)).toEqual({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })
     server.send(request(5, 'tools/list'))
-    expect(await server.reply(5)).toEqual({ id: 5, jsonrpc: '2.0', result: { tools: [{ name: 'read_account_snapshot' }] } })
+    expect(await server.reply(5)).toMatchObject({ id: 5, jsonrpc: '2.0', result: { tools: [{ name: 'read_account_snapshot' }, { name: 'setup_required' }, { name: 'connect_spicytrade' }] } })
     expect(captured.map((call) => JSON.parse(call.body).method)).toEqual([
       'initialize', 'notifications/initialized', 'tools/list',
     ])
     expect(JSON.stringify(server.replies) + server.log.stderr).not.toContain(AGENT_TOKEN)
+  })
+})
+
+
+describe('in-conversation onboarding tools', () => {
+  it('connects through an MCP tool, reloads credentials, and continues the same session', async () => {
+    const { captured, port } = await worker((incoming, body, response) => {
+      if (incoming.url === '/api/brokers/tastytrade/token') {
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ accessToken: MINTED, expiresIn: 900 }))
+        return
+      }
+      const { id, method, params } = JSON.parse(body)
+      if (method === 'tools/call') expect(params.name).toBe('read_account_snapshot')
+      response.writeHead(id === undefined ? 202 : 200, { 'content-type': 'application/json' })
+      response.end(id === undefined ? '' : JSON.stringify({ id, jsonrpc: '2.0', result: method === 'initialize'
+        ? { protocolVersion: '2025-06-18', capabilities: { tools: {} } }
+        : method === 'tools/list' ? { tools: [{ name: 'read_account_snapshot' }] }
+        : { content: [{ type: 'text', text: JSON.stringify({ asOf: new Date().toISOString(), source: 'tastytrade', balances: { netLiquidatingValue: 1234 } }) }] } }))
+    })
+    const server = startServer(await fakeKeyring({ 'spicytrade/mcp-token': AGENT_TOKEN, 'tastytrade/app-refresh-token': REFRESH_TOKEN }), port)
+    server.send({ ...request(1, 'initialize'), params: { protocolVersion: '2025-06-18' } })
+    await server.reply(0)
+    const statusOf = (reply: z.infer<typeof ConnectionReplySchema>) => ConnectionStatusSchema.parse(JSON.parse(reply.result.content[0]!.text)).status
+    server.send({ ...request(2), params: { name: 'connect_spicytrade', arguments: { action: 'start' } } })
+    expect(statusOf(ConnectionReplySchema.parse(await server.reply(1)))).toBe('pending')
+    let sequence = 2
+    await expect.poll(async () => {
+      const count = server.replies.length
+      server.send({ ...request(++sequence), params: { name: 'connect_spicytrade', arguments: { action: 'status' } } })
+      return statusOf(ConnectionReplySchema.parse(await server.reply(count)))
+    }, { timeout: 10_000 }).toBe('connected')
+    const count = server.replies.length
+    server.send({ ...request(++sequence), params: { name: 'setup_required' } })
+    await server.reply(count + 1)
+    expect(server.replies[count]).toMatchObject({ result: { content: [{ text: expect.stringContaining('Connected.') }] } })
+    expect(server.replies[count + 1]).toEqual({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })
+    expect(captured.filter(call => JSON.parse(call.body).method === 'tools/call')).toHaveLength(1)
+    expect(JSON.stringify(server.replies) + server.log.stderr).not.toContain(REFRESH_TOKEN)
+  })
+
+  it('can report status and reject invalid actions before sign-in without browser or network side effects', async () => {
+    const { captured, port } = await worker()
+    const server = startServer(await fakeKeyring({}), port)
+    server.send({ ...request(1), params: { name: 'connect_spicytrade', arguments: { action: 'status' } } })
+    const reply = z.object({ result: z.object({ content: z.array(z.object({ text: z.string() })) }) }).parse(await server.reply(0))
+    expect(JSON.parse(reply.result.content[0]!.text).status).toBe('not_started')
+    server.send({ ...request(2), params: { name: 'connect_spicytrade', arguments: { action: 'trade' } } })
+    expect(FailureSchema.parse(await server.reply(1)).error.code).toBe(-32602)
+    expect(captured).toHaveLength(0)
   })
 })

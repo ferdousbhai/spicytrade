@@ -1,8 +1,9 @@
+import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { z } from 'zod'
 
 import { grantMinter, grantRefused, mintUnavailable, TastytradeAuthError, tastytradeUnavailable } from './broker-grants.mjs'
-import { cliCommand, reconnectHow, UPSTREAM, workerFault } from './config.mjs'
+import { CLI_PATH, cliCommand, UPSTREAM, workerFault } from './config.mjs'
 import { agentToken, KeyringUnavailable, TASTYTRADE, tastytradeCredentialKind } from './keyring.mjs'
 import { tokenRetiresAt, UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
 
@@ -160,37 +161,15 @@ function failureFor(error, grantKind) {
   return { code: FAILURE_CODES.other, message: `spicytrade could not complete this request. ${network}` }
 }
 
-/**
- * A fix the member makes in a terminal. This session read the keyring when it started, so the fix
- * reaches it only once it reconnects -- said here, or the member runs it, asks again, and gets the
- * same answer. "In a terminal" also keeps an agent from running it in its own shell, where there is
- * no one to answer setup's question. The command comes last, so copying it takes nothing after it.
- */
+/** Credential changes are reloaded explicitly inside this MCP session. */
 function repairInPlace(command) {
-  return `Run this in a terminal: ${command}. When it finishes, tell your agent "setup is done" to continue.`
+  return `Use connect_spicytrade with action=start to connect in this conversation. If you prefer a terminal, run ${command}. Then call setup_required to reload the connection.`
 }
 
 function repair(command) {
-  return `Run this in a terminal, then reconnect (${reconnectHow(connectedClient ? [connectedClient] : undefined)}): ${command}`
-}
-
-/**
- * The agent client this session serves, from the name it gives in `initialize`, so a fix names
- * only its own reconnect step; undefined until then, or for a client this does not know.
- */
-let connectedClient
-const ClientInfoSchema = z.looseObject({ name: z.string() })
-const OpeningParamsSchema = z.looseObject({
-  // `initialize` names the client in its params; the 2026-07-28 revision's `server/discover`, in `_meta`.
-  _meta: z.looseObject({ 'io.modelcontextprotocol/clientInfo': ClientInfoSchema.optional() }).optional(),
-  clientInfo: ClientInfoSchema.optional(),
-})
-function noteClient(message) {
-  const params = OpeningParamsSchema.safeParse(message.params).data
-  const name = params?.clientInfo?.name ?? params?._meta?.['io.modelcontextprotocol/clientInfo']?.name
-  // A message that names no client -- a fallback `initialize` without one -- keeps what an earlier one said.
-  if (name === undefined) return
-  connectedClient = /claude/i.test(name) ? 'claude' : /codex/i.test(name) ? 'codex' : undefined
+  return command.endsWith('store-personal-grant')
+    ? `Run this in a terminal: ${command}. Then call setup_required to reload the connection.`
+    : repairInPlace(cliCommand('connect'))
 }
 
 /**
@@ -212,6 +191,21 @@ function routingHeaders(message, headers) {
 const LOCAL_PROTOCOL_VERSION = '2025-06-18'
 /** The one tool a session that needs setup offers, so the agent reads the fix when asked anything. */
 const SETUP_TOOL = 'setup_required'
+const CONNECT_TOOL = {
+  name: 'connect_spicytrade',
+  description: 'Connect Spicytrade and tastytrade from the current conversation. Call action=start only when the user requests account connection. The browser and desktop keyring collect approval; never request passwords or tokens in chat. Use action=status after approval. When connected, call setup_required to reload credentials, then read_account_snapshot. Never places orders or launches an agent.',
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  inputSchema: { type: 'object', properties: { action: { type: 'string', enum: ['start', 'status'] } }, required: ['action'], additionalProperties: false },
+}
+const ConnectInput = z.strictObject({ action: z.enum(['start', 'status']) })
+function setupTool(fix = 'Reload saved credentials after connecting or repairing this computer. Never retry an ambiguous order automatically.') {
+  return {
+    name: SETUP_TOOL,
+    description: `${fix} Call this tool to recheck the connection without restarting your agent.`,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    inputSchema: { properties: {}, type: 'object' },
+  }
+}
 /** How a local answer begins; `doctor` reads it to tell such a session from one the Worker served. */
 export const NOT_READY = 'spicytrade is not ready on this computer.'
 
@@ -237,12 +231,7 @@ function localAnswer(message, fix) {
     }
     case 'ping': return ok({})
     case 'tools/list': return ok({
-      tools: [{
-        description: `${NOT_READY} Its market, research and account tools are unavailable until then. ${fix} After setup finishes, call this tool to recheck the connection without restarting your agent.`,
-        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-        inputSchema: { properties: {}, type: 'object' },
-        name: SETUP_TOOL,
-      }],
+      tools: [setupTool(`${NOT_READY} ${fix}`), CONNECT_TOOL],
     })
     case 'tools/call': return ok({ content: [{ text: fix, type: 'text' }], isError: true })
     // Anything else -- `server/discover` among them, which a client falls back from to `initialize`
@@ -335,14 +324,14 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
     // Not relayed market-only: a keyring that cannot be read may hold a brokerage connection, and
     // carrying on without it would answer account tools as though none were connected.
     if (!(error instanceof KeyringUnavailable)) throw error
-    setupRequired = () => `${error.recovery}. ${repairInPlace(cliCommand('setup'))}`
+    setupRequired = () => `${error.recovery}. ${repairInPlace(cliCommand('connect'))}`
   }
   if (setupRequired === undefined && !agentBearer) {
-    setupRequired = () => `This computer is not signed in to spicytrade. ${repairInPlace(cliCommand('setup'))}`
+    setupRequired = () => `This computer is not signed in to spicytrade. ${repairInPlace(cliCommand('connect'))}`
   } else if (setupRequired === undefined && (credential.kind === 'ambiguous' || credential.kind === 'incomplete')) {
     setupRequired = () => `${credential.kind === 'ambiguous'
       ? 'Two tastytrade connections are saved on this computer, so spicytrade will not guess which account trades.'
-      : 'An incomplete tastytrade connection is saved on this computer.'} ${repairInPlace(cliCommand('setup'))}`
+      : 'An incomplete tastytrade connection is saved on this computer.'} ${repairInPlace(cliCommand('connect'))}`
   }
   if (setupRequired) process.stderr.write(`${PROGRAM}: ${setupRequired()}\n`)
 
@@ -366,6 +355,33 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
   let sessionId
   let protocolVersion
 
+  let connectionChild
+  let connectionState = { status: 'not_started', message: 'Ask to connect your account to begin browser authorization.' }
+  const connectionCall = (message) => {
+    const parsed = ConnectInput.safeParse(message.params?.arguments)
+    if (!parsed.success) return { error: { code: -32602, message: 'Choose action=start or action=status.' }, id: message.id, jsonrpc: '2.0' }
+    if (parsed.data.action === 'start' && !connectionChild) {
+      connectionState = { status: 'pending', message: 'Connecting. Complete any desktop password dialog and browser approvals, then check status.' }
+      // This child owns browser callbacks. Only our progress text and approval URLs return;
+      // credentials never cross argv or the harness environment. No agent is launched.
+      const child = spawn(process.execPath, [CLI_PATH, 'connect'], {
+        stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, SPICYTRADE_DEBUG: '' },
+      })
+      connectionChild = child
+      let progress = ''
+      child.stdout.on('data', (chunk) => { progress += chunk; connectionState.message = progress })
+      child.stderr.on('data', (chunk) => { progress += chunk; connectionState.message = progress })
+      child.once('error', () => {
+        connectionState = { status: 'failed', message: 'The local connector could not start. Reinstall it and try again.' }
+        connectionChild = undefined
+      })
+      child.once('close', (code) => {
+        connectionState = { status: code === 0 ? 'connected' : 'failed', message: progress || 'Connection stopped before finishing.' }
+        connectionChild = undefined
+      })
+    }
+    return { id: message.id, jsonrpc: '2.0', result: { content: [{ type: 'text', text: JSON.stringify(connectionState) }] } }
+  }
   let opening
   let recovering = false
   async function relay(message, emit = write) {
@@ -378,16 +394,25 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
     // Whether the request left for the Worker: after that, a call that changes something may have happened.
     let sent = false
     if (message.method === 'initialize' || message.method === 'server/discover') {
-      noteClient(message)
       opening = message
     }
-    const recheck = setupRequired && message.method === 'tools/call'
+    const localTool = message.method === 'tools/call' ? ToolCallParamsSchema.safeParse(message.params).data?.name : undefined
+    if (localTool === CONNECT_TOOL.name) {
+      emit(connectionCall(message))
+      return
+    }
+    const recheck = message.method === 'tools/call'
       && ToolCallParamsSchema.safeParse(message.params).data?.name === SETUP_TOOL
+    if (recheck && (recovering || inFlight.size > 0 || connectionChild)) {
+      emit({ id, jsonrpc: '2.0', result: { content: [{ type: 'text', text: 'Wait for the connection and outstanding calls to finish, then recheck.' }], isError: true } })
+      return
+    }
     if (recheck && !recovering && inFlight.size === 0) {
       recovering = true
       try {
         const nextBearer = await agentToken()
         const nextCredential = await tastytradeCredentialKind()
+        setupRequired = () => `The saved connection is missing or incomplete. ${repairInPlace(cliCommand('connect'))}`
         if (nextBearer && !['ambiguous', 'incomplete'].includes(nextCredential.kind)) {
           // Recovery is explicit and only runs with no outstanding calls. Never replay the
           // user's failed tool or carry a cached broker token into a new credential context.
@@ -417,7 +442,7 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
         }
       } catch (error) {
         if (!(error instanceof KeyringUnavailable)) throw error
-        setupRequired = () => `${error.recovery}. ${repairInPlace(cliCommand('setup'))}`
+        setupRequired = () => `${error.recovery}. ${repairInPlace(cliCommand('connect'))}`
       } finally {
         recovering = false
       }
@@ -494,7 +519,7 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
           // Refused before the session began: serve it as one that needs setup, so the agent hears why.
           // Revoking is also how a member stops using spicytrade, so the way out is named beside the way back.
           setupRequired = () => 'This computer was signed out of spicytrade (revoked under Signed-in computers). If you no'
-            + ` longer use spicytrade here, remove it with \`${cliCommand('uninstall')}\`. To keep using it, ${repairInPlace(cliCommand('setup')).replace(/^Run/, 'run')}`
+            + ` longer use spicytrade here, remove it with \`${cliCommand('uninstall')}\`. To keep using it, ${repairInPlace(cliCommand('connect')).replace(/^Use/, 'use')}`
           process.stderr.write(`${PROGRAM}: initialize AgentTokenRefused 401\n`)
           emit(localAnswer(message, setupRequired()))
           return
@@ -506,10 +531,20 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
         await readMessages(upstream, (reply) => {
           if (message.method === 'initialize' && reply.id === id) {
             const parsed = InitializeResultSchema.safeParse(reply)
-            if (parsed.success) protocolVersion = parsed.data.result.protocolVersion
+            if (parsed.success) {
+              protocolVersion = parsed.data.result.protocolVersion
+              const result = reply.result
+              reply = { ...reply, result: { ...result, capabilities: { ...result.capabilities, tools: { ...result.capabilities?.tools, listChanged: true } } } }
+            }
           }
           if (reply.id === id && (reply.result !== undefined || reply.error !== undefined)) answered = true
           if (message.method === 'tools/list' && reply.id === id) {
+            const listed = ToolListResultSchema.safeParse(reply)
+            if (listed.success) reply = { ...reply, result: { ...reply.result, tools: [
+              ...listed.data.result.tools.filter((tool) => tool.name !== SETUP_TOOL && tool.name !== CONNECT_TOOL.name),
+              setupTool(), CONNECT_TOOL,
+            ] } }
+
             for (const tool of ToolListResultSchema.safeParse(reply).data?.result.tools ?? []) {
               if (tool.annotations?.readOnlyHint === true) readOnlyTools.add(tool.name)
             }
@@ -580,5 +615,7 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
     const pending = relay(parsed.data).finally(() => inFlight.delete(pending))
     inFlight.add(pending)
   }
+  // Disconnecting the harness ends its pending browser flow too.
+  connectionChild?.kill()
   await Promise.all(inFlight)
 }

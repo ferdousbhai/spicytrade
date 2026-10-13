@@ -15,6 +15,7 @@ import { toError } from '../domain/failure'
 import { GoogleSignInButton } from './auth-gate'
 import { CopyBlock } from './copy-block'
 import { INSTALL_SCRIPT_URL, MCP_ENDPOINT } from '../domain/site'
+import { CONNECT_PROMPT } from '../server/connect-guide'
 
 /** The name every client's config knows the server by; `spicytrade setup` adds it under this too. */
 const MCP_SERVER_NAME = 'spicytrade'
@@ -30,8 +31,6 @@ const addCommands = (url: string) => ({
  * server to the agents it finds. Running it again updates it.
  */
 const INSTALL_COMMAND = `curl -fsSL ${INSTALL_SCRIPT_URL} | bash`
-/** The local launcher handles agent selection, folder and MCP configuration. */
-const START_COMMAND = 'spicytrade start'
 
 
 /**
@@ -221,8 +220,8 @@ export function ConnectScreen({ authError, owner, signedIn }: { authError?: stri
       <header>
         <h1>Connect your agent</h1>
         <p>
-          Give your agent live quotes, option chains, and research — and, in Claude Code or Codex once
-          tastytrade is connected, your positions and guarded orders.
+          Give your agent live quotes, option chains, and research — plus your positions and guarded orders
+          when tastytrade is connected through the local connector.
         </p>
       </header>
 
@@ -246,24 +245,32 @@ export function ConnectScreen({ authError, owner, signedIn }: { authError?: stri
       </aside>
 
       <section className="connect-step">
-        <h2>Install</h2>
-        <p>On Linux, run this in a terminal on the computer your agent runs on:</p>
-        <CopyBlock label="Terminal" value={INSTALL_COMMAND} />
+        <h2>Start in your agent</h2>
+        <p>Open the agent you already use and paste this into your conversation:</p>
+        <CopyBlock label="Message to your agent" value={CONNECT_PROMPT} />
         <p>
-          It signs this computer in through your browser, asks to connect tastytrade, and adds spicytrade
-          to Claude Code and Codex. Your credentials stay in this computer&apos;s keyring, never in your agent&apos;s settings.
-          Then open your trading agent:
+          Your agent installs the local connector and connects it to the current workspace.
+          Approve the browser sign-ins and any desktop password dialog, then continue your conversation.
+          Your credentials stay in this computer&apos;s keyring.
         </p>
-        <CopyBlock label="Terminal" value={START_COMMAND} />
-        <p>Ask “How is my account doing?” once tastytrade is connected.</p>
+        <p>Once connected, ask “How is my account doing?”</p>
         <p className="connect-note">
-          Needs Linux with Node.js 22 or newer, a desktop keyring (GNOME Keyring or KWallet) with
-          secret-tool (on Debian/Ubuntu: <code>sudo apt install libsecret-tools</code>), and Claude Code
-          or Codex. If something stops working, run{' '}
-          <code>spicytrade setup</code>; run the install again to update. To remove it, run{' '}
-          <code>spicytrade uninstall</code>.
+          Account access currently needs a local Linux agent with shell access and local MCP support.
+          Other agents can use market data and research below. Some agents need a reconnect to load new tools;
+          your agent will guide that step when needed.
         </p>
       </section>
+
+      <details className="connect-step connect-fold">
+        <summary><h2>Manual installation</h2></summary>
+        <p>If you prefer to set up from a terminal on the computer your agent runs on:</p>
+        <CopyBlock label="Terminal" value={INSTALL_COMMAND} />
+        <p>
+          Needs Linux, Node.js 22 or newer, secret-tool, and a desktop keyring.
+          Run <code>spicytrade setup</code> to repair; run the install again to update.
+          Return to your existing agent after setup. To remove it, run <code>spicytrade uninstall</code>.
+        </p>
+      </details>
 
       {/* Folded: the install is the path nearly every member wants, and these two made the page
           several screens long on a phone. Native details keep the contents in the page for
