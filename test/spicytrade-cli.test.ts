@@ -22,6 +22,13 @@ const NEW_TOKEN = 'spice_fedcba9876543210_NEWNEWNEWNEWNEWNEWNE'
 const CODE = 'C'.repeat(43)
 const APP_REFRESH_TOKEN = 'app-refresh-token-that-belongs-in-the-keyring'
 const CLI = 'ops/spicytrade/spicytrade.mjs'
+/**
+ * The PATH every run gets: the fakes, this test's own node, and the system directories. The node
+ * is needed because the agent's server starts through `#!/usr/bin/env node`, as an agent starts
+ * it with the member's PATH; a build machine may have no node in the system directories at all.
+ */
+const TEST_PATH = (bin: string) => `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`
+
 /** The command line `setup` registers: this CLI by absolute path, run through its shebang. */
 const MCP_TARGET = `${resolve(CLI)} mcp`
 const LEGACY_PROXY_URL = 'http://127.0.0.1:8787/mcp'
@@ -184,7 +191,7 @@ function run(machine: Machine, workerPort: number, args: string[]) {
       ...process.env,
       CODEX_HOME: join(machine.home, '.codex'),
       HOME: machine.home,
-      PATH: `${machine.bin}:/usr/bin:/bin`,
+      PATH: TEST_PATH(machine.bin),
       SPICYTRADE_MCP_URL: `http://127.0.0.1:${workerPort}/mcp`,
       SPICYTRADE_TRADING_DIR: machine.trading,
       XDG_CONFIG_HOME: machine.config,
@@ -720,7 +727,7 @@ describe('spicytrade uninstall', () => {
     const worker = await fakeWorker([])
     // Without XDG_DATA_HOME, so the installer's default location is the one in play.
     const { XDG_DATA_HOME: _ignored, ...inherited } = process.env
-    const env = { ...inherited, HOME: machine.home, PATH: `${machine.bin}:/usr/bin:/bin`, SPICYTRADE_MCP_URL: `http://127.0.0.1:${worker.port}/mcp`, XDG_CONFIG_HOME: machine.config }
+    const env = { ...inherited, HOME: machine.home, PATH: TEST_PATH(machine.bin), SPICYTRADE_MCP_URL: `http://127.0.0.1:${worker.port}/mcp`, XDG_CONFIG_HOME: machine.config }
     const child = spawn(process.execPath, [join(share, 'spicytrade.mjs'), 'uninstall'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
     children.push(child)
     let stdout = ''
