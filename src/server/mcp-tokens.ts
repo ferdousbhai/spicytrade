@@ -53,7 +53,7 @@ type McpTokenIdentity = { tokenId: string; userId: string }
 
 export class McpTokenLimitError extends Error {
   constructor() {
-    super(`A member may hold at most ${MAX_MCP_TOKENS_PER_USER} agent tokens. Revoke one before issuing another.`)
+    super(`You can have at most ${MAX_MCP_TOKENS_PER_USER} signed-in computers and tokens. Revoke one you no longer use above, then try again.`)
     this.name = 'McpTokenLimitError'
   }
 }

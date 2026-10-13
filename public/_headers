@@ -6,3 +6,12 @@
 # stale copy is the one thing that keeps such a browser from ever reaching current code.
 /sw.js
   Cache-Control: no-cache
+
+# The installer and the CLI it downloads are fetched again on every install, which is also how a
+# member updates, so a cached copy would hand them the previous release.
+/install.sh
+  Cache-Control: no-cache
+  Content-Type: text/plain; charset=utf-8
+
+/spicytrade.mjs
+  Cache-Control: no-cache

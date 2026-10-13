@@ -2,15 +2,15 @@ import { createHash, randomBytes } from 'node:crypto'
 import { hostname } from 'node:os'
 import { z } from 'zod'
 
-import { AGENT_TOKEN_SERVICE, cliCommand, MCP_TOKEN_KEY, ORIGIN } from './config.mjs'
-import { agentToken, storeAgentToken } from './keyring.mjs'
-import { awaitReturn, CliFailure, loopbackListener, openBrowser } from './loopback.mjs'
-import { restartProxy } from './systemd.mjs'
+import { transportCode } from './broker-grants.mjs'
+import { cliCommand, ORIGIN } from './config.mjs'
+import { agentToken, KeyringUnavailable, storeAgentToken } from './keyring.mjs'
+import { awaitReturn, CliFailure, loopbackListener, openBrowser, remoteNote, unexpectedTail } from './loopback.mjs'
 import { UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
 
 /**
  * `spicytrade login`: sign this machine in to spicytrade from a browser, and keep the agent
- * token it is issued in the OS keyring, where the proxy reads it.
+ * token it is issued in the OS keyring, where `spicytrade mcp` reads it.
  *
  * The member approves on spicytrade's `/connect/agent` page, already signed in there; the page
  * sends the browser back to a listener here with a one-time code; this process redeems the code
@@ -68,38 +68,38 @@ async function exchange(code, codeVerifier, previousToken) {
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     })
   } catch (error) {
-    throw new CliFailure(`spicytrade could not be reached (${error instanceof Error ? error.name : 'UnknownError'})`)
+    // The cause's own word -- ENOTFOUND, ECONNREFUSED, TimeoutError -- not fetch's bare TypeError.
+    const cause = transportCode(error)
+    throw new CliFailure(`spicytrade could not be reached${cause ? ` (${cause})` : ''}. Check your internet connection, then run: ${cliCommand('setup')}`)
   }
   const payload = await response.json().catch(() => undefined)
   if (response.status === 400) {
-    throw new CliFailure(`the sign-in expired or was already used; run login again:\n  ${cliCommand('login')}`)
+    throw new CliFailure(`the sign-in expired or was already used. Run: ${cliCommand('setup')}`)
   }
   if (response.status === 409) {
-    throw new CliFailure('your account already holds as many agent tokens as it may. Revoke one you no longer\n'
-      + `use under "Headless access" in the Connect tab (${ORIGIN}/connect), then run this again.`)
+    throw new CliFailure('your account has the most signed-in computers allowed. Revoke one you no longer use under'
+      + ` "Signed-in computers" at ${ORIGIN}/connect, then run: ${cliCommand('setup')}`)
   }
-  if (!response.ok) throw new CliFailure(`spicytrade refused the sign-in (HTTP ${response.status})`)
+  if (!response.ok) throw new CliFailure(`spicytrade could not finish the sign-in (HTTP ${response.status}). Try again with: ${cliCommand('setup')}`)
   const parsed = ExchangeResponseSchema.safeParse(payload)
-  if (!parsed.success) throw new CliFailure('spicytrade answered the sign-in with an unreadable response')
+  if (!parsed.success) throw new CliFailure(`spicytrade answered the sign-in with an unreadable response. ${unexpectedTail()}`)
   return parsed.data.token
 }
 
-/**
- * Sign in, store the token, and restart the proxy so it uses it. Progress goes to `out`.
- * `restartProxy: false` is for `setup`, which installs or restarts the proxy itself next.
- */
-export async function login(out = process.stdout, options = { restartProxy: true }) {
+/** Sign in and store the token. Progress goes to `out`. */
+export async function login(out = process.stdout) {
   // The token this machine held before, if any, goes with the exchange so the Worker can retire
   // it: signing in again replaces this machine's token instead of adding a second one.
-  const previousToken = await agentToken(PROGRAM)
+  const previousToken = await agentToken()
   const state = randomBytes(RANDOM_BYTES).toString('base64url')
   const codeVerifier = randomBytes(RANDOM_BYTES).toString('base64url')
   const challenge = createHash('sha256').update(codeVerifier).digest('base64url')
 
   const listener = await loopbackListener(PROGRAM, {
     forbidden: 'This listener only answers the spicytrade sign-in.',
-    received: 'This computer is signed in to spicytrade. You can close this tab and return to the terminal.',
-    refused: 'spicytrade did not approve this computer. You can close this tab.',
+    // Said before the code is redeemed, so it promises nothing the terminal may yet refuse.
+    received: 'Approved. Return to the terminal to finish.',
+    refused: 'Sign-in cancelled. You can close this tab.',
   })
   listener.expect(state)
   const approval = new URL('/connect/agent', ORIGIN)
@@ -110,15 +110,19 @@ export async function login(out = process.stdout, options = { restartProxy: true
     state,
   }).toString()
 
-  out.write(`Sign in to spicytrade and approve this computer:\n\n  ${approval}\n\n`)
+  out.write(`Sign in to spicytrade and approve this computer:\n${remoteNote(listener.port)}\n  ${approval}\n\n`)
   openBrowser(approval.toString())
 
   const outcome = await awaitReturn(listener, APPROVAL_WAIT_MS)
-  if (outcome.lapsed) throw new CliFailure('the sign-in was not approved in time; run this again')
-  if (outcome.error) throw new CliFailure(`spicytrade did not approve this computer (${outcome.error})`)
+  if (outcome.lapsed) {
+    throw new CliFailure(`the sign-in was not approved within ${APPROVAL_WAIT_MS / 60_000} minutes. Run: ${cliCommand('setup')}`)
+  }
+  if (outcome.error === 'access_denied') {
+    throw new CliFailure(`sign-in cancelled in the browser. To try again, run: ${cliCommand('setup')}`)
+  }
+  if (outcome.error) throw new CliFailure(`spicytrade did not approve this computer (${outcome.error}). Try again with: ${cliCommand('setup')}`)
 
   const token = await exchange(outcome.code, codeVerifier, previousToken)
-  if (!await storeAgentToken(PROGRAM, token)) throw new CliFailure(`failed to store ${AGENT_TOKEN_SERVICE}/${MCP_TOKEN_KEY}`)
-  out.write(`Signed in. Stored ${AGENT_TOKEN_SERVICE}/${MCP_TOKEN_KEY}.\n`)
-  if (options.restartProxy) restartProxy(out)
+  if (!await storeAgentToken(token)) throw new KeyringUnavailable()
+  out.write('✓ Signed in.\n')
 }

@@ -10,8 +10,8 @@ import { join } from 'node:path'
  * `lookup` exits 1 with no stdout for an absent entry, matching secret-tool's own behavior for
  * "not stored" -- never a stored value and never a false positive. `store` reads the value from
  * stdin, exactly as `keyringStore` sends it, and lands it in the same `store/` directory a
- * caller can read back to assert what was persisted. `clear` removes an entry, as the credential
- * script does with a token spicytrade refused.
+ * caller can read back to assert what was persisted. `clear` removes an entry, and -- like the real
+ * secret-tool -- exits 1 with nothing on stderr when there was none.
  *
  * Keyed by `service/key` rather than key alone, because the service is what separates spicytrade's
  * own token from a broker's credentials, and a stand-in that collapsed them could not notice
@@ -32,6 +32,8 @@ if [[ $1 == lookup ]]; then
 elif [[ $1 == store ]]; then
   cat > "$store/$4_$6"
 elif [[ $1 == clear ]]; then
+  # As the real secret-tool does: exit 1, silently, when no entry matches.
+  [[ -f "$store/$3_$5" ]] || exit 1
   rm -f "$store/$3_$5"
 fi
 `)

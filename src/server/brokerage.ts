@@ -194,7 +194,7 @@ type AcceptedOrderFollowUp = {
  * awaited, and a failure there is logged under a fixed event name. Running it any earlier let a
  * refused order earn the provenance it records, let a store hiccup refuse an order (a
  * risk-reducing close included), and held the lease across writes that have nothing to do
- * with the submission. Awaiting it let its latency push the reply past the local proxy's
+ * with the submission. Awaiting it let its latency push the reply past the member's `spicytrade mcp`
  * budget after the broker had accepted, losing the receipt and inviting a duplicate retry.
  */
 export async function executeOrderPlacement(

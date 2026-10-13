@@ -31,7 +31,7 @@ it('asks to connect the named machine, and posts the approval without the state'
   vi.stubGlobal('fetch', fetchMock)
   // A numeric hostname is still a label, not a number the router decoded.
   open({ challenge: CHALLENGE, label: '2024', port: '43210', state: STATE })
-  await screen.findByText(/Connect the terminal on/)
+  await screen.findByText(/to spicytrade as/)
   expect(screen.getByText('2024')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
   await vi.waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/agent-logins')).toBe(true))
@@ -42,22 +42,22 @@ it('asks to connect the named machine, and posts the approval without the state'
 it('says a malformed link is malformed rather than offering an approval', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => MEMBER.clone()))
   open({ challenge: CHALLENGE, label: 'laptop', port: '80', state: STATE })
-  await screen.findByText(/This sign-in link is incomplete or malformed/)
+  await screen.findByText(/This sign-in link is incomplete/)
   expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
 })
 
 it('reports a refused approval in the server\'s words', async () => {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input) === '/api/agent-logins'
-    ? Response.json({ error: 'At most 3 terminal sign-ins may be pending at once.' }, { status: 409 })
+    ? Response.json({ error: 'At most 3 computer sign-ins may be pending at once.' }, { status: 409 })
     : MEMBER.clone()))
   open({ challenge: CHALLENGE, label: 'laptop', port: '43210', state: STATE })
   fireEvent.click(await screen.findByRole('button', { name: 'Approve' }))
-  await screen.findByText('At most 3 terminal sign-ins may be pending at once.')
+  await screen.findByText('At most 3 computer sign-ins may be pending at once.')
 })
 
 it('asks a signed-out visitor to sign in first', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ user: null })))
   open({ challenge: CHALLENGE, label: 'laptop', port: '43210', state: STATE })
-  await screen.findByText(/is asking to connect to spicytrade as you/)
+  await screen.findByText(/is asking to sign in to spicytrade as you/)
   expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
 })

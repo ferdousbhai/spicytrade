@@ -7,7 +7,7 @@ import {
 } from '../src/domain/agent-login'
 import { type JsonValue } from '../src/domain/json-payload'
 import { MAX_MCP_TOKENS_PER_USER, McpTokenIssuedResponseSchema } from '../src/domain/mcp-tokens'
-import { approveAgentLogin, exchangeAgentLogin, sweepExpiredAgentLogins } from '../src/server/agent-logins'
+import { approveAgentLogin, exchangeAgentLogin, signOutAgentLogin, sweepExpiredAgentLogins } from '../src/server/agent-logins'
 import { type AuthenticatedIdentity } from '../src/server/auth'
 import { base64Url, sha256Base64Url } from '../src/server/digest'
 import { type AppEnv } from '../src/server/env'
@@ -247,7 +247,7 @@ describe('agent login: exchange', () => {
     const response = await exchange({ code, codeVerifier })
     expect(response.status).toBe(409)
     expect(await response.json()).toEqual({
-      error: `A member may hold at most ${MAX_MCP_TOKENS_PER_USER} agent tokens. Revoke one before issuing another.`,
+      error: `You can have at most ${MAX_MCP_TOKENS_PER_USER} signed-in computers and tokens. Revoke one you no longer use above, then try again.`,
     })
   })
 
@@ -256,6 +256,30 @@ describe('agent login: exchange', () => {
     expect((await exchange({ code: random32(), codeVerifier: random32() })).status).toBe(503)
     const { codeChallenge } = await pkce()
     expect((await approve({ codeChallenge, label: 'laptop', port: PORT })).status).toBe(503)
+  })
+})
+
+describe('agent login: sign out', () => {
+  const signOut = (token?: string) => signOutAgentLogin(new Request(`${BASE_URL}/api/agent-logins`, {
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+    method: 'DELETE',
+  }), env, NOW)
+
+  it('revokes the token presented, and only that one', async () => {
+    const mine = await issueMcpToken(store.database, 'member-a', 'laptop')
+    const other = await issueMcpToken(store.database, 'member-a', 'desktop')
+    const theirs = await issueMcpToken(store.database, 'member-b', 'laptop')
+    expect((await signOut(mine.token)).status).toBe(204)
+    expect(await authenticateMcpToken(store.database, mine.token, NOW)).toBeUndefined()
+    expect(await authenticateMcpToken(store.database, other.token, NOW)).toBeDefined()
+    expect(await authenticateMcpToken(store.database, theirs.token, NOW)).toBeDefined()
+    // Signing out twice is the same refusal as any token that is not live.
+    expect((await signOut(mine.token)).status).toBe(401)
+  })
+
+  it('refuses a request with no token or a bogus one', async () => {
+    expect((await signOut()).status).toBe(401)
+    expect((await signOut('spice_0123456789abcdef_AAAAAAAAAAAAAAAAAAAA')).status).toBe(401)
   })
 })
 

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /**
- * The one-click tastytrade connection: the wire contract between `connect-tastytrade.mjs` on the
+ * The one-click tastytrade connection: the wire contract between `spicytrade connect-tastytrade` on the
  * member's machine and the Worker's `/api/brokers/tastytrade/*` endpoints.
  *
  * The member's refresh token only ever passes through the Worker, in the one exchange response

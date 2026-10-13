@@ -9,9 +9,9 @@ import { z } from 'zod'
 import { fakeSecretTool } from './fake-secret-tool.ts'
 
 /*
- * `connect-tastytrade.mjs` end to end against a stand-in Worker: the real loopback listener, the
- * real keyring code over a file-backed `secret-tool`, and a no-op browser opener and systemctl,
- * so a run never opens a browser or restarts a service on the machine running the tests.
+ * `spicytrade connect-tastytrade` end to end against a stand-in Worker: the real loopback
+ * listener, the real keyring code over a file-backed `secret-tool`, and a no-op browser opener, so
+ * a run never opens a browser on the machine running the tests.
  */
 
 const AGENT_TOKEN = 'spice_0123456789abcdef_AAAAAAAAAAAAAAAAAAAA'
@@ -41,14 +41,13 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { force: true, recursive: true })))
 })
 
-/** The shared `secret-tool` stand-in, plus inert `xdg-open`, `open`, and `systemctl` beside it. */
+/** The shared `secret-tool` stand-in, plus inert `xdg-open` and `open` beside it. */
 async function fakeTools(entries: Record<string, string>): Promise<string> {
   const directory = await fakeSecretTool(entries)
   directories.push(directory)
   await writeFile(join(directory, 'xdg-open'), `#!/usr/bin/env bash\necho "$1" > '${directory}/opened'\n`)
   await writeFile(join(directory, 'open'), `#!/usr/bin/env bash\necho "$1" > '${directory}/opened'\n`)
-  await writeFile(join(directory, 'systemctl'), '#!/usr/bin/env bash\nexit 1\n')
-  for (const tool of ['xdg-open', 'open', 'systemctl']) await chmod(join(directory, tool), 0o755)
+  for (const tool of ['xdg-open', 'open']) await chmod(join(directory, tool), 0o755)
   return directory
 }
 
@@ -83,7 +82,7 @@ async function fakeWorker(exchangeAnswer: () => { body: unknown; status: number 
 function startCli(tools: string, workerPort: number) {
   let stdout = ''
   let stderr = ''
-  cli = spawn(process.execPath, ['ops/spicytrade/connect-tastytrade.mjs'], {
+  cli = spawn(process.execPath, ['ops/spicytrade/spicytrade.mjs', 'connect-tastytrade'], {
     env: { ...process.env, SPICYTRADE_MCP_URL: `http://127.0.0.1:${workerPort}/mcp`, PATH: `${tools}:${process.env.PATH ?? ''}` },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -148,6 +147,19 @@ describe('connect-tastytrade', () => {
       .toContain('https://my.tastytrade.com/auth.html')
   }, 30_000)
 
+  it('lets Ctrl-C skip the wait for tastytrade, as a choice rather than a crash', async () => {
+    const tools = await fakeTools({ 'spicytrade/mcp-token': AGENT_TOKEN })
+    const { calls, port } = await fakeWorker(() => ({ body: { refreshToken: REFRESH_TOKEN }, status: 200 }))
+    const run = startCli(tools, port)
+    await loopbackPort(calls, run.output)
+    await expect.poll(() => run.output().stdout).toContain('To skip for now, press Ctrl-C.')
+    cli!.kill('SIGINT')
+    expect(await run.exited).toBe(1)
+    expect(run.output().stderr).toMatch(/skipped for now, so tastytrade is not connected\. Connect any time with: \S+ setup/)
+    expect(run.output().stderr).not.toContain('unexpectedly')
+    await expect(readFile(join(tools, 'store', 'tastytrade_app-refresh-token'), 'utf8')).rejects.toThrow()
+  }, 30_000)
+
   it('reports a refusal by its OAuth code and stores nothing', async () => {
     const tools = await fakeTools({ 'spicytrade/mcp-token': AGENT_TOKEN })
     const { calls, port } = await fakeWorker(() => ({ body: { refreshToken: REFRESH_TOKEN }, status: 200 }))
@@ -155,7 +167,7 @@ describe('connect-tastytrade', () => {
     const listener = await loopbackPort(calls, run.output)
     expect((await visit(listener, `/callback?error=access_denied&state=${STATE}`)).status).toBe(200)
     expect(await run.exited).toBe(1)
-    expect(run.output().stderr).toContain('tastytrade did not grant access (access_denied)')
+    expect(run.output().stderr).toContain('you declined on tastytrade, so it is not connected')
     expect(calls.map((call) => call.path)).toEqual(['/api/brokers/tastytrade/authorize'])
     await expect(readFile(join(tools, 'store', 'tastytrade_app-refresh-token'), 'utf8')).rejects.toThrow()
   }, 30_000)
@@ -170,7 +182,7 @@ describe('connect-tastytrade', () => {
     const listener = await loopbackPort(calls, run.output)
     await visit(listener, `/callback?code=${CODE}&state=${STATE}`)
     expect(await run.exited).toBe(1)
-    expect(run.output().stderr).toContain('tastytrade refused the grant (HTTP 400)')
+    expect(run.output().stderr).toContain('tastytrade did not accept the connection (HTTP 400). To try again, run: ')
     expect(run.output().stderr).not.toContain(CODE)
   }, 30_000)
 
@@ -178,11 +190,12 @@ describe('connect-tastytrade', () => {
     const tools = await fakeTools({
       'spicytrade/mcp-token': AGENT_TOKEN,
       'tastytrade/client-secret': 'personal-client-secret',
+      'tastytrade/refresh-token': 'personal-refresh-token',
     })
     const { calls, port } = await fakeWorker(() => ({ body: {}, status: 500 }))
     const run = startCli(tools, port)
     expect(await run.exited).toBe(1)
-    expect(run.output().stderr).toContain('already holds a tastytrade personal grant')
+    expect(run.output().stderr).toContain('tastytrade is already connected with your personal grant. To switch, run:')
     expect(run.output().stderr).not.toContain('personal-client-secret')
     expect(calls).toEqual([])
   }, 30_000)

@@ -91,7 +91,7 @@ async function tokenRequest<T>(env: AppEnv, body: Record<string, string>, schema
 
 /**
  * Redeem an authorization code for the member's refresh token. The access token that comes
- * with it is dropped: the local proxy mints its own on first use, and returning one here would
+ * with it is dropped: the member's `spicytrade mcp` mints its own on first use, and returning one here would
  * be a second credential in a response that already carries the permanent one.
  *
  * The encoding is assumed from the refresh grant, which tastytrade accepts as JSON; its

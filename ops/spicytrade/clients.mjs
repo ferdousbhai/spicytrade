@@ -4,12 +4,11 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 
-import { MCP_SERVER_NAME, ORIGIN, PROXY_URL, TRADING_DIR } from './config.mjs'
-import { UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
+import { CODEX_START, LEGACY_PROXY_URL, MCP_COMMAND, MCP_SERVER_NAME, ORIGIN, TRADING_DIR } from './config.mjs'
 
 /**
- * The agent clients `setup` can point at the proxy, through each client's own CLI rather than by
- * editing its config file, whose format is the client's to change.
+ * The agent clients `setup` registers `spicytrade mcp` with, through each client's own CLI rather
+ * than by editing its config file, whose format is the client's to change.
  *
  * Trading tools are something to turn on when wanted, not a default in every session, so no
  * client loads the server everywhere. Claude Code cannot add a server switched off, so it gets the
@@ -18,18 +17,25 @@ import { UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
  * folder, or home -- never from wherever `setup` was run: a project's own `.mcp.json` or local
  * entry would otherwise answer for the server's name.
  *
- * Nothing here carries a credential: the proxy URL is the whole configuration, which is the point
- * of the proxy.
+ * An entry is compared as its target: the command line a client launches, joined by spaces, or
+ * the URL an older entry names. Nothing here carries a credential; the command line is the whole
+ * configuration.
  */
 
 /**
- * Both CLIs connect to the server before `get` prints anything, to report its status. That can
- * take as long as the proxy's own first call, so the budget is the proxy's for one forwarded
- * call, plus the same again for the client to start.
+ * Both CLIs start the server before `get` prints anything, to report its status, and the server
+ * reads the keyring and calls the Worker on the way. A named budget, the owner's judgment of how
+ * long a client may take to answer before `setup` reports it as not answering.
  */
-const CLIENT_COMMAND_TIMEOUT_MS = 2 * UPSTREAM_TIMEOUT_MS
+const CLIENT_COMMAND_TIMEOUT_MS = 120_000
 
-const CodexServerSchema = z.object({ transport: z.object({ url: z.string().optional() }) })
+export const EXPECTED_TARGET = MCP_COMMAND.join(' ')
+const shellWord = (word) => (/^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`)
+const MCP_COMMAND_LINE = MCP_COMMAND.map(shellWord).join(' ')
+
+const CodexServerSchema = z.object({
+  transport: z.object({ args: z.array(z.string()).optional(), command: z.string().optional(), url: z.string().optional() }),
+})
 
 function run(command, args, cwd = homedir()) {
   const result = spawnSync(command, args, {
@@ -45,14 +51,22 @@ function run(command, args, cwd = homedir()) {
 }
 
 /**
- * What a client has under one entry name: `uninstalled` (no such CLI), `failed` (the CLI did not answer),
- * `missing`, or `configured` with the URL it names -- empty when the entry is not a URL at all.
+ * What a client has under one entry name: `uninstalled` (no such CLI), `failed` (the CLI did not
+ * answer), `missing`, or `configured` with the target it names -- empty when it cannot be read.
  */
-function lookup(got, urlOf) {
+function lookup(got, targetOf) {
   if (got.absent) return { state: 'uninstalled' }
   if (got.failed) return { state: 'failed' }
   if (!got.ok) return { state: 'missing' }
-  return { state: 'configured', url: urlOf(got.stdout) }
+  return { state: 'configured', target: targetOf(got.stdout) }
+}
+
+/** `claude mcp get` prints a launched server as `Command:` and `Args:`, a remote one as `URL:`. */
+function claudeTarget(stdout) {
+  const field = (name) => stdout.match(new RegExp(`^\\s*${name}:[ \\t]*(.*?)\\s*$`, 'm'))?.[1]
+  const command = field('Command')
+  if (command) return [command, field('Args')].filter(Boolean).join(' ')
+  return field('URL') ?? ''
 }
 
 /**
@@ -69,7 +83,7 @@ function claudeEntry(entry, scope) {
   } else {
     got = run('claude', ['mcp', 'get', entry], scope === 'local' ? TRADING_DIR : homedir())
   }
-  const found = lookup(got, (stdout) => stdout.match(/^\s*URL:\s*(\S+)\s*$/m)?.[1] ?? '')
+  const found = lookup(got, claudeTarget)
   if (found.state !== 'configured') return found
   return got.stdout.match(/^\s*Scope:\s*(\w+)/m)?.[1]?.toLowerCase() === scope ? found : { state: 'missing' }
 }
@@ -80,7 +94,7 @@ function addClaudeEntry() {
   } catch {
     return { ok: false }
   }
-  return run('claude', ['mcp', 'add', '--scope', 'local', '--transport', 'http', MCP_SERVER_NAME, PROXY_URL], TRADING_DIR)
+  return run('claude', ['mcp', 'add', '--scope', 'local', MCP_SERVER_NAME, '--', ...MCP_COMMAND], TRADING_DIR)
 }
 
 /**
@@ -106,9 +120,12 @@ function disableCodexEntry(name) {
   return true
 }
 
-/** Whether an entry's URL is this proxy or spicytrade itself, so the entry is ours to replace. */
-export function namesSpicytrade(url) {
-  return url === PROXY_URL || url.startsWith(`${ORIGIN}/`)
+/**
+ * Whether an entry is spicytrade's, so it is ours to replace: this CLI's `mcp` command from any
+ * install, the retired proxy's address, or spicytrade itself.
+ */
+export function namesSpicytrade(target) {
+  return target.endsWith('spicytrade.mjs mcp') || target === LEGACY_PROXY_URL || target.startsWith(`${ORIGIN}/`)
 }
 
 /**
@@ -123,9 +140,11 @@ export function namesSpicytrade(url) {
 export const CLIENTS = [
   {
     add: addClaudeEntry,
-    addCommand: `mkdir -p ${TRADING_DIR} && cd ${TRADING_DIR} && claude mcp add --scope local --transport http ${MCP_SERVER_NAME} ${PROXY_URL}`,
+    bin: 'claude',
+    id: 'claude',
+    addCommand: `mkdir -p ${TRADING_DIR} && cd ${TRADING_DIR} && claude mcp add --scope local ${MCP_SERVER_NAME} -- ${MCP_COMMAND_LINE}`,
     name: 'Claude Code',
-    offNote: `only in ${TRADING_DIR}; start a trading session there`,
+    start: `cd ${TRADING_DIR} && claude`,
     configured: (entry = MCP_SERVER_NAME) => claudeEntry(entry, 'local'),
     remove: (entry) => run('claude', ['mcp', 'remove', entry, '--scope', 'local'], TRADING_DIR),
     removeCommand: (entry = MCP_SERVER_NAME) => `cd ${TRADING_DIR} && claude mcp remove ${entry} --scope local`,
@@ -136,17 +155,24 @@ export const CLIENTS = [
     },
   },
   {
+    bin: 'codex',
+    id: 'codex',
     add: () => {
-      const added = run('codex', ['mcp', 'add', MCP_SERVER_NAME, '--url', PROXY_URL])
+      const added = run('codex', ['mcp', 'add', MCP_SERVER_NAME, '--', ...MCP_COMMAND])
       return added.ok ? { ...added, off: disableCodexEntry(MCP_SERVER_NAME) } : added
     },
-    addCommand: `codex mcp add ${MCP_SERVER_NAME} --url ${PROXY_URL}`,
+    addCommand: `codex mcp add ${MCP_SERVER_NAME} -- ${MCP_COMMAND_LINE}`,
+    // By hand as by setup, the entry is switched off. Codex has no command for that, so it follows
+    // the command as words, never inside it, where a pasted line would hand them to Codex.
+    afterAdd: `; then set enabled = false under [mcp_servers.${MCP_SERVER_NAME}] in ~/.codex/config.toml`,
     name: 'Codex',
-    offNote: `switched off; turn it on with enabled = true under [mcp_servers.${MCP_SERVER_NAME}] in ~/.codex/config.toml`,
+    start: CODEX_START,
+    offNote: ' (on only when you start Codex with the command at the end)',
     offFailedNote: `could not switch it off; set enabled = false under [mcp_servers.${MCP_SERVER_NAME}] in ~/.codex/config.toml`,
     configured: (entry = MCP_SERVER_NAME) => lookup(run('codex', ['mcp', 'get', entry, '--json']), (stdout) => {
       try {
-        return CodexServerSchema.parse(JSON.parse(stdout)).transport.url ?? ''
+        const { transport } = CodexServerSchema.parse(JSON.parse(stdout))
+        return transport.command ? [transport.command, ...(transport.args ?? [])].join(' ') : transport.url ?? ''
       } catch {
         return ''
       }

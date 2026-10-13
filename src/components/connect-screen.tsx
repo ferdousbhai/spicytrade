@@ -12,11 +12,11 @@ import {
   type McpTokenMetadata,
 } from '../domain/mcp-tokens'
 import { toError } from '../domain/failure'
+import { GoogleSignInButton } from './auth-gate'
 import { CopyBlock } from './copy-block'
-import { MCP_ENDPOINT } from '../domain/site'
+import { INSTALL_SCRIPT_URL, MCP_ENDPOINT } from '../domain/site'
 
-const PROXY_URL = 'http://127.0.0.1:8787/mcp'
-/** The default of `TRADING_DIR` in `ops/spicytrade/config.mjs`, the one folder Claude Code loads the proxy in. */
+/** The default of `TRADING_DIR` in `ops/spicytrade/config.mjs`, the one folder Claude Code loads it in. */
 const TRADING_DIR = '~/trading'
 /** The name every client's config knows the server by; `spicytrade setup` adds it under this too. */
 const MCP_SERVER_NAME = 'spicytrade'
@@ -27,13 +27,15 @@ const addCommands = (url: string) => ({
   other: undefined,
 }) satisfies Record<AgentClient, string | undefined>
 /**
- * The one command for the proxy path: it runs the browser sign-in, the keyring, the service, the
- * brokerage and the agent's config in order, and is also the repair when any of them is missing.
+ * The whole path for an agent on the member's own computer: it installs the CLI from this site and
+ * runs `spicytrade setup`, which signs in through the browser, offers tastytrade, and adds the
+ * server to the agents it finds. Running it again updates it.
  */
-const SETUP_COMMAND = './ops/spicytrade/spicytrade.mjs setup'
-const DOCTOR_COMMAND = './ops/spicytrade/spicytrade.mjs doctor'
-/** Reads the spicytrade token from the keyring, so it needs the token stored first. */
-const CONNECT_TASTYTRADE_COMMAND = './ops/spicytrade/connect-tastytrade.mjs'
+const INSTALL_COMMAND = `curl -fsSL ${INSTALL_SCRIPT_URL} | bash`
+/** Claude Code loads the server only in the trading folder, so this is how a session starts. */
+const START_COMMAND = `cd ${TRADING_DIR} && claude`
+/** `CODEX_START` in `ops/spicytrade/config.mjs`: Codex has the server switched off until started this way. */
+const CODEX_START = `codex -c mcp_servers.${MCP_SERVER_NAME}.enabled=true`
 
 /**
  * The clients the page has exact commands for, and "Other" for everything that speaks
@@ -109,7 +111,7 @@ const ErrorResponseSchema = z.object({ error: z.string() })
  * A 2xx body that is not the documented shape is a server or deploy mismatch, not something the
  * member can act on, and a Zod issue list is not something they can read.
  */
-const UNEXPECTED_RESPONSE = 'Agent tokens returned an unexpected response.'
+const UNEXPECTED_RESPONSE = 'spicytrade answered with something unexpected. Reload the page and try again.'
 
 async function readJson<T>(response: Response, schema: z.ZodType<T>): Promise<T> {
   const body: unknown = await response.json().catch(() => null)
@@ -147,7 +149,7 @@ function useAgentTokens() {
       .then((body) => { setTokens(body.tokens) })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return
-        setListError(toError(cause)?.message ?? 'Agent tokens are unavailable')
+        setListError(toError(cause)?.message ?? 'Signed-in computers could not be loaded.')
       })
     return () => controller.abort()
   }, [])
@@ -205,59 +207,36 @@ function useAgentTokens() {
   return { actionError, issue, issued, listError, loading, pending, revoke, tokens }
 }
 
-export function ConnectScreen({ owner }: { owner: boolean }) {
-  const { actionError, issue, issued, listError, loading, pending, revoke, tokens } = useAgentTokens()
-  // Every token control waits for whichever action is in flight.
-  const busy = pending !== undefined
-  const [label, setLabel] = useState('')
+/**
+ * The page reads the same signed in or not: installing needs no web session, since the CLI's own
+ * sign-in opens the browser. Only headless tokens, which belong to an account, wait for one.
+ */
+export function ConnectScreen({ authError, owner, signedIn }: { authError?: string; owner: boolean; signedIn: boolean }) {
   // The server renders the first client; the browser's stored choice takes over on hydration.
   const client = useSyncExternalStore(subscribeToClient, readClient, (): AgentClient => 'claude')
-
-  // While a freshly issued token is on screen, both blocks carry it. A placeholder here made the
-  // shortest path copy the token, copy the config, then splice one into the other by hand -- and
-  // the token is shown exactly once, so that splice is the step with the most to lose. After the
-  // reveal the placeholder is all that can honestly be shown: the digest is all the server kept.
-  const bearer = issued?.token ?? 'YOUR_TOKEN'
-  const mcpConfig = JSON.stringify({
-    mcpServers: { [MCP_SERVER_NAME]: { headers: { Authorization: `Bearer ${bearer}` }, type: 'http', url: MCP_ENDPOINT } },
-  }, null, 2)
-  const headlessCommand = `${addCommands(MCP_ENDPOINT).claude} --header "Authorization: Bearer ${bearer}"`
   // No header. Claude Code skips the OAuth flow entirely when a static `Authorization` is
   // configured, so handing one out as the default would ship the browser sign-in and guarantee
   // nobody ever reaches it.
   const publicCommand = addCommands(MCP_ENDPOINT)[client]
-  // No Authorization header: the proxy attaches the keyring token so the agent holds none.
-  // Claude Code adds at local scope by default, so the command runs from the trading folder
-  // `spicytrade setup` uses: account tools load there, not in every session or in a checkout.
-  const proxyCommand = client === 'claude'
-    ? `mkdir -p ${TRADING_DIR} && cd ${TRADING_DIR} && ${addCommands(PROXY_URL).claude}`
-    : addCommands(PROXY_URL)[client]
 
   return (
     <section className="connect-screen">
       <header>
         <h1>Connect your agent</h1>
         <p>
-          spicytrade is a tool surface for an agent running on your own machine — Claude Code, Grok, Codex, or
-          anything that speaks MCP. Any agent can read the public market surface without signing in
-          at all. Signing yours in adds live quotes, option chains and Greeks, lets it add symbols
-          to the watchlist, and lets it record catalysts and evidence everyone reads.
+          Give your agent live quotes, option chains, and research — and, in Claude Code or Codex once
+          tastytrade is connected, your positions and guarded orders.
         </p>
       </header>
 
-      {/* One aside for the picker and the guards: a wide screen holds it beside the steps so the
-          choice stays in reach while the commands under it change; one column dissolves it and
-          the guards take their place after the steps. */}
       <aside className="connect-aside">
-        <ClientPicker client={client} onChange={chooseClient} />
         <section className="connect-step connect-guards">
-          <h2>What the agent cannot do</h2>
+          <h2>Every order is checked</h2>
           <p>
-            Orders run the same server-side guards regardless of what any agent recommends: the exact
-            contract is resolved from the live chain, the portfolio and market checks
-            run against fresh broker state, and the broker&apos;s own dry-run must come back clean. A
-            refusal is final. spicytrade has no confirmation step of its own: any prompt before an order
-            comes from your agent, and the server-side guards are what bound the risk.
+            Every order passes spicytrade&apos;s own checks before it reaches tastytrade, whatever any
+            agent recommends: defined risk only (never a naked short), checked against your live
+            positions and the market, and a clean tastytrade dry run. A refused order stays refused.
+            spicytrade does not ask you to confirm orders; any confirmation comes from your agent.
           </p>
           {owner && (
             <p className="connect-owner-note">
@@ -270,152 +249,105 @@ export function ConnectScreen({ owner }: { owner: boolean }) {
       </aside>
 
       <section className="connect-step">
-        <h2>1 · Point your agent at spicytrade</h2>
+        <h2>Install</h2>
+        <p>On Linux, run this in a terminal on the computer your agent runs on:</p>
+        <CopyBlock label="Terminal" value={INSTALL_COMMAND} />
+        <p>
+          It signs this computer in through your browser, asks to connect tastytrade, and adds spicytrade
+          to Claude Code and Codex. Your credentials stay in this computer&apos;s keyring, never in your agent&apos;s settings.
+          Then start your agent and ask it about your positions — Claude Code in <code>{TRADING_DIR}</code>:
+        </p>
+        <CopyBlock label="Terminal" value={START_COMMAND} />
+        <p>Codex keeps spicytrade switched off; start a trading session with:</p>
+        <CopyBlock label="Terminal" value={CODEX_START} />
+        <p className="connect-note">
+          Needs Linux with Node.js 22 or newer, a desktop keyring (GNOME Keyring or KWallet) with
+          secret-tool (on Debian/Ubuntu: <code>sudo apt install libsecret-tools</code>), and Claude Code
+          or Codex. If something stops working, run{' '}
+          <code>spicytrade setup</code>; run the install again to update. To remove it, run{' '}
+          <code>spicytrade uninstall</code>.
+        </p>
+      </section>
+
+      {/* Folded: the install is the path nearly every member wants, and these two made the page
+          several screens long on a phone. Native details keep the contents in the page for
+          find-in-page and assistive technology, and open on their own when a search lands inside. */}
+      <details className="connect-step connect-fold">
+        <summary><h2>Without installing</h2></summary>
         {/* A request with no credential is served, not challenged (src/server/mcp.ts), so adding
             the server never starts a sign-in by itself. Sign-in is whatever the client does with
             the OAuth discovery documents spicytrade publishes, which varies by client. */}
         <p>
-          Run the command for your agent and it connects straight away at the public tier: the cached market
-          snapshot, price history, and the shared research, with nothing to copy and no sign-in.
+          Any MCP client can reach market data and research by spicytrade&apos;s address alone. It
+          cannot see your account: positions and orders need the install above.
         </p>
+        <ClientPicker client={client} onChange={chooseClient} />
         {publicCommand
           ? <CopyBlock label={AGENT_CLIENT_NAMES[client]} value={publicCommand} />
-          : (
-              <>
-                <CopyBlock label="Streamable HTTP server" value={MCP_ENDPOINT} />
-                <p className="connect-note">
-                  Muse: add a streamable-HTTP <code>{MCP_SERVER_NAME}</code> entry under <code>mcpServers</code> in its
-                  <code> settings.json</code>. Pi has no built-in MCP client; add one with an extension
-                  (<code>pi install</code>).
-                </p>
-              </>
-            )}
+          : <CopyBlock label="Streamable HTTP server" value={MCP_ENDPOINT} />}
         <p>
-          To add live quotes, option chains, and Greeks, sign in from your client&apos;s own
-          authenticate action for this server. spicytrade publishes standard OAuth discovery, so a
-          client that supports it opens a browser to sign you in with Google and renews its own
-          access — you should not need to come back here.
-          {client === 'claude' && <> In Claude Code that is <code>/mcp</code>.</>}
-          {client === 'codex' && <> In Codex that is <code>codex mcp login {MCP_SERVER_NAME}</code>.</>}
-          {client === 'other' && <> In Muse that is <code>muse mcp login {MCP_SERVER_NAME}</code>.</>}
+          Your agent connects straight away with the cached market snapshot, price history, and shared
+          research. For live quotes, option chains, and Greeks, sign in from your client:
+          {client === 'claude' && <> in Claude Code, <code>/mcp</code>.</>}
+          {client === 'codex' && <> in Codex, <code>codex mcp login {MCP_SERVER_NAME}</code>.</>}
+          {client === 'grok' && <> in Grok, its authenticate action for this server.</>}
+          {client === 'other' && <> its authenticate action for this server — in Muse, <code>muse mcp login {MCP_SERVER_NAME}</code>.</>}
         </p>
-        <p className="connect-note">
-          If your client cannot sign in this way, use the local proxy below. If you already run the
-          proxy, point the agent there instead.
-        </p>
-      </section>
-
-      {/* The two optional steps are folded: most members need only step one, and these two made
-          the page several screens long on a phone. Native details keep the contents in the page
-          for find-in-page and assistive technology, and open on their own when a search lands
-          inside. */}
-      <details className="connect-step connect-fold">
-        <summary><h2>2 · Local proxy <span className="connect-optional">optional</span></h2></summary>
-        <p>
-          A process on this machine attaches your spicytrade token, and your brokerage&apos;s short-lived
-          token, from the keyring, so the agent holds neither. That is how balances, positions and
-          orders reach your agent, and how any client that cannot complete a browser sign-in gets
-          live quotes, chains, and Greeks. From a checkout of this repository, run:
-        </p>
-        <CopyBlock label="Set up the proxy" value={SETUP_COMMAND} />
-        <p>
-          It signs you in through the browser, stores the token in your keyring, installs the proxy,
-          offers to connect tastytrade, and adds spicytrade to your agent. Run it again at any time;
-          it skips what is already done. If something stops working, run{' '}
-          <code>{DOCTOR_COMMAND}</code> and it names the step to fix.
-        </p>
-        <details className="connect-manual">
-          <summary>Manual setup</summary>
-          <CopyBlock
-            label="Store your spicytrade token"
-            value={'./ops/spicytrade/store-credentials.sh mcp-token'}
-          />
-          <p>Issue the token in step 3, paste it at the prompt. The script restarts the proxy.</p>
-          {proxyCommand
-            ? <CopyBlock label={AGENT_CLIENT_NAMES[client]} value={proxyCommand} />
-            : <CopyBlock label="Streamable HTTP server" value={PROXY_URL} />}
-          <p className="connect-note">
-            No <code>Authorization</code> header. Pointing at <code>{MCP_ENDPOINT}</code> without signing
-            in is the public snapshot: cached quotes, no chains, no account.
-            {client === 'grok' && <> Grok lists tools, not prompts; every tool&apos;s own description carries its contract.</>}
-          </p>
-          <p>
-            A brokerage is a second store: balances, positions, order history, and orders against
-            your account only. Run this, approve spicytrade on tastytrade&apos;s own page, and the grant
-            lands in your keyring — spicytrade never keeps it. The script restarts the proxy.
-          </p>
-          <CopyBlock label="Connect tastytrade" value={CONNECT_TASTYTRADE_COMMAND} />
-          <p className="connect-note">
-            Already use a personal OAuth grant from my.tastytrade.com? Store it instead; keep only
-            one kind, or the proxy will not start.
-          </p>
-          <CopyBlock
-            label="Store a personal grant"
-            value={'./ops/spicytrade/store-credentials.sh tastytrade'}
-          />
-        </details>
       </details>
 
       <details className="connect-step connect-fold">
-        <summary><h2>3 · Headless access <span className="connect-optional">optional</span></h2></summary>
-        <p>
-          A machine that runs unattended cannot complete a browser sign-in, so it uses a token
-          instead. If you are sitting at a terminal, step one is the one you want.
-        </p>
-        <form
-          className="connect-issue"
-          onSubmit={(event) => {
-            event.preventDefault()
-            const trimmed = label.trim()
-            // Not before the first read answers: a list that lands after the create would not
-            // carry the new token, and would replace the list that did.
-            if (!trimmed || busy || loading) return
-            void issue(trimmed).then((created) => { if (created) setLabel('') })
-          }}
-        >
-          <Input
-            aria-label="Token name"
-            maxLength={MAX_MCP_TOKEN_LABEL_LENGTH}
-            onChange={(event) => setLabel(event.target.value)}
-            placeholder="Laptop"
-            value={label}
-          />
-          <Button disabled={busy || loading || !label.trim()} type="submit">
-            {pending?.kind === 'issue' ? <Spinner /> : 'Create token'}
-          </Button>
-        </form>
+        <summary><h2>Signed-in computers</h2></summary>
+        <p>Every computer you have signed in and every token you have created. Revoke one to sign it out.</p>
+        {signedIn
+          ? <HeadlessTokens />
+          : (
+              <>
+                <p>Sign in to see your computers and create tokens.</p>
+                {authError && (
+                  <Alert variant="destructive">
+                    <AlertTitle>Sign-in unavailable</AlertTitle>
+                    <AlertDescription>{authError}</AlertDescription>
+                  </Alert>
+                )}
+                <GoogleSignInButton callbackURL="/connect" />
+              </>
+            )}
+      </details>
+    </section>
+  )
+}
 
-        {/* Every token failure -- the list read, a create, a revoke -- comes from this step, so it
-            is reported here, beside the control that caused it, not at the top of a long page. */}
-        {actionError && (
-          <Alert variant="destructive">
-            <AlertTitle>Agent tokens</AlertTitle>
-            <AlertDescription>{actionError}</AlertDescription>
-          </Alert>
-        )}
+function HeadlessTokens() {
+  const { actionError, issue, issued, listError, loading, pending, revoke, tokens } = useAgentTokens()
+  // Every token control waits for whichever action is in flight.
+  const busy = pending !== undefined
+  const [label, setLabel] = useState('')
+
+  // Both blocks carry the freshly issued token, so the shortest path never splices a token into a
+  // config by hand -- the token is shown exactly once, so that splice is the step with the most to
+  // lose. They are shown only while it is on screen; the digest is all the server kept.
+  const bearer = issued?.token ?? ''
+  const mcpConfig = JSON.stringify({
+    mcpServers: { [MCP_SERVER_NAME]: { headers: { Authorization: `Bearer ${bearer}` }, type: 'http', url: MCP_ENDPOINT } },
+  }, null, 2)
+  const headlessCommand = `${addCommands(MCP_ENDPOINT).claude} --header "Authorization: Bearer ${bearer}"`
+
+  return (
+    <>
+        {/* What a member opens this section for most -- signing a computer out -- comes first; the
+            token form for a machine without a browser follows. Each failure is reported beside the
+            control that caused it, not at the top of a long page. */}
         {listError && (
           <Alert variant="destructive">
-            <AlertTitle>Agent token list</AlertTitle>
+            <AlertTitle>Signed-in computers could not be loaded</AlertTitle>
             <AlertDescription>{listError}</AlertDescription>
           </Alert>
-        )}
-
-        {issued && (
-          <>
-            <Alert>
-              <AlertTitle>Copy this now</AlertTitle>
-              <AlertDescription>
-                This is the only time this token is shown. If you lose it, revoke it and create another.
-              </AlertDescription>
-            </Alert>
-            <CopyBlock label="Your token" value={issued.token} />
-          </>
         )}
 
         {/* Only while the first read is in flight: once it has failed, the alert above the list is the
             answer, and a spinner beside it would claim a read that is no longer happening. */}
         {loading && <Spinner />}
-        {tokens?.length === 0 && <p className="connect-empty">No tokens yet.</p>}
+        {tokens?.length === 0 && <p className="connect-empty">No computers or tokens yet.</p>}
         {tokens && tokens.length > 0 && (
           <ul className="connect-tokens">
             {tokens.map((token) => (
@@ -439,19 +371,65 @@ export function ConnectScreen({ owner }: { owner: boolean }) {
           </ul>
         )}
 
+
         <p>
-          {issued
-            ? 'Both blocks below already carry the token you just created — copy either one.'
-            : 'Substitute a token above; it is shown only at the moment it is issued.'}
+          For a job that runs with no one signed in — a scheduled script — create a token. It gets market
+          and research tools only, never your account. A computer you SSH into can use the install above
+          if your desktop session is logged in there; setup tells you how to finish signing in from your
+          own computer.
         </p>
-        {/* The header flag is Claude Code's; every other client takes the same entry as JSON. */}
-        <CopyBlock label="Claude Code" value={headlessCommand} />
-        <CopyBlock label=".mcp.json" value={mcpConfig} />
-        <p className="connect-note">
-          A configured <code>Authorization</code> header takes precedence over the browser flow, so
-          use this only where there is no browser.
-        </p>
-      </details>
-    </section>
+        <form
+          className="connect-issue"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const trimmed = label.trim()
+            // Not before the first read answers: a list that lands after the create would not
+            // carry the new token, and would replace the list that did.
+            if (!trimmed || busy || loading) return
+            void issue(trimmed).then((created) => { if (created) setLabel('') })
+          }}
+        >
+          <Input
+            aria-label="Token name"
+            maxLength={MAX_MCP_TOKEN_LABEL_LENGTH}
+            onChange={(event) => setLabel(event.target.value)}
+            placeholder="Nightly job"
+            value={label}
+          />
+          <Button disabled={busy || loading || !label.trim()} type="submit">
+            {pending?.kind === 'issue' ? <Spinner /> : 'Create token'}
+          </Button>
+        </form>
+
+        {actionError && (
+          <Alert variant="destructive">
+            <AlertTitle>Signed-in computers</AlertTitle>
+            <AlertDescription>{actionError}</AlertDescription>
+          </Alert>
+        )}
+
+        {issued && (
+          <>
+            <Alert>
+              <AlertTitle>Copy this now</AlertTitle>
+              <AlertDescription>
+                This is the only time this token is shown. If you lose it, revoke it and create another.
+              </AlertDescription>
+            </Alert>
+            <CopyBlock label="Your token" value={issued.token} />
+          </>
+        )}
+
+        {/* Only once there is a token to put in them: before that they would hold a placeholder the
+            member has to splice a token into by hand. The header flag is Claude Code's; every other
+            client takes the same entry as JSON. */}
+        {issued && (
+          <>
+            <p>Both blocks below already carry the token you just created — copy either one.</p>
+            <CopyBlock label="Claude Code" value={headlessCommand} />
+            <CopyBlock label=".mcp.json" value={mcpConfig} />
+          </>
+        )}
+    </>
   )
 }

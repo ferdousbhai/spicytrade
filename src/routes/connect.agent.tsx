@@ -21,7 +21,7 @@ import { toError } from '../domain/failure'
  */
 export const Route = createFileRoute('/connect/agent')({
   component: ConnectAgentPage,
-  head: () => ({ meta: [{ title: pageTitle('Connect your terminal') }] }),
+  head: () => ({ meta: [{ title: pageTitle('Sign in a computer') }] }),
 })
 
 /** The literal address rather than `localhost`, which a resolver may map elsewhere. */
@@ -29,6 +29,7 @@ const LOOPBACK_HOST = '127.0.0.1'
 const LOOPBACK_CALLBACK_PATH = '/callback'
 const ErrorResponseSchema = z.object({ error: z.string().min(1) })
 const APPROVAL_NOT_RECORDED = 'spicytrade could not record that approval.'
+const SESSION_ENDED = 'Your spicytrade session ended. Reload this page and sign in again.'
 
 /** The address is fixed for the life of this page, so there is nothing to subscribe to. */
 const subscribeToQuery = () => () => undefined
@@ -68,6 +69,9 @@ function ConnectAgentPage() {
         method: 'POST',
       })
       const body: unknown = await response.json().catch(() => undefined)
+      // The web session can end between loading this page and approving; the Worker's bare
+      // "Authentication required" would give no next step.
+      if (response.status === 401) throw new Error(SESSION_ENDED)
       if (!response.ok) throw new Error(ErrorResponseSchema.safeParse(body).data?.error ?? APPROVAL_NOT_RECORDED)
       const approved = AgentLoginApproveResponseSchema.safeParse(body)
       if (!approved.success) throw new Error(APPROVAL_NOT_RECORDED)
@@ -86,18 +90,17 @@ function ConnectAgentPage() {
   }
 
   return (
-    <AuthorizeFrame phase={viewer.phase} title="Connect your terminal">
+    <AuthorizeFrame phase={viewer.phase} title="Sign in a computer">
       {viewer.phase === 'ready' && !query.success && (
         <p className="authorize-error">
-          This sign-in link is incomplete or malformed. Run <code>spicytrade login</code> again from your
-          terminal.
+          This sign-in link is incomplete. Run <code>spicytrade setup</code> again in your terminal.
         </p>
       )}
       {viewer.phase === 'ready' && query.success && viewer.user === null && (
         <>
           <p>
-            A terminal on <strong>{query.data.label}</strong> is asking to connect to spicytrade as you.
-            Sign in to continue, and you will be returned here.
+            <strong>{query.data.label}</strong> is asking to sign in to spicytrade as you. Sign in to
+            continue, and you will be returned here.
           </p>
           <GoogleSignInButton callbackURL={`/connect/agent${rawSearch}`} />
         </>
@@ -105,14 +108,12 @@ function ConnectAgentPage() {
       {viewer.phase === 'ready' && query.success && viewer.user !== null && (
         <>
           <p>
-            Connect the terminal on <strong>{query.data.label}</strong> to spicytrade, signed in as{' '}
-            <strong>{viewer.user.name}</strong>?
+            Sign in <strong>{query.data.label}</strong> to spicytrade as <strong>{viewer.user.name}</strong>?
           </p>
           <p>
-            Approving creates an agent token for that machine. It is stored only in that machine&apos;s
-            keyring, and you can revoke it any time from the Connect tab.
+            Approve only if you just installed spicytrade or ran <code>spicytrade setup</code> yourself. You
+            can sign it out any time under Signed-in computers on the Connect tab.
           </p>
-          <p>Approve only if you just ran <code>spicytrade</code> on this computer.</p>
           {failure && <p className="authorize-error">{failure}</p>}
           <div className="authorize-actions">
             <Button

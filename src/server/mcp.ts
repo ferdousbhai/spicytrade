@@ -362,6 +362,11 @@ function authChallenge(request: Request, description: string): Response {
  * no challenge and no named log. Only the error's name is recorded; D1 detail can carry a token
  * id or user id.
  */
+/**
+ * A 401 like any refusal, so a fault here can never read as access; only its description tells a
+ * caller it was this server's trouble. `ops/spicytrade/config.mjs` (WORKER_FAULT_CHALLENGE) reads
+ * that description to wait the fault out rather than sign the computer in again -- change both.
+ */
 function callerLookupFailed(request: Request, errorName: string): Response {
   console.error('McpCallerLookupFailed', errorName)
   return authChallenge(request, 'spicytrade could not verify this request.')
@@ -408,7 +413,7 @@ export async function handleMcpRequest(request: Request, env: AppEnv, ctx: McpEx
     }
     if (minted) return serveMcp(request, env, ctx, minted)
     console.error('McpTokenRejected')
-    return authChallenge(request, 'This agent token is not live. Issue a new one from the Connect tab.')
+    return authChallenge(request, 'This token was revoked or is mistyped. Create a new one under Signed-in computers on the Connect tab.')
   }
 
   let runtime

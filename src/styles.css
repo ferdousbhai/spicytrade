@@ -96,18 +96,9 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .google-sign-in span { grid-column: 2; }
 .google-sign-in:hover { background: white; }
 .google-sign-in:disabled { color: #65666a; background: #d8d8dc; }
-/* Both sign-in failures are the same ruled strip, so a session-check failure and a sign-in
-   failure stacked on one screen read as one kind of message. */
-.auth-inline-error, .owner-access-error { max-width: 420px; padding: 13px 0; border-block: 1px solid rgba(255, 107, 120, .25); border-inline: 0; border-radius: 0; background: transparent; color: #efb4b9; font-size: 13px; line-height: 1.5; }
+.auth-inline-error { max-width: 420px; padding: 13px 0; border-block: 1px solid rgba(255, 107, 120, .25); border-inline: 0; border-radius: 0; background: transparent; color: #efb4b9; font-size: 13px; line-height: 1.5; }
 .auth-inline-error { margin: 12px 0 0; }
-.owner-access-error { margin: 0 0 22px; }
 
-.owner-access { min-height: calc(100dvh - 135px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); width: min(100%, 640px); margin-inline: auto; padding: clamp(58px, 12vh, 104px) 22px 42px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }
-.owner-access-kicker { margin: 0 0 18px; color: var(--brand); font: 13px/1 var(--sans); }
-.owner-access h1 { font-size: clamp(38px, 11vw, 56px); line-height: .93; }
-.owner-access h1 em { color: var(--brand); font-style: italic; font-weight: 300; }
-.owner-access > p:not(.owner-access-kicker) { max-width: 490px; margin: 22px 0 28px; color: var(--ink-muted); font-size: var(--type-body); line-height: 1.6; }
-.owner-access .google-sign-in { margin-bottom: 17px; }
 
 .site-page { padding: 0 22px; }
 .site-header, .site-content, .site-footer { width: min(100%, 1120px); margin-inline: auto; }
@@ -370,7 +361,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
   .skeleton-main .skeleton-line { max-width: 60ch; }
 }
 .viewer-avatar [data-slot="avatar-fallback"] { background: var(--brand); color: #180d04; font-weight: 700; }
-.owner-access-error [data-slot="alert-description"], .auth-inline-error [data-slot="alert-description"] { color: inherit; }
+.auth-inline-error [data-slot="alert-description"] { color: inherit; }
 
 .instrument-focus [data-slot="card-header"] { display: flex; justify-content: space-between; gap: 18px; }
 .instrument-focus [data-slot="card-content"] { padding: 0; }
@@ -563,7 +554,6 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 
 .connect-step { padding-top: 20px; border-top: 1px solid var(--hairline); min-width: 0; }
 .connect-step h2 { margin: 0 0 8px; font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
-.connect-optional { margin-left: 6px; color: var(--ink-faint); font-size: 12px; letter-spacing: 0; }
 .connect-fold > summary { display: flex; align-items: center; gap: 10px; min-height: var(--touch-target); cursor: pointer; }
 .connect-fold > summary::-webkit-details-marker { display: none; }
 .connect-fold > summary h2 { margin: 0; }
@@ -573,11 +563,6 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .connect-fold > summary:hover h2 { color: var(--brand); }
 .connect-fold > summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; border-radius: 4px; }
 .connect-fold[open] > summary { margin-bottom: 8px; }
-/* The manual fallback inside the proxy step: one quiet line under the command most members need. */
-.connect-manual { margin-top: 12px; }
-.connect-manual > summary { min-height: var(--touch-target); line-height: var(--touch-target); color: var(--ink-muted); cursor: pointer; }
-.connect-manual > summary:hover { color: var(--brand); }
-.connect-manual > summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; border-radius: 4px; }
 .connect-step [data-slot="alert"] { margin: 12px 0; }
 .connect-issue { margin: 12px 0; display: flex; gap: 8px; }
 .connect-issue input { flex: 1; min-width: 0; }
@@ -593,8 +578,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 /* Wrapped rather than scrolled, so a long command shows whole; Copy takes the value, not the
    wrapped text, and pre-wrap keeps the JSON's indentation. */
 .connect-code code { padding: 0; background: none; line-height: 1.55; white-space: pre-wrap; }
-/* One column dissolves the aside: the picker stays under the intro and the guards follow the
-   steps. */
+/* One column dissolves the aside, and the guards follow the steps. */
 .connect-aside { display: contents; }
 .connect-guards { order: 1; }
 .connect-picker { min-width: 0; }
@@ -605,15 +589,12 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .connect-picker span { display: block; padding: 8px 14px; border-radius: 7px; color: var(--ink-muted); font-size: 14px; line-height: 18px; }
 .connect-picker input:checked + span { background: var(--surface-2); color: var(--text); }
 .connect-picker input:focus-visible + span { outline: 2px solid var(--ring); outline-offset: 2px; }
-/* A wide screen keeps the picker and the guards in a column beside the steps, held in view as
-   the steps scroll, and centres the page as the brief is centred. */
+/* A wide screen keeps the guards in a column beside the steps, held in view as the steps
+   scroll, and centres the page as the brief is centred. */
 @media (min-width: 1120px) {
   .connect-screen { max-width: 1120px; margin-inline: auto; grid-template-columns: minmax(0, 720px) minmax(260px, 1fr); column-gap: clamp(32px, 4vw, 64px); align-items: start; }
   .connect-screen > * { grid-column: 1; }
   .connect-screen > .connect-aside { display: grid; gap: 28px; grid-column: 2; grid-row: 1 / span 4; position: sticky; top: 24px; }
-  /* The aside is too narrow for four segments in a row, so they sit as an even two by two. */
-  .connect-aside .connect-picker > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .connect-aside .connect-picker span { text-align: center; }
 }
 
 /* A 44px hit area around the reading pill keeps the compact visual readable and tappable. */

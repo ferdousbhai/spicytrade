@@ -1,4 +1,5 @@
 import { BrokerIdSchema, type BrokerId } from '../domain/broker'
+import { INSTALL_SCRIPT_URL } from '../domain/site'
 import { CallerVisibleError } from './caller-visible-error'
 
 export type BrokerCredential = {
@@ -11,7 +12,15 @@ export type BrokerCredential = {
 export class BrokerCredentialMissingError extends CallerVisibleError {
   constructor() {
     super(
-      'No brokerage is connected for this request. Connect a brokerage from the Connect tab in the spicytrade web app, then try again.',
+      // Its first sentence is matched by `ops/spicytrade/mcp.mjs` (NO_BROKERAGE_PREFIX), which swaps in
+      // an installed computer's own fix; change them together. So the rest is read only by agents
+      // connected without the install, for whom reconnecting can never bring a brokerage: the
+      // install (which also repairs an existing one) can, and it ends by naming how to start each
+      // agent it set up, which differs between them. The command comes last, with nothing after
+      // it, so copying it takes no trailing punctuation.
+      'No brokerage is connected. Positions and orders need spicytrade installed on the computer your agent runs'
+        + ' on (Linux, with Claude Code or Codex). Run this in a terminal there, then start your agent the way it says at the end:'
+        + ` curl -fsSL ${INSTALL_SCRIPT_URL} | bash`,
     )
     this.name = 'BrokerCredentialMissingError'
   }
@@ -19,8 +28,8 @@ export class BrokerCredentialMissingError extends CallerVisibleError {
 
 /**
  * The broker headers, under their current names and the pre-rename `X-Spice-*` ones. A member's
- * proxy updates on its own schedule, so this Worker accepts both; the proxy moves to the current
- * names once this is live, and the old names go once proxies have moved. A header sent under both
+ * local `spicytrade` updates on its own schedule, so this Worker accepts both; it moves to the
+ * current names once this is live, and the old names go once installs have moved. A header sent under both
  * names with different values is refused, not resolved: which one wins would be a guess.
  */
 const BROKER_HEADER = { current: 'X-Spicy-Trade-Broker', legacy: 'X-Spice-Broker' } as const

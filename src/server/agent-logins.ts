@@ -26,7 +26,8 @@ import { errorName, toError } from '../domain/failure'
  *
  *   approve   the signed-in member, on `/connect/agent`, opens a pending row and gets a one-time
  *             code for the page to hand to the CLI's loopback listener;
- *   exchange  the CLI redeems code and verifier for a fresh agent token.
+ *   exchange  the CLI redeems code and verifier for a fresh agent token;
+ *   sign out  the CLI, uninstalling, revokes the token it presents -- that token and no other.
  *
  * Approval is the member's session and nothing else: the page posts it same-origin, so a site
  * that links a signed-in member to `/connect/agent` still needs them to press Approve, and the
@@ -35,7 +36,7 @@ import { errorName, toError } from '../domain/failure'
  * and is bound instead by the verifier, which only the CLI that opened the page ever held.
  */
 
-const unavailable = () => jsonNoStore({ error: 'Agent sign-in is unavailable' }, { status: 503 })
+const unavailable = () => jsonNoStore({ error: "spicytrade can't sign in computers right now. Try again in a minute." }, { status: 503 })
 const invalidGrant = () => jsonNoStore({ error: AGENT_LOGIN_INVALID_GRANT }, { status: 400 })
 
 
@@ -80,7 +81,7 @@ export async function approveAgentLogin(
     ])
     if (!inserted?.meta.changes) {
       return jsonNoStore({
-        error: `At most ${MAX_PENDING_AGENT_LOGINS_PER_USER} terminal sign-ins may be pending at once. Wait a few minutes and try again.`,
+        error: `At most ${MAX_PENDING_AGENT_LOGINS_PER_USER} computer sign-ins may be pending at once. Wait a few minutes and try again.`,
       }, { status: 409 })
     }
     return jsonNoStore({ code })
@@ -147,6 +148,25 @@ export async function exchangeAgentLogin(request: Request, env: AppEnv, now = ne
  * another; this catches the ones whose CLI never came back. A lapsed row can no longer be
  * redeemed, so deleting it loses nothing.
  */
+/**
+ * A computer signing itself out: the bearer token it presents is revoked, and only that one, so
+ * holding a token is authority over nothing but itself. An unknown or already revoked token is the
+ * same 401 as any refused token.
+ */
+export async function signOutAgentLogin(request: Request, env: AppEnv, now = new Date()): Promise<Response> {
+  if (!env.DB) return unavailable()
+  const presented = /^Bearer (\S+)$/.exec(request.headers.get('authorization') ?? '')?.[1]
+  try {
+    const identity = presented ? await authenticateMcpToken(env.DB, presented, now) : undefined
+    if (!identity) return jsonNoStore({ error: 'This computer is not signed in.' }, { status: 401 })
+    await revokeMcpToken(env.DB, identity.userId, identity.tokenId)
+    return new Response(null, { headers: { 'cache-control': 'no-store' }, status: 204 })
+  } catch (error) {
+    console.error('AgentSignOutFailed', errorName(toError(error)))
+    return unavailable()
+  }
+}
+
 export async function sweepExpiredAgentLogins(env: AppEnv, now = new Date()): Promise<number> {
   // Scheduled only: a missing binding is a misconfiguration to name, not a sweep of zero rows.
   if (!env.DB) throw new ConfigurationError('BindingMissing', 'DB')

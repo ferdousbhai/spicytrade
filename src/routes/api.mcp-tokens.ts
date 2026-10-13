@@ -16,18 +16,18 @@ export const Route = createFileRoute('/api/mcp-tokens')({
       GET: async ({ request }) => {
         const authenticated = await authenticateRequest(request, appEnv)
         if ('response' in authenticated) return authenticated.response
-        if (!appEnv.DB) return jsonNoStore({ error: 'Agent tokens are unavailable' }, { status: 503 })
+        if (!appEnv.DB) return jsonNoStore({ error: 'Signed-in computers are unavailable right now.' }, { status: 503 })
         try {
           return jsonNoStore({ tokens: await listMcpTokens(appEnv.DB, authenticated.identity.id) })
         } catch (error) {
           console.error('McpTokenListFailed', errorName(toError(error)))
-          return jsonNoStore({ error: 'Agent tokens are temporarily unavailable' }, { status: 503 })
+          return jsonNoStore({ error: 'Signed-in computers are unavailable right now. Try again in a minute.' }, { status: 503 })
         }
       },
       POST: async ({ request }) => {
         const authenticated = await authenticateRequest(request, appEnv, true)
         if ('response' in authenticated) return authenticated.response
-        if (!appEnv.DB) return jsonNoStore({ error: 'Agent tokens are unavailable' }, { status: 503 })
+        if (!appEnv.DB) return jsonNoStore({ error: 'Signed-in computers are unavailable right now.' }, { status: 503 })
         const parsed = McpTokenIssueRequestSchema.safeParse(await request.json().catch(() => null))
         if (!parsed.success) return jsonNoStore({ error: 'Invalid token label' }, { status: 400 })
         try {
@@ -39,13 +39,13 @@ export const Route = createFileRoute('/api/mcp-tokens')({
             return jsonNoStore({ error: error.message }, { status: 409 })
           }
           console.error('McpTokenIssueFailed', errorName(toError(error)))
-          return jsonNoStore({ error: 'Agent tokens are temporarily unavailable' }, { status: 503 })
+          return jsonNoStore({ error: 'Signed-in computers are unavailable right now. Try again in a minute.' }, { status: 503 })
         }
       },
       DELETE: async ({ request }) => {
         const authenticated = await authenticateRequest(request, appEnv, true)
         if ('response' in authenticated) return authenticated.response
-        if (!appEnv.DB) return jsonNoStore({ error: 'Agent tokens are unavailable' }, { status: 503 })
+        if (!appEnv.DB) return jsonNoStore({ error: 'Signed-in computers are unavailable right now.' }, { status: 503 })
         const parsed = McpTokenRevokeRequestSchema.safeParse(await request.json().catch(() => null))
         if (!parsed.success) return jsonNoStore({ error: 'Invalid token' }, { status: 400 })
         try {
@@ -54,7 +54,7 @@ export const Route = createFileRoute('/api/mcp-tokens')({
           return jsonNoStore({ tokens: await listMcpTokens(appEnv.DB, authenticated.identity.id) })
         } catch (error) {
           console.error('McpTokenRevokeFailed', errorName(toError(error)))
-          return jsonNoStore({ error: 'Agent tokens are temporarily unavailable' }, { status: 503 })
+          return jsonNoStore({ error: 'Signed-in computers are unavailable right now. Try again in a minute.' }, { status: 503 })
         }
       },
     },

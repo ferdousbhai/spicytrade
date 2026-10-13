@@ -12,7 +12,7 @@ import { mostActiveSymbol, type PublicSymbolLookup } from '../domain/market'
 import { useLiveMarket } from '../data/live-market'
 import { useAudienceMarket } from '../data/use-audience-market'
 import { useWorkspaceFavorites } from '../data/use-workspace-favorites'
-import { SignInScreen, type Viewer, useViewer } from './auth-gate'
+import { type Viewer, useViewer } from './auth-gate'
 import { MarketScreen } from './market-screen'
 import { TopBar } from './top-bar'
 import { SUPPORT_EMAIL } from '../domain/site'
@@ -281,13 +281,9 @@ export function ConnectView() {
   const { authError, owner, viewer } = useWorkspace()
   return (
     <>
-      {/* Signing in from here returns the reader to this view: it is where they asked to. */}
-      {!viewer && <SignInScreen authError={authError} callbackURL="/connect" />}
-      {viewer && (
-        <Suspense fallback={<MarketState loading message="Loading…" />}>
-          <ConnectScreen owner={owner} />
-        </Suspense>
-      )}
+      <Suspense fallback={<MarketState loading message="Loading…" />}>
+        <ConnectScreen authError={authError} owner={owner} signedIn={Boolean(viewer)} />
+      </Suspense>
       {/* The top bar has no room for these on a phone, so the view about the reader's own
           account carries them for every width. */}
       <nav aria-label="Legal and support" className="connect-footer">

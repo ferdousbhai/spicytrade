@@ -24,7 +24,7 @@ import {
 } from './tastytrade-member-grant'
 
 /*
- * The one-click tastytrade connection, driven by `ops/spicytrade/connect-tastytrade.mjs`.
+ * The one-click tastytrade connection, driven by `spicytrade connect-tastytrade` (`ops/spicytrade/`).
  *
  *   authorize  the CLI, holding the member's agent token, opens a pending row and gets the
  *              consent URL;
@@ -32,7 +32,7 @@ import {
  *              loopback listener with the code;
  *   exchange   the CLI, with the same agent token, redeems the code for the member's refresh
  *              token, which goes into their keyring;
- *   token      the local proxy trades that refresh token for a 15-minute access token.
+ *   token      `spicytrade mcp` on the member's machine trades that refresh token for a 15-minute access token.
  *
  * The Worker never stores the member's refresh token: it crosses this Worker in the exchange
  * response and in each token request, and is in memory only for as long as either takes. What
@@ -43,7 +43,7 @@ import {
 const BROKER: BrokerId = 'tastytrade'
 /** tastytrade's consent page (developer.tastytrade.com, OAuth2 authorization). */
 const TASTYTRADE_AUTHORIZATION_URL = 'https://my.tastytrade.com/auth.html'
-/** Account reads and order placement: what the member's proxy spends the token on. */
+/** Account reads and order placement: what the member's `spicytrade mcp` spends the token on. */
 const TASTYTRADE_SCOPES = 'read trade'
 /** Registered with tastytrade as the app's redirect URI, so it must match the route exactly. */
 export const TASTYTRADE_CALLBACK_PATH = '/api/brokers/tastytrade/callback'
@@ -220,14 +220,14 @@ function plainNoStore(text: string, status: number): Response {
  */
 export async function tastytradeCallback(request: Request, env: AppEnv, now = new Date()): Promise<Response> {
   const config = connectConfig(env)
-  if (!config) return plainNoStore('Connecting tastytrade is unavailable right now.', 503)
+  if (!config) return plainNoStore('Connecting tastytrade is unavailable right now. Go back to the terminal and press Ctrl-C to skip it, then run spicytrade setup later to connect.', 503)
   const params = new URL(request.url).searchParams
   const state = BrokerAuthorizationStateSchema.safeParse(params.get('state'))
   const code = params.get('code')
   const error = params.get('error')
-  const expired = 'This tastytrade connection has expired or is unknown. Run connect-tastytrade.mjs again.'
+  const expired = 'This tastytrade connection has expired or is unknown. Run spicytrade setup again.'
   if (!state.success) return plainNoStore(expired, 400)
-  if (!code && !error) return plainNoStore('tastytrade returned neither an authorization nor a refusal.', 400)
+  if (!code && !error) return plainNoStore('tastytrade returned neither an approval nor a refusal. Go back to the terminal, press Ctrl-C to skip, then run spicytrade setup again.', 400)
 
   let row: { loopback_port: number } | null
   try {
@@ -237,7 +237,7 @@ export async function tastytradeCallback(request: Request, env: AppEnv, now = ne
     ).bind(await sha256Base64Url(state.data), BROKER, now.toISOString()).first<{ loopback_port: number }>()
   } catch (cause) {
     console.error('TastytradeCallbackFailed', errorName(toError(cause)))
-    return plainNoStore('Connecting tastytrade is unavailable right now.', 503)
+    return plainNoStore('Connecting tastytrade is unavailable right now. Go back to the terminal and press Ctrl-C to skip it, then run spicytrade setup later to connect.', 503)
   }
   if (!row) return plainNoStore(expired, 400)
 

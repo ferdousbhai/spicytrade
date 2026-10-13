@@ -5,8 +5,7 @@ import { TOKEN_REQUEST_TIMEOUT_MS } from './token-refresh.mjs'
 
 /**
  * Minting a 15-minute tastytrade access token from the long-lived grant in the keyring, for the
- * proxy that attaches it and for `spicytrade doctor` that checks the grant still mints. Its own
- * module because importing `proxy.mjs` starts the proxy.
+ * MCP server that attaches it and for `spicytrade doctor` that checks the grant still mints.
  */
 
 const TokenResponseSchema = z.object({
@@ -47,8 +46,34 @@ export class TastytradeAuthError extends Error {
   }
 }
 
+/**
+ * Whether tastytrade refused the grant itself, which only a new connection fixes: a 4xx answer.
+ * Throttling (429) and tastytrade's own failures (5xx) are not refusals -- a new connection would
+ * fail the same way and throw away a grant that still works -- so they are retried later instead.
+ */
+export function grantRefused(error) {
+  return error instanceof TastytradeAuthError && Number.isInteger(error.code)
+    && error.code >= 400 && error.code < 500 && error.code !== 429
+}
+
+/** tastytrade answered with a status, but one that says to try again later rather than reconnect. */
+export function tastytradeUnavailable(error) {
+  return error instanceof TastytradeAuthError && Number.isInteger(error.code) && !grantRefused(error)
+}
+
+/**
+ * The mint failed on the way, not at the member's end: spicytrade itself could not mint (any
+ * refusal of its own but a refused sign-in), or the answer could not be read. Waited out, like
+ * tastytrade not answering -- the member's network is fine, and setup cannot fix it.
+ */
+export function mintUnavailable(error) {
+  if (!(error instanceof TastytradeAuthError)) return false
+  const code = String(error.code)
+  return (code.startsWith('spicytrade-') && code !== 'spicytrade-401') || code === 'invalid-token-response'
+}
+
 /** A fixed-vocabulary code for a failed fetch: the cause's errno word, or the abort's name. */
-function transportCode(error) {
+export function transportCode(error) {
   const candidate = error instanceof Error && error.cause instanceof Error && 'code' in error.cause
     ? String(error.cause.code)
     : error instanceof Error ? error.name : undefined

@@ -176,7 +176,7 @@ test('each view is an address: a direct load renders it, and moving between them
 
   await page.goto('/connect')
   await expect(page).toHaveTitle('Connect | spicytrade')
-  await expect(page.getByRole('heading', { name: 'Your agent. Your account.' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Connect your agent' })).toBeVisible()
   await expect(primaryLink(page, 'Connect')).toHaveAttribute('aria-current', 'page')
   await expect(page.getByRole('navigation', { name: 'Legal and support' })).toBeVisible()
 
@@ -200,13 +200,13 @@ test('each view is an address: a direct load renders it, and moving between them
   await navigateTo(page, 'Recommendations')
   await expect(page.getByRole('region', { name: 'Trades' })).toBeVisible()
   await navigateTo(page, 'Connect')
-  await expect(page.getByRole('heading', { name: 'Your agent. Your account.' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Connect your agent' })).toBeVisible()
   await navigateTo(page, 'Watch')
   await expect(page.getByRole('region', { name: 'Options Watch' })).toBeVisible()
   expect(snapshotRequests).toBe(settledRequests)
 })
 
-test('unauthenticated visitors can read market data but connecting an agent needs Google sign-in', async ({ page }) => {
+test('unauthenticated visitors can read market data and the install, and sign in only for tokens', async ({ page }) => {
   const publicSnapshot = publicWatchSnapshot(['SPCX', 'META', 'BE', 'INTC', 'NVDA'])
   publicSnapshot.catalysts = publicSnapshot.catalysts.map((catalyst) => (
     catalyst.symbol === 'NVDA' ? { ...catalyst, date: isoDateAfter(10) } : catalyst
@@ -294,7 +294,9 @@ test('unauthenticated visitors can read market data but connecting an agent need
   await expect(page.getByText('Long vol')).toHaveCount(0)
 
   await navigateTo(page, 'Connect')
-  await expect(page.getByRole('heading', { name: 'Your agent. Your account.' })).toBeVisible()
+  // Installing needs no web session: the CLI's own sign-in opens the browser.
+  await expect(page.getByText('curl -fsSL https://spicy.trade/install.sh | bash')).toBeVisible()
+  await page.getByRole('heading', { name: 'Signed-in computers' }).click()
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible()
 
   await expect(page.getByRole('link', { name: 'Support' }).first()).toHaveAttribute('href', 'mailto:support@spicy.trade')
@@ -480,8 +482,8 @@ test('mobile market, recommendations, search, sorting, and connect flows remain 
   await expect(page.getByRole('heading', { name: 'Connect your agent' })).toBeVisible()
   // The optional steps are folded; token issuance is one tap away, under its own heading.
   await expect(page.getByRole('button', { name: 'Create token' })).toBeHidden()
-  await page.getByRole('heading', { name: /Local proxy/ }).click()
-  await page.getByRole('heading', { name: /Headless access/ }).click()
+  await page.getByRole('heading', { name: 'Without installing' }).click()
+  await page.getByRole('heading', { name: 'Signed-in computers' }).click()
   await expect(page.getByRole('button', { name: 'Create token' })).toBeVisible()
   // Tokens and shell commands are long unbreakable strings; with every step open they must wrap
   // inside their own block rather than push the page sideways. A screenshot caught this when

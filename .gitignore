@@ -1,4 +1,6 @@
 node_modules
+# Built from ops/spicytrade by tools/build-agent.mjs.
+public/spicytrade.mjs
 .DS_Store
 dist
 *.local

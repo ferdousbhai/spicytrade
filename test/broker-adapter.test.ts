@@ -122,7 +122,7 @@ describe('broker adapter seam', () => {
   })
 
   it('fails closed rather than choosing a broker when no credential is presented', async () => {
-    await expect(loadBrokerageContext({}, undefined)).rejects.toThrow('No brokerage is connected for this request.')
+    await expect(loadBrokerageContext({}, undefined)).rejects.toThrow('No brokerage is connected.')
     expect(adapter.calls).toEqual([])
   })
 })

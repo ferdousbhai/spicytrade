@@ -1,4 +1,4 @@
-import { UPSTREAM } from './config.mjs'
+import { UPSTREAM, workerFault } from './config.mjs'
 import { UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
 
 /**
@@ -6,8 +6,8 @@ import { UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
  * credential scripts all have to answer before they can say anything useful.
  *
  * Asked the way an agent would ask it -- a `tools/list` on the MCP endpoint, the cheapest call that
- * requires the token -- so an accepted answer means the proxy's calls will be accepted too. It is
- * one forwarded MCP call, so it gets the proxy's budget for one. The token rides in the
+ * requires the token -- so an accepted answer means `spicytrade mcp`'s calls will be accepted too.
+ * It is one relayed MCP call, so it gets the budget for one. The token rides in the
  * Authorization header of this request and nowhere else; no answer body is read.
  *
  * `accepted`, `rejected` (a 401), `unanswered` with the status for any other refusal, or
@@ -33,6 +33,7 @@ export async function checkAgentToken(token) {
     return { status: 'unreachable', transport: /^[A-Za-z0-9_]+$/.test(cause) ? cause : 'UnknownError' }
   }
   await response.body?.cancel()
+  if (workerFault(response)) return { httpStatus: response.status, status: 'unanswered' }
   if (response.status === 401) return { status: 'rejected' }
   if (!response.ok) return { httpStatus: response.status, status: 'unanswered' }
   return { status: 'accepted' }
@@ -41,9 +42,9 @@ export async function checkAgentToken(token) {
 /** One line describing a token check. */
 export function describeTokenCheck(check) {
   switch (check.status) {
-    case 'accepted': return 'spicytrade accepts the agent token'
-    case 'rejected': return 'spicytrade rejected the agent token'
-    case 'unanswered': return `spicytrade could not check the agent token (HTTP ${check.httpStatus})`
+    case 'accepted': return 'signed in to spicytrade'
+    case 'rejected': return 'this computer was signed out of spicytrade (revoked under Signed-in computers)'
+    case 'unanswered': return `spicytrade could not check this computer's sign-in (HTTP ${check.httpStatus})`
     default: return `spicytrade could not be reached (${check.transport})`
   }
 }

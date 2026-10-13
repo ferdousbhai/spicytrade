@@ -13,8 +13,9 @@ where they belong. Read the relevant code before changing behavior.
 `src/domain/` pure schemas and logic · `src/server/` Cloudflare and provider code ·
 `src/routes/api.*` thin HTTP adapters · `src/data/` reactive browser persistence ·
 `src/components/` product surfaces · `migrations/` D1 schema · `ops/` the member's own
-machine (credential proxy) and the owner's temporary bootstrap Workers, which reach the
-production bindings · `tools/` local jobs. No process on this Worker, and no tool it serves,
+machine (the `spicytrade` CLI, bundled by `tools/build-agent.mjs` and installed by
+`public/install.sh`) and the owner's temporary bootstrap Workers, which reach the production
+bindings · `tools/` local jobs. No process on this Worker, and no tool it serves,
 produces the daily brief: the private spicy-workflow Workflow generates it and delivers it through
 the `BriefPublisher` entrypoint over a service binding.
 
@@ -85,11 +86,11 @@ the `BriefPublisher` entrypoint over a service binding.
 
 ## Working rules
 
-- An interactive agent reaches spicytrade through the local proxy, which attaches the token from the
-  keyring, so no agent configuration holds a credential. An unattended research run instead
-  connects directly with its own token and *no* broker header, so every account tool refuses
-  structurally rather than by allowlist. Keep that asymmetry — it is what makes an unattended
-  run unable to trade.
+- An interactive agent reaches spicytrade through `spicytrade mcp`, which the agent launches and
+  which attaches the tokens from the keyring, so no agent configuration holds a credential. An
+  unattended research run instead connects directly with its own token and *no* broker header,
+  so every account tool refuses structurally rather than by allowlist. Keep that asymmetry — it
+  is what makes an unattended run unable to trade.
 - Do not introduce magic numbers or duplicate limits. Every bound must come from an explicit
   product or risk policy, a documented platform or provider constraint, or a named resource
   budget; define it at the authoritative boundary, derive downstream values from it, and record

@@ -1,13 +1,13 @@
+import { spawnSync } from 'node:child_process'
 import { z } from 'zod'
 
-import { AppGrantRefusalSchema } from './broker-grants.mjs'
+import { AppGrantRefusalSchema, transportCode } from './broker-grants.mjs'
 import { cliCommand, ORIGIN } from './config.mjs'
 import {
-  agentToken, APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, keyringStore, REFRESH_TOKEN_KEY, TASTYTRADE,
+  agentToken, APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, keyringClear, keyringSecret, keyringStore, KeyringUnavailable, REFRESH_TOKEN_KEY, TASTYTRADE,
   tastytradeCredentialKind,
 } from './keyring.mjs'
-import { awaitReturn, CliFailure, loopbackListener, openBrowser } from './loopback.mjs'
-import { restartProxy } from './systemd.mjs'
+import { awaitReturn, CliFailure, loopbackListener, openBrowser, remoteNote, unexpectedTail } from './loopback.mjs'
 import { TOKEN_REQUEST_TIMEOUT_MS } from './token-refresh.mjs'
 
 /**
@@ -16,7 +16,7 @@ import { TOKEN_REQUEST_TIMEOUT_MS } from './token-refresh.mjs'
  *
  * The member approves spicytrade on tastytrade's own page; the browser comes back through the Worker
  * to a listener here on the loopback address; this process redeems the code through the Worker
- * and stores the refresh token under `tastytrade/app-refresh-token`, where the local proxy finds
+ * and stores the refresh token under `tastytrade/app-refresh-token`, where `spicytrade mcp` finds
  * it. The Worker holds the app's client secret and never keeps the refresh token; this machine
  * keeps the refresh token and never needs a client secret.
  *
@@ -29,6 +29,12 @@ import { TOKEN_REQUEST_TIMEOUT_MS } from './token-refresh.mjs'
  */
 
 const PROGRAM = 'SpicytradeConnectTastytrade'
+/**
+ * How long a started connection stays pending on the Worker (`BROKER_AUTHORIZATION_TTL_MS` in
+ * `src/domain/broker-authorization.ts`), which this package cannot import: once that passes, the
+ * pending ones no longer count against the member's limit.
+ */
+const PENDING_WAIT_MINUTES = 10
 const BROKER = TASTYTRADE
 const KEY = APP_REFRESH_TOKEN_KEY
 
@@ -58,40 +64,63 @@ async function callWorker(path, agentBearer, body) {
       signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
     })
   } catch (error) {
-    throw new CliFailure(`spicytrade could not be reached (${error instanceof Error ? error.name : 'UnknownError'})`)
+    // The cause's own word -- ENOTFOUND, ECONNREFUSED, TimeoutError -- not fetch's bare TypeError.
+    const cause = transportCode(error)
+    throw new CliFailure(`spicytrade could not be reached${cause ? ` (${cause})` : ''}. Check your internet connection, then run: ${cliCommand('setup')}`)
   }
   const payload = await response.json().catch(() => undefined)
   if (!response.ok) {
     const tastytradeStatus = AppGrantRefusalSchema.safeParse(payload)
     if (response.status === 401) {
-      throw new CliFailure(`spicytrade did not accept the agent token in the keyring. Sign in again with:\n  ${cliCommand('login')}`)
+      throw new CliFailure(`this computer was signed out of spicytrade (revoked under Signed-in computers). Sign in again with: ${cliCommand('setup')}`)
     }
-    if (tastytradeStatus.success) throw new CliFailure(`tastytrade refused the grant (HTTP ${tastytradeStatus.data.tastytradeStatus})`)
-    throw new CliFailure(`spicytrade refused ${path} (HTTP ${response.status})`)
+    const again = cliCommand('setup')
+    if (tastytradeStatus.success) {
+      throw new CliFailure(`tastytrade did not accept the connection (HTTP ${tastytradeStatus.data.tastytradeStatus}). To try again, run: ${again}`)
+    }
+    // The Worker's own refusals (src/server/broker-authorizations.ts), each in words that say what to do.
+    if (response.status === 503) throw new CliFailure(`connecting tastytrade is unavailable right now. Try again later with: ${again}`)
+    if (response.status === 409) {
+      throw new CliFailure(`too many tastytrade connections were started and not finished. Wait ${PENDING_WAIT_MINUTES} minutes, then run: ${again}`)
+    }
+    if (response.status === 404) throw new CliFailure(`this tastytrade connection expired. Run: ${again}`)
+    throw new CliFailure(`spicytrade could not connect tastytrade (HTTP ${response.status}). To try again, run: ${again}`)
   }
   return payload
 }
 
-/** Connect, store the grant, and restart the proxy so it uses it. Progress goes to `out`. */
-export async function connectTastytrade(out = process.stdout) {
-  const agentBearer = await agentToken(PROGRAM)
-  if (!agentBearer) {
-    throw new CliFailure(`no spicytrade token in the keyring. Sign this machine in first:\n  ${cliCommand('login')}`)
+/**
+ * The member chose not to finish connecting -- declined on tastytrade's page, or let the approval
+ * lapse. Not a failure of anything: `setup` reports the reason quietly and says once, at its end,
+ * how to connect later; run alone, the message carries that itself.
+ */
+export class NotConnected extends CliFailure {
+  constructor(reason) {
+    super(`${reason}. Connect any time with: ${cliCommand('setup')}`)
+    this.name = 'NotConnected'
+    this.reason = reason
   }
-  // The proxy refuses a keyring holding both kinds, so connecting over a personal grant would
-  // only leave it unable to start. Say so now, before the member goes through tastytrade.
-  const { kind } = await tastytradeCredentialKind(PROGRAM)
-  if (kind === 'personal' || kind === 'ambiguous') {
-    throw new CliFailure('the keyring already holds a tastytrade personal grant, and the proxy refuses to start with both.\n'
-      + 'Remove it first:\n'
-      + `  secret-tool clear service ${BROKER} key ${CLIENT_SECRET_KEY}\n`
-      + `  secret-tool clear service ${BROKER} key ${REFRESH_TOKEN_KEY}`)
+}
+
+/** Connect and store the grant. Progress goes to `out`. */
+export async function connectTastytrade(out = process.stdout) {
+  const agentBearer = await agentToken()
+  if (!agentBearer) {
+    throw new CliFailure(`this computer is not signed in to spicytrade. Run: ${cliCommand('setup')}`)
+  }
+  // A working personal grant is the member's choice, so connecting over it is refused rather than
+  // replacing it. Two connections, or half a personal grant, cannot trade at all: the new
+  // connection replaces them once it is in hand.
+  const { kind } = await tastytradeCredentialKind()
+  if (kind === 'personal') {
+    throw new CliFailure('tastytrade is already connected with your personal grant. To switch, run:\n'
+      + `  ${cliCommand('disconnect-tastytrade')}\nthen run this again.`)
   }
 
   const listener = await loopbackListener(PROGRAM, {
     forbidden: 'This listener only answers the tastytrade return.',
-    received: 'spicytrade received the authorization. You can close this tab and return to the terminal.',
-    refused: 'tastytrade did not grant access. You can close this tab.',
+    received: 'tastytrade approved. Return to the terminal to finish.',
+    refused: 'Not connected. You can close this tab.',
   })
   let authorization
   try {
@@ -105,29 +134,83 @@ export async function connectTastytrade(out = process.stdout) {
   }
   if (!authorization.success) {
     listener.close()
-    throw new CliFailure('spicytrade answered the authorization request with an unreadable response')
+    throw new CliFailure(`spicytrade answered the authorization request with an unreadable response. ${unexpectedTail()}`)
   }
   const { authorizationUrl, expiresAt, state } = authorization.data
   listener.expect(state)
 
-  out.write(`Approve spicytrade on tastytrade to connect your account:\n\n  ${authorizationUrl}\n\n`)
+  out.write(`Approve spicytrade on tastytrade to connect your account:\n${remoteNote(listener.port)}\n  ${authorizationUrl}\n\n`)
   openBrowser(authorizationUrl)
 
   // Waits no longer than the Worker keeps the connection redeemable.
-  const outcome = await awaitReturn(listener, Date.parse(expiresAt) - Date.now())
-  if (outcome.lapsed) throw new CliFailure('the connection expired before tastytrade returned; run this again')
-  if (outcome.error) throw new CliFailure(`tastytrade did not grant access (${outcome.error})`)
+  out.write('Waiting for tastytrade. To skip for now, press Ctrl-C.\n')
+  const outcome = await awaitReturn(listener, Date.parse(expiresAt) - Date.now(), { skippable: true })
+  if (outcome.skipped) throw new NotConnected('skipped for now, so tastytrade is not connected')
+  if (outcome.lapsed) throw new NotConnected('the tastytrade approval expired, so it is not connected')
+  if (outcome.error === 'access_denied') throw new NotConnected('you declined on tastytrade, so it is not connected')
+  if (outcome.error) throw new CliFailure(`tastytrade did not grant access (${outcome.error}). Try again with: ${cliCommand('setup')}`)
 
   const exchanged = ExchangeResponseSchema.safeParse(
     await callWorker('/api/brokers/tastytrade/exchange', agentBearer, { code: outcome.code, state }),
   )
-  if (!exchanged.success) throw new CliFailure('spicytrade answered the exchange with an unreadable response')
+  if (!exchanged.success) throw new CliFailure(`spicytrade answered the exchange with an unreadable response. ${unexpectedTail()}`)
   const { refreshToken } = exchanged.data
 
-  if (!await keyringStore(PROGRAM, BROKER, KEY, 'tastytrade refresh token (spicytrade app)', refreshToken)) {
-    throw new CliFailure(`failed to store ${BROKER}/${KEY}`)
+  for (const key of [CLIENT_SECRET_KEY, REFRESH_TOKEN_KEY]) {
+    if (!await keyringClear(BROKER, key)) throw new KeyringUnavailable()
   }
-  out.write(`Stored ${BROKER}/${KEY}.\n`)
+  if (!await keyringStore(BROKER, KEY, 'tastytrade refresh token (spicytrade app)', refreshToken)) {
+    throw new KeyringUnavailable()
+  }
+  out.write('✓ tastytrade connected.\n')
+}
 
-  restartProxy(out)
+/**
+ * `spicytrade store-personal-grant`: keep a personal grant from the member's own tastytrade OAuth
+ * app (my.tastytrade.com > OAuth Applications > Manage > Create Grant) instead of connecting
+ * through spicytrade's. `secret-tool store` prompts for each value on the terminal itself, so
+ * neither reaches this process, the shell history, or any argument list.
+ */
+export async function storePersonalGrant(out = process.stdout) {
+  if (!process.stdin.isTTY) throw new CliFailure('this prompts for the grant, so it needs a terminal')
+  const { kind } = await tastytradeCredentialKind()
+  if (kind === 'app' || kind === 'ambiguous') {
+    throw new CliFailure('tastytrade is already connected. To switch to a personal grant, run:\n'
+      + `  ${cliCommand('disconnect-tastytrade')}\nthen run this again.`)
+  }
+  for (const [key, label] of [[CLIENT_SECRET_KEY, 'tastytrade OAuth client secret'], [REFRESH_TOKEN_KEY, 'tastytrade refresh token']]) {
+    out.write(`Paste your ${label} at the Password prompt (it is not shown as you type):\n`)
+    spawnSync('secret-tool', ['store', `--label=${label}`, 'service', BROKER, 'key', key], { stdio: 'inherit' })
+    if (!await keyringSecret(BROKER, key)) {
+      // Cancelled at the prompt. Half a grant cannot trade, so none is kept.
+      for (const partial of [CLIENT_SECRET_KEY, REFRESH_TOKEN_KEY]) await keyringClear(BROKER, partial)
+      throw new CliFailure(`nothing was saved for the ${label}. To try again, run: ${cliCommand('store-personal-grant')}`)
+    }
+  }
+  out.write('✓ tastytrade connected with your personal grant.\n')
+}
+
+/**
+ * `spicytrade disconnect-tastytrade`: remove every tastytrade credential from the keyring, of
+ * either kind. It is the one way out of a connection the member no longer wants, and the one fix
+ * for a keyring holding both kinds.
+ */
+export async function disconnectTastytrade(out = process.stdout) {
+  // Read first: where the grant itself is ended depends on whose app issued it. Resolves whether
+  // anything was removed, so a run with nothing connected says so and nothing more.
+  const { kind } = await tastytradeCredentialKind()
+  if (kind === 'none') {
+    out.write('· tastytrade was not connected on this computer; nothing to remove.\n')
+    return false
+  }
+  for (const key of [APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, REFRESH_TOKEN_KEY]) {
+    if (!await keyringClear(BROKER, key)) throw new KeyringUnavailable()
+  }
+  out.write('✓ tastytrade removed from this computer. Your agent keeps market and research tools.'
+    + (kind === 'personal'
+      ? ' To end the grant itself, delete it under OAuth Applications on my.tastytrade.com.\n'
+      // The app grant lived only in this keyring -- the Worker never keeps it -- so nothing can use it now.
+      : ' spicytrade kept no copy, so nothing can use that connection now; tastytrade may still list it in your'
+        + ' account settings, where you can remove it.\n'))
+  return true
 }
