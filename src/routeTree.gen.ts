@@ -13,6 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AuthorizeRouteImport } from './routes/authorize'
 import { Route as DisclosuresRouteImport } from './routes/disclosures'
+import { Route as LlmsFullDottxtRouteImport } from './routes/llms-full[.]txt'
+import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AppConnectRouteImport } from './routes/_app.connect'
@@ -59,6 +61,16 @@ const AuthorizeRoute = AuthorizeRouteImport.update({
 const DisclosuresRoute = DisclosuresRouteImport.update({
   id: '/disclosures',
   path: '/disclosures',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LlmsFullDottxtRoute = LlmsFullDottxtRouteImport.update({
+  id: '/llms-full.txt',
+  path: '/llms-full.txt',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LlmsDottxtRoute = LlmsDottxtRouteImport.update({
+  id: '/llms.txt',
+  path: '/llms.txt',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -211,6 +223,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/authorize': typeof AuthorizeRouteWithChildren
   '/disclosures': typeof DisclosuresRoute
+  '/llms-full.txt': typeof LlmsFullDottxtRoute
+  '/llms.txt': typeof LlmsDottxtRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/connect': typeof AppConnectRoute
@@ -243,6 +257,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/disclosures': typeof DisclosuresRoute
+  '/llms-full.txt': typeof LlmsFullDottxtRoute
+  '/llms.txt': typeof LlmsDottxtRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/connect': typeof AppConnectRoute
@@ -278,6 +294,8 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/authorize': typeof AuthorizeRouteWithChildren
   '/disclosures': typeof DisclosuresRoute
+  '/llms-full.txt': typeof LlmsFullDottxtRoute
+  '/llms.txt': typeof LlmsDottxtRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/_app/connect': typeof AppConnectRoute
@@ -313,6 +331,8 @@ export interface FileRouteTypes {
     | '/'
     | '/authorize'
     | '/disclosures'
+    | '/llms-full.txt'
+    | '/llms.txt'
     | '/privacy'
     | '/terms'
     | '/connect'
@@ -345,6 +365,8 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/disclosures'
+    | '/llms-full.txt'
+    | '/llms.txt'
     | '/privacy'
     | '/terms'
     | '/connect'
@@ -379,6 +401,8 @@ export interface FileRouteTypes {
     | '/_app'
     | '/authorize'
     | '/disclosures'
+    | '/llms-full.txt'
+    | '/llms.txt'
     | '/privacy'
     | '/terms'
     | '/_app/connect'
@@ -414,6 +438,8 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   AuthorizeRoute: typeof AuthorizeRouteWithChildren
   DisclosuresRoute: typeof DisclosuresRoute
+  LlmsFullDottxtRoute: typeof LlmsFullDottxtRoute
+  LlmsDottxtRoute: typeof LlmsDottxtRoute
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
   ApiAgentLoginsRoute: typeof ApiAgentLoginsRouteWithChildren
@@ -466,6 +492,20 @@ declare module '@tanstack/react-router' {
       path: '/disclosures'
       fullPath: '/disclosures'
       preLoaderRoute: typeof DisclosuresRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/llms-full.txt': {
+      id: '/llms-full.txt'
+      path: '/llms-full.txt'
+      fullPath: '/llms-full.txt'
+      preLoaderRoute: typeof LlmsFullDottxtRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/llms.txt': {
+      id: '/llms.txt'
+      path: '/llms.txt'
+      fullPath: '/llms.txt'
+      preLoaderRoute: typeof LlmsDottxtRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -712,6 +752,8 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   AuthorizeRoute: AuthorizeRouteWithChildren,
   DisclosuresRoute: DisclosuresRoute,
+  LlmsFullDottxtRoute: LlmsFullDottxtRoute,
+  LlmsDottxtRoute: LlmsDottxtRoute,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
   ApiAgentLoginsRoute: ApiAgentLoginsRouteWithChildren,

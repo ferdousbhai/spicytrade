@@ -15,6 +15,7 @@ import { useWorkspaceFavorites } from '../data/use-workspace-favorites'
 import { type Viewer, useViewer } from './auth-gate'
 import { MarketScreen } from './market-screen'
 import { TopBar } from './top-bar'
+import { useWebMcpTools } from './webmcp-tools'
 import { SUPPORT_EMAIL } from '../domain/site'
 
 const ConnectScreen = lazy(async () => {
@@ -133,6 +134,20 @@ export function SpiceApp() {
     tickers,
     viewer,
   }
+  // The same workspace, offered to an agent driving this tab; see `webmcp-tools.ts`.
+  useWebMcpTools({
+    brief: snapshot?.brief,
+    catalysts: workspace.catalysts,
+    chooseSymbol,
+    marketState: snapshot?.marketState,
+    openView: (to) => void router.navigate({ to }),
+    pinnedSymbols: favorites.pinnedSymbols,
+    selectedSymbol: selected?.symbol,
+    signedIn: Boolean(viewer),
+    syncedAt: snapshot?.syncedAt,
+    tickers,
+    togglePinned: favorites.togglePinned,
+  })
 
   return (
     <div className="app-viewport">
