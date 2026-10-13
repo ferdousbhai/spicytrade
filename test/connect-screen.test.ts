@@ -32,9 +32,9 @@ describe('Connect screen copy', () => {
   it('leads with the one install command, fetched from this site', () => {
     const html = renderToStaticMarkup(createElement(ConnectScreen, { owner: false, signedIn: true }))
     expect(html).toContain('curl -fsSL https://spicy.trade/install.sh | bash')
-    // Each supported agent's start command has a lasting place on the page.
-    expect(html).toContain('cd ~/trading &amp;&amp; claude')
-    expect(html).toContain('codex -c mcp_servers.spicytrade.enabled=true')
+    // One launcher handles both supported agents.
+    expect(html).toContain('spicytrade start')
+    expect(html).not.toContain('codex -c mcp_servers.spicytrade.enabled=true')
     expect(html).toContain('run the install again to update.')
     // The install is the path; nothing on the page asks for a checkout or a hand-run step.
     expect(html).not.toContain('ops/spicytrade')

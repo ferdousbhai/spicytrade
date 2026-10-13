@@ -16,8 +16,6 @@ import { GoogleSignInButton } from './auth-gate'
 import { CopyBlock } from './copy-block'
 import { INSTALL_SCRIPT_URL, MCP_ENDPOINT } from '../domain/site'
 
-/** The default of `TRADING_DIR` in `ops/spicytrade/config.mjs`, the one folder Claude Code loads it in. */
-const TRADING_DIR = '~/trading'
 /** The name every client's config knows the server by; `spicytrade setup` adds it under this too. */
 const MCP_SERVER_NAME = 'spicytrade'
 const addCommands = (url: string) => ({
@@ -32,10 +30,9 @@ const addCommands = (url: string) => ({
  * server to the agents it finds. Running it again updates it.
  */
 const INSTALL_COMMAND = `curl -fsSL ${INSTALL_SCRIPT_URL} | bash`
-/** Claude Code loads the server only in the trading folder, so this is how a session starts. */
-const START_COMMAND = `cd ${TRADING_DIR} && claude`
-/** `CODEX_START` in `ops/spicytrade/config.mjs`: Codex has the server switched off until started this way. */
-const CODEX_START = `codex -c mcp_servers.${MCP_SERVER_NAME}.enabled=true`
+/** The local launcher handles agent selection, folder and MCP configuration. */
+const START_COMMAND = 'spicytrade start'
+
 
 /**
  * The clients the page has exact commands for, and "Other" for everything that speaks
@@ -255,11 +252,10 @@ export function ConnectScreen({ authError, owner, signedIn }: { authError?: stri
         <p>
           It signs this computer in through your browser, asks to connect tastytrade, and adds spicytrade
           to Claude Code and Codex. Your credentials stay in this computer&apos;s keyring, never in your agent&apos;s settings.
-          Then start your agent and ask it about your positions — Claude Code in <code>{TRADING_DIR}</code>:
+          Then open your trading agent:
         </p>
         <CopyBlock label="Terminal" value={START_COMMAND} />
-        <p>Codex keeps spicytrade switched off; start a trading session with:</p>
-        <CopyBlock label="Terminal" value={CODEX_START} />
+        <p>Ask “How is my account doing?” once tastytrade is connected.</p>
         <p className="connect-note">
           Needs Linux with Node.js 22 or newer, a desktop keyring (GNOME Keyring or KWallet) with
           secret-tool (on Debian/Ubuntu: <code>sudo apt install libsecret-tools</code>), and Claude Code

@@ -260,7 +260,7 @@ describe('spicytrade mcp', () => {
     })
     const server = startServer(await fakeKeyring({ 'spicytrade/mcp-token': AGENT_TOKEN }), port)
     const failure = await notReady(server)
-    expect(failure.error.message).toMatch(/^This computer was signed out of spicytrade \(revoked under Signed-in computers\)\. .*then reconnect \(in Claude Code, run \/mcp, pick spicytrade and choose Reconnect; or in Codex, quit and run codex resume --last -c mcp_servers\.spicytrade\.enabled=true\): \S*spicytrade(\.mjs)? setup$/)
+    expect(failure.error.message).toMatch(/^This computer was signed out of spicytrade \(revoked under Signed-in computers\)\. .*\S*spicytrade(\.mjs)? setup\. When it finishes, tell your agent "setup is done" to continue\.$/)
     expect(failure.error.message).toMatch(/If you no longer use spicytrade here, remove it with `\S*spicytrade(\.mjs)? uninstall`\. To keep using it, run this in a terminal/)
     expect(JSON.stringify(server.replies) + server.log.stderr).not.toContain(AGENT_TOKEN)
   }, 30_000)
@@ -511,7 +511,7 @@ esac
     const { captured, port } = await worker()
     const server = startServer(directory, port)
     const failure = await notReady(server)
-    expect(failure.error.message).toMatch(/^The system keyring could not be opened\..* Run this in a terminal, then reconnect \(in Claude Code, run \/mcp, pick spicytrade and choose Reconnect; or in Codex, quit and run codex resume --last -c mcp_servers\.spicytrade\.enabled=true\): \S*spicytrade(\.mjs)? setup$/)
+    expect(failure.error.message).toMatch(/^Your password storage is locked\..* Run this in a terminal: \S*spicytrade(\.mjs)? setup\. When it finishes, tell your agent "setup is done" to continue\.$/)
     expect(captured).toHaveLength(0)
   }, 30_000)
 
@@ -570,7 +570,7 @@ esac
         ...personal,
       }), port)
       const failure = await notReady(server)
-      expect(failure.error.message).toMatch(/^Two tastytrade connections are saved.* Run this in a terminal, then reconnect \(in Claude Code, run \/mcp, pick spicytrade and choose Reconnect; or in Codex, quit and run codex resume --last -c mcp_servers\.spicytrade\.enabled=true\): \S*spicytrade(\.mjs)? setup$/)
+      expect(failure.error.message).toMatch(/^Two tastytrade connections are saved.* Run this in a terminal: \S*spicytrade(\.mjs)? setup\. When it finishes, tell your agent "setup is done" to continue\.$/)
       expect(JSON.stringify(failure) + server.log.stderr).not.toContain(CLIENT_SECRET)
       expect(JSON.stringify(failure) + server.log.stderr).not.toContain('app-refresh-token-value')
       expect(captured).toHaveLength(0)
@@ -582,16 +582,16 @@ esac
     const { captured, port } = await worker()
     const server = startServer(await fakeKeyring({ 'spicytrade/mcp-token': AGENT_TOKEN, 'tastytrade/refresh-token': REFRESH_TOKEN }), port)
     const failure = await notReady(server)
-    expect(failure.error.message).toMatch(/^An incomplete tastytrade connection is saved on this computer\. Run this in a terminal, then reconnect \(in Claude Code, run \/mcp, pick spicytrade and choose Reconnect; or in Codex, quit and run codex resume --last -c mcp_servers\.spicytrade\.enabled=true\): \S*spicytrade(\.mjs)? setup$/)
+    expect(failure.error.message).toMatch(/^An incomplete tastytrade connection is saved on this computer\. Run this in a terminal: \S*spicytrade(\.mjs)? setup\. When it finishes, tell your agent "setup is done" to continue\.$/)
     expect(captured).toHaveLength(0)
   }, 30_000)
 
-  it("names only the connecting client's own reconnect step", async () => {
+  it("offers recovery in the current session", async () => {
     const { port } = await worker()
     const server = startServer(await fakeKeyring({}), port)
     server.send({ ...request(1, 'initialize'), params: { clientInfo: { name: 'claude-code' }, protocolVersion: '2025-06-18' } })
     const { instructions } = InitializeSchema.parse(NotReadyReplySchema.parse(await server.reply(0)).result)
-    expect(instructions).toMatch(/then reconnect \(in Claude Code, run \/mcp, pick spicytrade and choose Reconnect\): \S*spicytrade(\.mjs)? setup$/)
+    expect(instructions).toMatch(/\S*spicytrade(\.mjs)? setup\. When it finishes, tell your agent "setup is done" to continue\.$/)
     expect(instructions).not.toContain('Codex')
   }, 30_000)
 
@@ -614,12 +614,12 @@ esac
   it('answers the newer server/discover with method-not-found while not ready, so the client falls back', async () => {
     const { port } = await worker()
     const server = startServer(await fakeKeyring({}), port)
-    // The newer opening names the client in `_meta`; the fallback's fix then names only its step.
+    // Both handshake revisions offer recovery inside the current session.
     server.send({ ...request(1, 'server/discover'), params: { _meta: { 'io.modelcontextprotocol/clientInfo': { name: 'codex-mcp-client' } } } })
     expect(FailureSchema.parse(await server.reply(0)).error.code).toBe(-32601)
     server.send({ ...request(2, 'initialize'), params: { protocolVersion: '2025-06-18' } })
     const { instructions } = InitializeSchema.parse(NotReadyReplySchema.parse(await server.reply(1)).result)
-    expect(instructions).toMatch(/then reconnect \(in Codex, quit and run codex resume --last -c mcp_servers\.spicytrade\.enabled=true\): \S*spicytrade(\.mjs)? setup$/)
+    expect(instructions).toMatch(/\S*spicytrade(\.mjs)? setup\. When it finishes, tell your agent "setup is done" to continue\.$/)
     expect(instructions).not.toContain('Claude Code')
   }, 30_000)
 
@@ -630,7 +630,7 @@ esac
     })
     const server = startServer(await fakeKeyring({ 'spicytrade/mcp-token': AGENT_TOKEN }), port)
     const failure = await notReady(server)
-    expect(failure.error.message).toMatch(/^spicytrade could not check this computer's sign-in just now\. Try again in a minute, then reconnect/)
+    expect(failure.error.message).toMatch(/^spicytrade could not check this computer's sign-in just now\. Ask your agent to recheck the connection in a minute/)
     expect(failure.error.message).not.toContain('signed out')
   }, 30_000)
 
@@ -638,7 +638,7 @@ esac
     const { captured, port } = await worker()
     const server = startServer(await fakeKeyring({}), port)
     const failure = await notReady(server)
-    expect(failure.error.message).toMatch(/not signed in to spicytrade\. Run this in a terminal, then reconnect \(in Claude Code, run \/mcp, pick spicytrade and choose Reconnect; or in Codex, quit and run codex resume --last -c mcp_servers\.spicytrade\.enabled=true\): \S*spicytrade(\.mjs)? setup$/)
+    expect(failure.error.message).toMatch(/not signed in to spicytrade\. Run this in a terminal: \S*spicytrade(\.mjs)? setup\. When it finishes, tell your agent "setup is done" to continue\.$/)
     expect(captured).toHaveLength(0)
   }, 30_000)
 
@@ -729,5 +729,33 @@ describe('broker token retirement', () => {
 
   it('keeps a token too short-lived to spare a whole timeout for nine tenths of its life', () => {
     expect(tokenRetiresAt(1_000, 100_000)).toBe(1_000 + 90_000)
+  })
+})
+
+
+describe('repairing an existing MCP session', () => {
+  it('rechecks saved credentials and discovers tools without replaying the original request', async () => {
+    const directory = await fakeKeyring({})
+    const { captured, port } = await worker((_, body, response) => {
+      const { id, method } = JSON.parse(body)
+      response.writeHead(id === undefined ? 202 : 200, { 'content-type': 'application/json' })
+      response.end(id === undefined ? '' : JSON.stringify({ id, jsonrpc: '2.0', result: method === 'initialize'
+        ? { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'test', version: '1' } }
+        : { tools: [{ name: 'read_account_snapshot' }] } }))
+    })
+    const server = startServer(directory, port)
+    await notReady(server)
+    await writeFile(join(directory, 'store', 'spicytrade_mcp-token'), AGENT_TOKEN)
+    server.send({ ...request(4), params: { name: 'setup_required' } })
+    expect(await server.reply(3)).toEqual({ id: 4, jsonrpc: '2.0', result: {
+      content: [{ type: 'text', text: 'Connected. Retry your original request.' }],
+    } })
+    expect(await server.reply(4)).toEqual({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })
+    server.send(request(5, 'tools/list'))
+    expect(await server.reply(5)).toEqual({ id: 5, jsonrpc: '2.0', result: { tools: [{ name: 'read_account_snapshot' }] } })
+    expect(captured.map((call) => JSON.parse(call.body).method)).toEqual([
+      'initialize', 'notifications/initialized', 'tools/list',
+    ])
+    expect(JSON.stringify(server.replies) + server.log.stderr).not.toContain(AGENT_TOKEN)
   })
 })

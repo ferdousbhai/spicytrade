@@ -433,7 +433,7 @@ describe('spicytrade setup', () => {
     expect(firstOut).not.toContain('✓ signed in to spicytrade')
     expect(firstOut).not.toContain('Everything is connected.')
     // tastytrade was not connected, so ready means market data and research, and says how to go further.
-    expect(firstOut).toContain(`Ready for market data and research. Start your agent with:\n  cd ${machine.trading} && claude   (Claude Code)\n`)
+    expect(firstOut).toContain(`Ready for market data and research. Start your agent with:\n  ${resolve(CLI)} start\n`)
     expect(firstOut).toMatch(/To see positions and place orders, run this in a terminal and connect tastytrade: \S+ setup\n/)
     // Nothing was running on an older sign-in, so there is no reconnect advice to give.
     expect(firstOut).not.toContain('reconnects')
@@ -586,7 +586,7 @@ describe('setup with a problem left over', () => {
     const cli = run(machine, port, ['setup'])
     expect(await cli.exited).toBe(1)
     const { stdout } = cli.output()
-    expect(stdout).toContain(`Start your agent with:\n  cd ${machine.trading} && claude   (Claude Code)\n`)
+    expect(stdout).toContain(`Start your agent with:\n  ${resolve(CLI)} start\n`)
     expect(stdout).not.toContain('Ready')
   }, 60_000)
 })
@@ -748,4 +748,31 @@ describe('spicytrade store-personal-grant', () => {
     expect(cli.output().stderr).toContain('spicytrade store-personal-grant: this prompts for the grant, so it needs a terminal')
     await expect(readFile(join(machine.bin, 'store', 'tastytrade_client-secret'), 'utf8')).rejects.toThrow()
   }, 30_000)
+})
+
+
+describe('opening a trading session', () => {
+  it('launches Codex with trading enabled without changing its saved configuration', async () => {
+    const machine = await fakeMachine({}, { codex: { spicytrade: MCP_TARGET } })
+    const cli = run(machine, 1, ['start'])
+    expect(await cli.exited).toBe(0)
+    expect(await readFile(join(machine.state, 'codex-calls'), 'utf8')).toContain('-c mcp_servers.spicytrade.enabled=true')
+  })
+
+  it('uses the saved choice when both agents are installed', async () => {
+    const machine = await fakeMachine({}, { codex: { spicytrade: MCP_TARGET }, claude: { 'local:spicytrade': MCP_TARGET } })
+    await mkdir(join(machine.config, 'spicytrade'))
+    await writeFile(join(machine.config, 'spicytrade', 'agent.json'), '"codex"')
+    const cli = run(machine, 1, ['start'])
+    expect(await cli.exited).toBe(0)
+    expect(await readFile(join(machine.state, 'codex-calls'), 'utf8')).toContain('-c mcp_servers.spicytrade.enabled=true')
+  })
+
+  it('refuses to launch an unrelated server registered under the same name', async () => {
+    const machine = await fakeMachine({}, { codex: { spicytrade: 'https://other.example/mcp' } })
+    const cli = run(machine, 1, ['start'])
+    expect(await cli.exited).toBe(1)
+    expect(cli.output().stderr).toContain('setup')
+    expect(await readFile(join(machine.state, 'codex-calls'), 'utf8')).not.toContain('-c mcp_servers')
+  })
 })

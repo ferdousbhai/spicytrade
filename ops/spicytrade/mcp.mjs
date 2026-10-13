@@ -3,7 +3,7 @@ import { z } from 'zod'
 
 import { grantMinter, grantRefused, mintUnavailable, TastytradeAuthError, tastytradeUnavailable } from './broker-grants.mjs'
 import { cliCommand, reconnectHow, UPSTREAM, workerFault } from './config.mjs'
-import { agentToken, KEYRING_FIX, KeyringUnavailable, TASTYTRADE, tastytradeCredentialKind } from './keyring.mjs'
+import { agentToken, KeyringUnavailable, TASTYTRADE, tastytradeCredentialKind } from './keyring.mjs'
 import { tokenRetiresAt, UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
 
 /**
@@ -166,6 +166,10 @@ function failureFor(error, grantKind) {
  * same answer. "In a terminal" also keeps an agent from running it in its own shell, where there is
  * no one to answer setup's question. The command comes last, so copying it takes nothing after it.
  */
+function repairInPlace(command) {
+  return `Run this in a terminal: ${command}. When it finishes, tell your agent "setup is done" to continue.`
+}
+
 function repair(command) {
   return `Run this in a terminal, then reconnect (${reconnectHow(connectedClient ? [connectedClient] : undefined)}): ${command}`
 }
@@ -225,7 +229,7 @@ function localAnswer(message, fix) {
     case 'initialize': {
       const requested = z.object({ protocolVersion: z.string() }).safeParse(message.params).data
       return ok({
-        capabilities: { tools: {} },
+        capabilities: { tools: { listChanged: true } },
         instructions: `${NOT_READY} ${fix}`,
         protocolVersion: requested?.protocolVersion ?? LOCAL_PROTOCOL_VERSION,
         serverInfo: { name: 'spicytrade', version: '1' },
@@ -234,7 +238,8 @@ function localAnswer(message, fix) {
     case 'ping': return ok({})
     case 'tools/list': return ok({
       tools: [{
-        description: `${NOT_READY} Its market, research and account tools are unavailable until then. ${fix}`,
+        description: `${NOT_READY} Its market, research and account tools are unavailable until then. ${fix} After setup finishes, call this tool to recheck the connection without restarting your agent.`,
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         inputSchema: { properties: {}, type: 'object' },
         name: SETUP_TOOL,
       }],
@@ -272,7 +277,7 @@ const ToolErrorResultSchema = z.looseObject({
 })
 
 const InitializeResultSchema = z.looseObject({
-  result: z.looseObject({ protocolVersion: z.string() }),
+  result: z.looseObject({ protocolVersion: z.string(), instructions: z.string().optional() }),
 })
 
 /**
@@ -330,20 +335,20 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
     // Not relayed market-only: a keyring that cannot be read may hold a brokerage connection, and
     // carrying on without it would answer account tools as though none were connected.
     if (!(error instanceof KeyringUnavailable)) throw error
-    setupRequired = () => `The system keyring could not be opened. ${KEYRING_FIX}. ${repair(cliCommand('setup'))}`
+    setupRequired = () => `${error.recovery}. ${repairInPlace(cliCommand('setup'))}`
   }
   if (setupRequired === undefined && !agentBearer) {
-    setupRequired = () => `This computer is not signed in to spicytrade. ${repair(cliCommand('setup'))}`
+    setupRequired = () => `This computer is not signed in to spicytrade. ${repairInPlace(cliCommand('setup'))}`
   } else if (setupRequired === undefined && (credential.kind === 'ambiguous' || credential.kind === 'incomplete')) {
     setupRequired = () => `${credential.kind === 'ambiguous'
       ? 'Two tastytrade connections are saved on this computer, so spicytrade will not guess which account trades.'
-      : 'An incomplete tastytrade connection is saved on this computer.'} ${repair(cliCommand('setup'))}`
+      : 'An incomplete tastytrade connection is saved on this computer.'} ${repairInPlace(cliCommand('setup'))}`
   }
   if (setupRequired) process.stderr.write(`${PROGRAM}: ${setupRequired()}\n`)
 
   // Brokerage credentials are optional: without them this still relays the market and research
   // surface, and the Worker answers account tools with its own connect-a-brokerage message.
-  const mint = setupRequired ? undefined : grantMinter(agentBearer, credential)
+  let mint = setupRequired ? undefined : grantMinter(agentBearer, credential)
   let cachedAccess
   /** The tools the Worker declares read-only: a call to one that went unanswered is safe to try again. */
   const readOnlyTools = new Set()
@@ -361,7 +366,9 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
   let sessionId
   let protocolVersion
 
-  async function relay(message) {
+  let opening
+  let recovering = false
+  async function relay(message, emit = write) {
     const id = message.id ?? null
     const isRequest = message.method !== undefined && id !== null
     let answered = false
@@ -370,10 +377,57 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
     let mintFailure
     // Whether the request left for the Worker: after that, a call that changes something may have happened.
     let sent = false
-    if (message.method === 'initialize' || message.method === 'server/discover') noteClient(message)
+    if (message.method === 'initialize' || message.method === 'server/discover') {
+      noteClient(message)
+      opening = message
+    }
+    const recheck = setupRequired && message.method === 'tools/call'
+      && ToolCallParamsSchema.safeParse(message.params).data?.name === SETUP_TOOL
+    if (recheck && !recovering && inFlight.size === 0) {
+      recovering = true
+      try {
+        const nextBearer = await agentToken()
+        const nextCredential = await tastytradeCredentialKind()
+        if (nextBearer && !['ambiguous', 'incomplete'].includes(nextCredential.kind)) {
+          // Recovery is explicit and only runs with no outstanding calls. Never replay the
+          // user's failed tool or carry a cached broker token into a new credential context.
+          agentBearer = nextBearer
+          credential = nextCredential
+          mint = grantMinter(agentBearer, credential)
+          cachedAccess = undefined
+          mintHeld = undefined
+          sessionId = undefined
+          protocolVersion = undefined
+          readOnlyTools.clear()
+          setupRequired = undefined
+          let initialized = false
+          let instructions
+          await relay({ ...opening, method: 'initialize' }, (reply) => {
+            const parsed = InitializeResultSchema.safeParse(reply)
+            initialized = parsed.success
+            instructions = parsed.data?.result.instructions
+          })
+          if (initialized && !setupRequired) {
+            await relay({ jsonrpc: '2.0', method: 'notifications/initialized' }, () => {})
+            emit({ id, jsonrpc: '2.0', result: { content: [{ type: 'text', text: instructions ? `Connected. Retry your original request.\n\n${instructions}` : 'Connected. Retry your original request.' }] } })
+            emit({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })
+            return
+          }
+          setupRequired ??= () => `The connection could not be checked. Try this tool again in a minute.`
+        }
+      } catch (error) {
+        if (!(error instanceof KeyringUnavailable)) throw error
+        setupRequired = () => `${error.recovery}. ${repairInPlace(cliCommand('setup'))}`
+      } finally {
+        recovering = false
+      }
+    } else if (recovering && emit === write) {
+      if (isRequest) emit({ id, jsonrpc: '2.0', error: { code: FAILURE_CODES.other, message: 'Connection check in progress. Try again when it finishes.' } })
+      return
+    }
     if (setupRequired) {
       const answer = localAnswer(message, setupRequired())
-      if (answer) write(answer)
+      if (answer) emit(answer)
       return
     }
     try {
@@ -427,9 +481,9 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
         await upstream.body?.cancel()
         if (message.method === 'initialize') {
           // Refused before the session began: it still connects, so the agent can say to come back.
-          setupRequired = () => `spicytrade could not check this computer's sign-in just now. Try again in a minute, then reconnect (${reconnectHow(connectedClient ? [connectedClient] : undefined)}).`
+          setupRequired = () => `spicytrade could not check this computer's sign-in just now. Ask your agent to recheck the connection in a minute.`
           process.stderr.write(`${PROGRAM}: initialize WorkerFault 401\n`)
-          write(localAnswer(message, setupRequired()))
+          emit(localAnswer(message, setupRequired()))
           return
         }
         throw new WorkerFault()
@@ -440,9 +494,9 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
           // Refused before the session began: serve it as one that needs setup, so the agent hears why.
           // Revoking is also how a member stops using spicytrade, so the way out is named beside the way back.
           setupRequired = () => 'This computer was signed out of spicytrade (revoked under Signed-in computers). If you no'
-            + ` longer use spicytrade here, remove it with \`${cliCommand('uninstall')}\`. To keep using it, ${repair(cliCommand('setup')).replace(/^Run/, 'run')}`
+            + ` longer use spicytrade here, remove it with \`${cliCommand('uninstall')}\`. To keep using it, ${repairInPlace(cliCommand('setup')).replace(/^Run/, 'run')}`
           process.stderr.write(`${PROGRAM}: initialize AgentTokenRefused 401\n`)
-          write(localAnswer(message, setupRequired()))
+          emit(localAnswer(message, setupRequired()))
           return
         }
         throw new AgentTokenRefused(upstream.status)
@@ -469,10 +523,10 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
             const text = mintFailure
               ? failureFor(mintFailure, credential.kind).message
               : `tastytrade is not connected on this computer. ${repair(cliCommand('setup'))}`
-            write({ ...reply, result: { ...missing.result, content: [{ text, type: 'text' }] } })
+            emit({ ...reply, result: { ...missing.result, content: [{ text, type: 'text' }] } })
             return
           }
-          write(reply)
+          emit(reply)
         })
       } catch (error) {
         // A body that is not MCP at all -- an error page -- is the Worker's trouble, as no reply is.
@@ -498,7 +552,7 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
       const tool = message.method === 'tools/call' ? ToolCallParamsSchema.safeParse(message.params).data?.name : undefined
       const maybeDone = tool !== undefined && sent && !readOnlyTools.has(tool)
         && !(error instanceof AgentTokenRefused) && !(error instanceof WorkerFault) && !neverSent(error)
-      write({
+      emit({
         error: maybeDone
           ? { code: FAILURE_CODES.other, message: BROKERAGE_TOOL.test(tool) ? MAYBE_ORDERED : MAYBE_DONE }
           : failureFor(error, credential.kind),

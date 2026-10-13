@@ -47,13 +47,15 @@ export const secretToolInstalled = () => commandInstalled('secret-tool')
  */
 export async function keyringSecret(service, key) {
   try {
-    const { stdout } = await execFileAsync('secret-tool', ['lookup', 'service', service, 'key', key])
+    const { stdout } = await execFileAsync('secret-tool', ['lookup', 'service', service, 'key', key], {
+      timeout: KEYRING_UNLOCK_WAIT_MS, env: { ...process.env, LC_ALL: 'C' },
+    })
     const value = stdout.trim()
     return value || undefined
   } catch (error) {
     if (error?.code === 1 && !String(error.stderr ?? '').trim()) return undefined
     // secret-tool's stderr is not echoed: its words are not ours. The caller reports the failure.
-    throw new KeyringUnavailable()
+    throw new KeyringUnavailable(keyringFailure(error))
   }
 }
 
@@ -83,6 +85,7 @@ export async function keyringWritable(out = process.stdout) {
       return false
     }
   } catch (error) {
+    if (error instanceof KeyringUnavailable && error.reason !== 'unknown') throw error
     if (error instanceof KeyringUnavailable) return false
     throw error
   } finally {
@@ -96,10 +99,26 @@ export async function keyringWritable(out = process.stdout) {
 export const KEYRING_FIX = 'If you have one, unlock it. If not, install one (Debian/Ubuntu: sudo apt install'
   + ' gnome-keyring; Arch: sudo pacman -S gnome-keyring; Fedora: sudo dnf install gnome-keyring) and log out and back in'
 
+/** Inspect only known diagnostics; never expose secret-tool output to an agent or log. */
+function keyringFailure(error) {
+  if (error?.code === 'ENOENT') return 'missing-tool'
+  if (error?.killed) return 'timeout'
+  return /locked collection|collection is locked|keyring is locked/i.test(String(error?.stderr ?? '')) ? 'locked' : 'unknown'
+}
+
 export class KeyringUnavailable extends CliFailure {
-  constructor() {
-    super(`Your system keyring could not be opened. ${KEYRING_FIX}, then run: ${cliCommand('setup')}`)
+  constructor(reason = 'unknown') {
+    const recovery = reason === 'locked'
+      ? 'Your password storage is locked. Unlock it in the desktop password dialog when setup asks'
+      : reason === 'timeout'
+        ? 'Password storage did not answer. Run setup in a desktop terminal and watch for a password dialog'
+        : reason === 'missing-tool'
+          ? 'The password-storage helper secret-tool is missing. Install libsecret-tools (Debian/Ubuntu), libsecret (Arch), or libsecret (Fedora)'
+          : `Your system keyring could not be opened. ${KEYRING_FIX}`
+    super(`${recovery}. Run: ${cliCommand('setup')}`)
     this.name = 'KeyringUnavailable'
+    this.reason = reason
+    this.recovery = recovery
   }
 }
 
@@ -113,16 +132,20 @@ export async function keyringStore(service, key, label, value, { timeoutMs } = {
   const stored = await new Promise((resolve) => {
     // A store against a locked keyring waits on an unlock prompt; `timeoutMs` bounds that wait.
     const child = spawn('secret-tool', ['store', `--label=${label}`, 'service', service, 'key', key], {
-      stdio: ['pipe', 'ignore', 'ignore'],
-      timeout: timeoutMs,
+      stdio: ['pipe', 'ignore', 'pipe'],
+      env: { ...process.env, LC_ALL: 'C' },
+      timeout: timeoutMs ?? KEYRING_UNLOCK_WAIT_MS,
     })
-    child.on('error', () => resolve(false))
-    child.on('close', (status) => resolve(status === 0))
+    let stderr = ''
+    child.stderr.on('data', (chunk) => { stderr += chunk })
+    child.on('error', (error) => resolve({ ok: false, reason: keyringFailure(error) }))
+    child.on('close', (status, signal) => resolve({ ok: status === 0, reason: keyringFailure({ stderr, killed: Boolean(signal) }) }))
     // A secret-tool that dies before reading surfaces as its exit status, not as an EPIPE here.
     child.stdin.on('error', () => {})
     child.stdin.end(value)
   })
-  return stored && await keyringSecret(service, key) === value
+  if (!stored.ok && stored.reason !== 'unknown') throw new KeyringUnavailable(stored.reason)
+  return stored.ok && await keyringSecret(service, key) === value
 }
 
 /**
@@ -132,7 +155,7 @@ export async function keyringStore(service, key, label, value, { timeoutMs } = {
  */
 export function keyringClear(service, key) {
   return new Promise((resolve) => {
-    const child = spawn('secret-tool', ['clear', 'service', service, 'key', key], { stdio: ['ignore', 'ignore', 'pipe'] })
+    const child = spawn('secret-tool', ['clear', 'service', service, 'key', key], { stdio: ['ignore', 'ignore', 'pipe'], timeout: KEYRING_UNLOCK_WAIT_MS })
     let stderr = ''
     child.stderr.on('data', (chunk) => { stderr += chunk })
     child.on('error', () => resolve(false))

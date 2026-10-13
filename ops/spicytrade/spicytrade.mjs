@@ -5,6 +5,7 @@ import { login } from './login.mjs'
 import { CliFailure, reconnectNote } from './loopback.mjs'
 import { serveMcp } from './mcp.mjs'
 import { setup } from './setup.mjs'
+import { start } from './start.mjs'
 import { connectTastytrade, disconnectTastytrade, storePersonalGrant } from './tastytrade-connect.mjs'
 import { uninstall } from './uninstall.mjs'
 
@@ -21,6 +22,7 @@ const SUPPORT_EMAIL = 'support@spicy.trade'
 
 const USAGE = `Usage: spicytrade <command>
 
+  start    Open your trading agent.
   setup    Sign in, connect tastytrade, and add spicytrade to your agents.
            Run it again any time to repair. To update, run the install again:
            curl -fsSL https://spicy.trade/install.sh | bash
@@ -37,6 +39,7 @@ Advanced:
 // A credential changed on its own reaches a session already running only once it reconnects;
 // `setup` says so itself, at its end, once.
 const COMMANDS = {
+  start,
   'connect-tastytrade': async () => { await connectTastytrade(); process.stdout.write(reconnectNote()) },
   'disconnect-tastytrade': async () => { if (await disconnectTastytrade()) process.stdout.write(reconnectNote()) },
   doctor: async () => { if (!await doctor()) process.exitCode = 1 },
