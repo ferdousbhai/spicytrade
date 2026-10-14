@@ -397,7 +397,7 @@ describe('spicytrade mcp', () => {
     server.send({ ...request(2), params: { name: 'place_brokerage_order' } })
     expect(FailureSchema.parse(await server.reply(1)).error.message).toMatch(/^spicytrade did not finish answering, so this order may already have been placed, replaced or cancelled\. Check working orders and positions with read_account_snapshot before trying again\.$/)
     server.send({ ...request(3), params: { name: 'read_price_history' } })
-    expect(FailureSchema.parse(await server.reply(2)).error.message).not.toContain('may or may not have gone through')
+    expect(FailureSchema.parse(await server.reply(2)).error.message).not.toMatch(/may or may not have gone through|this order may already/)
   }, 30_000)
 
   it('names orders only for the brokerage tools, and a server fault as spicytrade\'s', async () => {

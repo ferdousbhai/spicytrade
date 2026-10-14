@@ -64,11 +64,6 @@ const verdictCopy = {
   unavailable: 'Unavailable',
 } satisfies Record<VolatilityVerdict, string>
 
-function premiumScore(ticker: Pick<Ticker, 'ivRank' | 'ivPercentile'>): number | undefined {
-  if (ticker.ivRank === undefined || ticker.ivPercentile === undefined) return undefined
-  return Math.round((ticker.ivRank + ticker.ivPercentile) / 2)
-}
-
 const compactFormatter = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 1,
   notation: 'compact',
@@ -88,7 +83,7 @@ function assetLabel(ticker: Pick<Ticker, 'assetType'>): string | undefined {
 }
 
 type SortDirection = 'asc' | 'desc'
-type SortKey = 'symbol' | 'marketCap' | 'price' | 'year' | 'volume' | 'premium' | 'liquidity'
+type SortKey = 'marketCap' | 'year' | 'volume' | 'premium' | 'liquidity'
 type Sort = { direction: SortDirection; key: SortKey }
 
 /** The breakpoint the year column appears at, so nothing loads history a screen cannot show. */
@@ -115,22 +110,15 @@ function useMediaQuery(query: string): boolean {
   return useSyncExternalStore(subscribe, getSnapshot, () => false)
 }
 
-/**
- * What the pill beside a listed price shows. One tap cycles every row together, the way a phone
- * stocks app does, so a reader compares the list on any of these without it growing a column.
- * Day change leads because it is what a glance at a list is for; the rest are the table's own
- * columns.
- */
-type ListMetric = 'change' | 'premium' | 'volume' | 'marketCap'
-const LIST_METRICS: readonly ListMetric[] = ['change', 'premium', 'volume', 'marketCap']
-function nextListMetric(metric: ListMetric): ListMetric {
-  return LIST_METRICS[(LIST_METRICS.indexOf(metric) + 1) % LIST_METRICS.length]!
-}
+// Compact rows show the active ranking metric so the ordering is visible.
+type ListMetric = 'change' | SortKey
 const LIST_METRIC_LABELS = {
   change: 'Day change',
   marketCap: 'Market cap',
-  premium: 'Option premium',
+  premium: 'IV rank',
   volume: 'Volume',
+  year: '1Y return',
+  liquidity: 'Liquidity',
 } satisfies Record<ListMetric, string>
 
 type ListPill = { tone: 'down' | 'flat' | 'up' | VolatilityVerdict; value: string }
@@ -165,6 +153,12 @@ function listPill(ticker: Ticker, metric: ListMetric): ListPill {
         value: [verdictCopy[verdict] + (rank === undefined ? '' : ` ${rank}`), age].filter(Boolean).join(' · '),
       }
     }
+    case 'year': {
+      const value = yearReturn(ticker)
+      return { tone: value === undefined ? 'flat' : changeTone(value), value: formatSignedMetric(value, '%') }
+    }
+    case 'liquidity':
+      return { tone: 'flat', value: liquidityLabel(ticker) ?? '—' }
     case 'volume':
       return { tone: 'flat', value: compactMetric(ticker.volume) }
     case 'marketCap':
@@ -177,15 +171,21 @@ function listPill(ticker: Ticker, metric: ListMetric): ListPill {
  * a table with no rows otherwise sized its columns from the header labels alone and the headers
  * shifted under a search that matched nothing.
  */
-const SORT_COLUMNS: { cellClass: string; defaultDirection: SortDirection; key: SortKey; label: string }[] = [
+type MarketColumn = { cellClass: string; defaultDirection: SortDirection; key: SortKey | 'symbol' | 'price'; label: string }
+const MARKET_COLUMNS: MarketColumn[] = [
   { cellClass: 'instrument-cell', defaultDirection: 'asc', key: 'symbol', label: 'Instrument' },
   { cellClass: 'market-cap-cell', defaultDirection: 'desc', key: 'marketCap', label: 'Market cap' },
   { cellClass: 'price-cell', defaultDirection: 'desc', key: 'price', label: 'Price' },
   { cellClass: 'year-cell', defaultDirection: 'desc', key: 'year', label: '1Y' },
   { cellClass: 'volume-cell', defaultDirection: 'desc', key: 'volume', label: 'Volume' },
-  { cellClass: 'premium-cell', defaultDirection: 'desc', key: 'premium', label: 'Option premium' },
+  { cellClass: 'premium-cell', defaultDirection: 'desc', key: 'premium', label: 'IV rank' },
   { cellClass: 'liquidity-cell', defaultDirection: 'desc', key: 'liquidity', label: 'Liquidity' },
 ]
+
+// Symbols and nominal share prices identify instruments; neither ranks opportunities.
+const SORT_COLUMNS = MARKET_COLUMNS.filter(
+  (column): column is MarketColumn & { key: SortKey } => column.key !== 'price' && column.key !== 'symbol',
+)
 
 /**
  * Percent move across the cached year. The anchor rides the snapshot and the current price is
@@ -260,18 +260,13 @@ function Sparkline({ session }: { session: readonly CandlePoint[] }) {
 
 const SORT_METRICS = {
   marketCap: (ticker) => ticker.marketCap,
-  price: (ticker) => ticker.price,
   year: yearReturn,
   volume: (ticker) => ticker.volume,
-  premium: premiumScore,
+  premium: (ticker) => ticker.ivRank,
   liquidity: (ticker) => ticker.liquidity,
-} satisfies Record<Exclude<SortKey, 'symbol'>, (ticker: Ticker) => number | undefined>
+} satisfies Record<SortKey, (ticker: Ticker) => number | undefined>
 
 function compareBySort(left: Ticker, right: Ticker, sort: Sort): number {
-  if (sort.key === 'symbol') {
-    const delta = left.symbol.localeCompare(right.symbol)
-    return sort.direction === 'asc' ? delta : -delta
-  }
   const leftValue = SORT_METRICS[sort.key](left)
   const rightValue = SORT_METRICS[sort.key](right)
   if (leftValue === undefined || rightValue === undefined) {
@@ -714,8 +709,8 @@ const MarketTickerRow = memo(function MarketTickerRow({
 
 /**
  * The phone row: what the table says, one screen wide. Symbol, issuer and next catalyst on the
- * left, the session chart when the feed carries one, and the price with one switchable reading
- * under it on the right. Memoized on the same terms as the table row.
+ * left, the session chart when the feed carries one, and the active sorting metric
+ * on the right. Memoized on the same terms as the table row.
  */
 const MarketListRow = memo(function MarketListRow({
   catalyst,
@@ -723,7 +718,6 @@ const MarketListRow = memo(function MarketListRow({
   isSelected,
   metric,
   now,
-  onCycleMetric,
   onSelectTicker,
   onTogglePinned,
   ticker,
@@ -734,14 +728,12 @@ const MarketListRow = memo(function MarketListRow({
   isSelected: boolean
   metric: ListMetric
   now: Date
-  onCycleMetric: () => void
   onSelectTicker: (symbol: string) => void
   onTogglePinned: (symbol: string) => void
   ticker: Ticker
   yearCloses?: readonly number[]
 }) {
   const pill = listPill(ticker, metric)
-  const nextMetric = nextListMetric(metric)
   const session = latestSessionCandles(ticker.sparkline)
 
   return (
@@ -760,16 +752,10 @@ const MarketListRow = memo(function MarketListRow({
         ? <Sparkline session={session} />
         : yearCloses && yearCloses.length > 1 ? <YearSparkline closes={yearCloses} /> : null}
       <div className="watch-row-quote">
-        <strong>{formatMarketPrice(ticker.price)}</strong>
-        <button
-          aria-label={`${LIST_METRIC_LABELS[metric]} ${pill.value}. Show ${LIST_METRIC_LABELS[nextMetric].toLowerCase()}`}
-          className="watch-pill"
-          data-tone={pill.tone}
-          onClick={onCycleMetric}
-          type="button"
-        >
+        <span className="watch-pill" data-tone={pill.tone}>
           {pill.value}
-        </button>
+        </span>
+        <small>{LIST_METRIC_LABELS[metric]}</small>
       </div>
     </li>
   )
@@ -842,7 +828,6 @@ export function MarketScreen({
   const [sort, setSort] = useState<Sort>({ direction: 'desc', key: 'volume' })
   const [query, setQuery] = useState('')
   const [searchSort, setSearchSort] = useState(false)
-  const [listMetric, setListMetric] = useState<ListMetric>('change')
   // On a phone the focus card lives in a sheet over the list, so the list is the screen.
   const [detailOpen, setDetailOpen] = useState(false)
   const narrow = useMediaQuery(NARROW_VIEWPORT)
@@ -865,9 +850,8 @@ export function MarketScreen({
     : matched
   const relevance = Boolean(trimmedQuery) && !searchSort
   const watchTickers = [...universe].sort((left, right) =>
-    Number(pinned.has(right.symbol)) - Number(pinned.has(left.symbol))
-    || (relevance ? 0 : compareBySort(left, right, sort)
-      || left.symbol.localeCompare(right.symbol)))
+    relevance ? 0 : compareBySort(left, right, sort)
+      || left.symbol.localeCompare(right.symbol))
   const selectResult = useCallback((symbol: string) => {
     onSelectTicker(symbol, lookup?.ticker.symbol === symbol ? lookup : undefined)
   }, [onSelectTicker, lookup])
@@ -881,9 +865,6 @@ export function MarketScreen({
   // The year series is fetched only where something draws it: the table's year column at the
   // wide breakpoint, and every phone row, which has the room the table's middle widths lack.
   const yearCandles = useYearCandles(useMediaQuery(WIDE_VIEWPORT) || narrow)
-  const cycleListMetric = useCallback(() => {
-    setListMetric(nextListMetric)
-  }, [])
   // A tap on a phone both selects and opens the detail, as a stocks app does; a wide screen
   // keeps the card beside the list and only selects.
   const selectFromList = useCallback((symbol: string) => {
@@ -902,16 +883,18 @@ export function MarketScreen({
     return [...merged.values()]
   }, [catalysts, catalystSearch.catalysts, focusedRead.catalysts, looked])
   const nextCatalysts = nextCatalystsBySymbol(visibleCatalysts, now)
-  const toggleSort = (column: typeof SORT_COLUMNS[number]) => {
+  const toggleSort = (column: MarketColumn) => {
+    const { key } = column
+    if (key === 'price' || key === 'symbol') return
     setSearchSort(true)
-    setSort((current) => current.key === column.key
-      ? { direction: current.direction === 'asc' ? 'desc' : 'asc', key: column.key }
-      : { direction: column.defaultDirection, key: column.key })
+    setSort((current) => current.key === key
+      ? { direction: current.direction === 'asc' ? 'desc' : 'asc', key: key }
+      : { direction: column.defaultDirection, key: key })
   }
   const pinnedTickers = tickers.filter((ticker) => pinned.has(ticker.symbol))
   const selectedVerdict = volatilityVerdict(selected)
   const selectedCopy = verdictCopy[selectedVerdict]
-  const selectedPremiumScore = premiumScore(selected)
+  const selectedPremiumRank = selected.ivRank
   const selectedAsset = assetLabel(selected)
   const selectedRecommendation = brief?.recommendations.find((recommendation) => recommendation.symbol === selected.symbol)
   const selectedTape = focusTape(selected)
@@ -941,8 +924,8 @@ export function MarketScreen({
           <div className="premium-gauge">
             <span>Option premium</span>
             <strong className="premium-verdict">{selectedCopy}</strong>
-            {selectedPremiumScore === undefined ? null : (
-              <Progress className="premium-axis" aria-label={`Relative premium score ${selectedPremiumScore} out of 100, from cheap to expensive`} value={selectedPremiumScore} />
+            {selectedPremiumRank === undefined ? null : (
+              <Progress className="premium-axis" aria-label={`IV rank ${selectedPremiumRank} out of 100`} value={selectedPremiumRank} />
             )}
           </div>
         </CardHeader>
@@ -1096,9 +1079,8 @@ export function MarketScreen({
                 isPinned={pinned.has(ticker.symbol)}
                 isSelected={ticker.symbol === selected.symbol}
                 key={ticker.symbol}
-                metric={listMetric}
+                metric={relevance ? 'change' : sort.key}
                 now={now}
-                onCycleMetric={cycleListMetric}
                 onSelectTicker={selectFromList}
                 onTogglePinned={toggleResultPinned}
                 ticker={ticker}
@@ -1114,18 +1096,20 @@ export function MarketScreen({
           <TableHeader>
             <TableRow>
               <TableHead className="pin-cell"><span className="sr-only">Pinned</span></TableHead>
-              {SORT_COLUMNS.map((column) => (
+              {MARKET_COLUMNS.map((column) => (
                 <TableHead
                   aria-sort={!relevance && sort.key === column.key ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}
                   className={column.cellClass}
                   key={column.key}
                 >
+                  {column.key === 'price' || column.key === 'symbol' ? column.label : (
                   <button className="sort-button" onClick={() => toggleSort(column)} type="button">
                     {column.label}
                     {!relevance && sort.key === column.key && (sort.direction === 'asc'
                       ? <ArrowUp aria-hidden="true" />
                       : <ArrowDown aria-hidden="true" />)}
                   </button>
+                  )}
                 </TableHead>
               ))}
             </TableRow>
@@ -1146,7 +1130,7 @@ export function MarketScreen({
             ))}
             {!watchTickers.length && (
               <TableRow>
-                <TableCell colSpan={SORT_COLUMNS.length + 1}>{emptyResult}</TableCell>
+                <TableCell colSpan={MARKET_COLUMNS.length + 1}>{emptyResult}</TableCell>
               </TableRow>
             )}
           </TableBody>

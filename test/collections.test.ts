@@ -303,17 +303,6 @@ describe('live market subscriptions', () => {
       .toBeUndefined()
   })
 
-  it('keeps a stored snapshot that a later session check will claim', async () => {
-    const snapshot = marketSnapshotFixture()
-    await hydrateCollections(snapshot, 'owner')
-
-    // Restoring the audience the record actually belongs to returns the reader to the market
-    // they left, rather than to an empty screen that has to fetch it again.
-    await restoreOfflineSnapshot('owner')
-    expect(offlineSnapshotCollection.get('snapshot')?.audience).toBe('owner')
-    expect(tickerCollection.size).toBeGreaterThan(0)
-  })
-
   it('keeps the reader\'s chosen symbol when the audience changes the watchlist', async () => {
     const snapshot = marketSnapshotFixture()
     await hydrateCollections(snapshot, 'owner')

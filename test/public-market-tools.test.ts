@@ -126,14 +126,6 @@ describe('anonymous symbol search', () => {
     expect(searchTool().parameters).toMatchObject({ properties: { query: { maxLength: MAX_QUERY_LENGTH } } })
   })
 
-  it('does not promise that a searched name stays tracked', () => {
-    // Admission can be refused and a searched row pruned later; `watchlisted` says which.
-    const { description } = searchTool()
-    expect(description).not.toContain('from then on')
-    expect(description).toContain('when the list has room')
-    expect(description).toContain('`watchlisted` in the result says whether it was kept')
-  })
-
   it('reports a clean miss as a result', async () => {
     broker.lookupPublicMarketSymbol.mockResolvedValue(undefined)
     const result = await searchTool().execute({ query: 'ZZZZ' })

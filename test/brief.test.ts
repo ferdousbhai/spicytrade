@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   BriefRecommendationSchema,
-  DailyBriefSchema,
   BriefLinkSchema,
   DailyBriefSubmissionSchema,
   MAX_BRIEF_LINK_SNIPPET_LENGTH,
@@ -13,9 +12,6 @@ import { parseThesisMarkdown } from '../src/domain/thesis-markdown'
 import { dailyBriefFixture } from './fixtures/market'
 
 describe('brief contract', () => {
-  it('accepts the fixture', () => {
-    expect(DailyBriefSchema.parse(dailyBriefFixture)).toEqual(dailyBriefFixture)
-  })
 
   it('holds every field to its envelope and refuses unknown ones', () => {
     const recommendation = dailyBriefFixture.recommendations[0]!

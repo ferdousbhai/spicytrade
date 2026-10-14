@@ -44,6 +44,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
   broker.claimMarketRefresh.mockResolvedValue(true)
   broker.releaseMarketRefresh.mockResolvedValue(undefined)
   broker.lookupStoredMarketSymbol.mockResolvedValue(undefined)

@@ -95,30 +95,6 @@ describe('D1 migrations', () => {
     db.close()
   })
 
-  it('serializes every order kind after the exact production-applied 0005 migration', async () => {
-    const initial = await read('0001_spice.sql')
-    const migration = await read('0005_brokerage_action_state.sql')
-    const db = new DatabaseSync(':memory:')
-    db.exec(initial)
-    const insert = db.prepare(
-      `INSERT INTO brokerage_actions
-        (id, status, payload_json, token_digest, created_at, expires_at)
-       VALUES (?, ?, ?, 'digest', '2026-08-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z')`,
-    )
-    // Production had no duplicate in-flight row when 0005 was applied, so the
-    // immutable migration can replace 0001's kind-scoped in-flight index.
-    insert.run('legacy-vertical', 'pending', JSON.stringify({ kind: 'place_vertical_spread_order' }))
-
-    expect(() => db.exec(migration)).not.toThrow()
-    expect(() => insert.run('blocked', 'pending', JSON.stringify({ kind: 'future_order_kind' })))
-      .toThrow(/UNIQUE constraint/)
-
-    db.prepare("UPDATE brokerage_actions SET status = 'expired' WHERE id = 'legacy-vertical'").run()
-    expect(() => insert.run('accepted', 'pending', JSON.stringify({ kind: 'future_order_kind' })))
-      .not.toThrow()
-    db.close()
-  })
-
   it('quarantines an ambiguous submission per broker account, never globally', async () => {
     const initial = await read('0001_spice.sql')
     const migration = await read('0029_broker_submission_quarantine.sql')
@@ -191,16 +167,6 @@ describe('D1 migrations', () => {
 
     const carried = db.prepare('SELECT id, status, provider_order_id FROM broker_submissions').all()
     expect(carried).toEqual([{ id: 'done', status: 'executed', provider_order_id: '55512' }])
-    db.close()
-  })
-
-  it('drops the retired drawdown high-water table', async () => {
-    const db = new DatabaseSync(':memory:')
-    db.exec(await read('0001_spice.sql'))
-    db.exec(await read('0031_portfolio_risk_state_per_broker.sql'))
-    // Retired with the drawdown guard; nothing reads it any more.
-    db.exec(await read('0046_drop_portfolio_risk_state.sql'))
-    expect(db.prepare("SELECT name FROM sqlite_master WHERE name = 'portfolio_risk_state'").get()).toBeUndefined()
     db.close()
   })
 

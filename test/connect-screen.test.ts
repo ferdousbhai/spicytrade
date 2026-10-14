@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { createElement } from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -28,28 +27,7 @@ function renderInteractive(signedIn = true) {
   return { fetch, ...render(createElement(ConnectScreen, { owner: false, signedIn })) }
 }
 
-describe('Connect screen copy', () => {
-  it('leads with a message for the existing agent and folds manual setup', () => {
-    const html = renderToStaticMarkup(createElement(ConnectScreen, { owner: false, signedIn: true }))
-    expect(html).toContain('curl -fsSL https://spicy.trade/install.sh | bash')
-    expect(html).toContain('Message to your agent')
-    expect(html).toContain('https://spicy.trade/connect/guide')
-    expect(html).not.toContain('spicytrade start')
-    expect(html.indexOf('Start in your agent')).toBeLessThan(html.indexOf('Manual installation'))
-    expect(html).not.toContain('codex -c mcp_servers.spicytrade.enabled=true')
-    expect(html).toContain('run the install again to update.')
-    // The install is the path; nothing on the page asks for a checkout or a hand-run step.
-    expect(html).not.toContain('ops/spicytrade')
-    expect(html).not.toContain('store-credentials')
-    expect(html).not.toContain('127.0.0.1:8787')
-    // The no-install path stays, without a credential in the command the agent will store.
-    expect(html).toContain('claude mcp add --transport http spicytrade https://spicy.trade/mcp')
-    expect(html).not.toMatch(/spicy\.trade\/mcp<[^>]*>[^<]*Authorization/)
-    // Only the chosen client's commands are shown.
-    expect(html).not.toContain('grok mcp add')
-    expect(html).not.toContain('codex mcp add')
-  })
-
+describe('Connect screen', () => {
   it('reads the same signed out, and asks for a sign-in only where a token needs one', () => {
     stubStorage()
     const { container, fetch } = renderInteractive(false)

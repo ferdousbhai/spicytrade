@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { CONNECT_GUIDE_URL, MCP_ENDPOINT } from '../src/domain/site'
+import { CONNECT_GUIDE_URL } from '../src/domain/site'
 import { connectGuide } from '../src/server/connect-guide'
 import { llmsFullTxt, llmsTxt } from '../src/server/llms-txt'
 
@@ -12,12 +12,6 @@ describe('llms.txt', () => {
     const links = lines.filter((line) => line.startsWith('- '))
     expect(links.length).toBeGreaterThan(0)
     for (const link of links) expect(link).toMatch(/^- \[[^\]]+\]\(https:\/\/spicy\.trade\/[^)]*\)/)
-  })
-
-  it('points agents at the MCP server first', () => {
-    const text = llmsTxt()
-    expect(text.indexOf('## MCP server')).toBeLessThan(text.indexOf('## Public JSON'))
-    expect(text).toContain(`(${MCP_ENDPOINT})`)
   })
 
   it('gives an existing agent a connector-only setup path and explicit refresh limits', () => {

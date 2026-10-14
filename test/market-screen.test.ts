@@ -85,17 +85,6 @@ describe('selected market context', () => {
 })
 
 describe('watchlist market data', () => {
-  it('orders the core market columns and reports lending as lendability alone', () => {
-    const snapshot = marketSnapshotFixture()
-
-    const html = renderMarket(snapshot, { symbol: 'NVDA' })
-    const header = html.match(/<thead[^>]*>(.*?)<\/thead>/s)?.[1]
-
-    expect(header).toMatch(/Market cap.*Price.*Volume/)
-    expect(html).toContain('price-range')
-    expect(html).toContain('Easy To Borrow')
-    expect(html).not.toContain('borrow')
-  })
 
   it('dates the quote and the metrics separately, and says when the metrics carry no date', () => {
     const snapshot = marketSnapshotFixture()

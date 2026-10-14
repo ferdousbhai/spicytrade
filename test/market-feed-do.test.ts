@@ -573,7 +573,9 @@ describe('MarketFeedCore', () => {
   })
 
   it('keeps a reader that is still announcing itself', async () => {
-    const live = downstream(['SPY'])
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const previousHeartbeat = Date.now() - CLIENT_HEARTBEAT_MS
+    const live = downstream(['SPY'], previousHeartbeat)
     const context = new FakeContext([live])
     const feed = new MarketFeedCore(context, liveEnvironment())
     await vi.waitFor(() => expect(FakeUpstreamWebSocket.instances).toHaveLength(1))
@@ -583,7 +585,10 @@ describe('MarketFeedCore', () => {
     // A heartbeat is liveness only: it must never be mistaken for a subscription change.
     expect(live.close).not.toHaveBeenCalled()
     expect(vi.mocked(live.serializeAttachment).mock.calls.at(-1)?.[0])
-      .toMatchObject({ symbols: ['SPY'] })
+      .toMatchObject({
+        symbols: ['SPY'],
+        seenAt: Date.now(),
+      })
     FakeUpstreamWebSocket.instances[0]!.close()
     await context.drain()
   })

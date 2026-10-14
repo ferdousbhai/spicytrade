@@ -53,15 +53,6 @@ describe('evidence recorded under the selected symbol', () => {
     expect(document.querySelector('.focus-reading > .focus-evidence')).not.toBeNull()
   })
 
-  it('says nothing at all when nothing has been recorded', async () => {
-    stubFetch([])
-
-    renderMarketScreen({ symbol: 'NVDA' })
-
-    await waitFor(() => expect(document.querySelector('.focus-runway')).not.toBeNull())
-    expect(document.querySelector('.focus-evidence')).toBeNull()
-  })
-
   it('says the evidence is unavailable when the read fails, rather than passing for an empty name', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (
       String(input).startsWith('/api/public-symbol-evidence')

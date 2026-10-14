@@ -412,7 +412,7 @@ describe('brokerage read tools', () => {
     expect(result.metrics[0]?.marketCap).toBeUndefined()
   })
 
-  it('fails closed on duplicate or malformed market metrics', async () => {
+  it('rejects duplicate market metrics', async () => {
     tastytrade.tastyRequest.mockResolvedValue({ data: { items: [
       { symbol: 'NVDA' },
       { symbol: 'NVDA' },
@@ -764,7 +764,7 @@ describe('brokerage read tools', () => {
     )
   })
 
-  it('rejects missing or crossed quotes', async () => {
+  it('rejects crossed quotes', async () => {
     tastytrade.tastyRequest.mockResolvedValue({ data: { items: [{
       symbol: 'AAPL', instrumentType: 'Equity', bid: 200, ask: 199,
       updatedAt: '2026-08-13T11:59:59.000Z',

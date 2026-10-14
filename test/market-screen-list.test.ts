@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { marketSnapshotFixture } from './fixtures/market'
 import { renderMarketScreen } from './fixtures/render-market-screen'
 
 afterEach(() => {
@@ -20,91 +19,32 @@ function stubPhoneViewport(): void {
   })))
 }
 
-function renderMarket(onSelectTicker: (symbol: string) => void = () => undefined): void {
+function renderMarket(): void {
   stubPhoneViewport()
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ catalysts: [], ran: false })))
-  renderMarketScreen({ symbol: 'NVDA', onSelectTicker })
+  renderMarketScreen({ symbol: 'NVDA' })
 }
 
 describe('the phone list', () => {
-  it('replaces the table below the breakpoint and keeps the price in every row', () => {
-    renderMarket()
-
-    expect(document.querySelector('.premium-data-table')).toBeNull()
-    const rows = document.querySelectorAll('.watch-list .watch-row')
-    expect(rows.length).toBeGreaterThan(1)
-    const nvda = [...rows].find((row) => row.textContent?.includes('NVDA'))!
-    expect(nvda.querySelector('.watch-row-quote')?.textContent).toContain('$191.68')
-    expect(nvda.querySelector('.watch-pill')?.textContent).toBe('+2.6%')
-    expect(nvda.querySelector('.watch-pill')?.getAttribute('data-tone')).toBe('up')
-    // The rail is not drawn until something is pinned; nothing is pinned here.
-    expect(screen.queryByRole('region', { name: 'Upcoming catalysts' })).toBeNull()
-  })
-
-  it('cycles every pill together through the readings the table has columns for', () => {
+  it('shows the selected ranking metric in every row', () => {
     renderMarket()
 
     const pill = (symbol: string) => [...document.querySelectorAll('.watch-row')]
       .find((row) => row.textContent?.includes(symbol))!
       .querySelector('.watch-pill')!
-    fireEvent.click(pill('NVDA'))
+    const sortBy = screen.getByLabelText('Sort by')
+    fireEvent.change(sortBy, { target: { value: 'premium' } })
     expect(pill('NVDA').textContent).toBe('Expensive 72')
     expect(pill('NVDA').getAttribute('data-tone')).toBe('rich')
     expect(pill('SPCX').textContent).toBe('Cheap 26')
-    fireEvent.click(pill('SPCX'))
+    fireEvent.change(sortBy, { target: { value: 'volume' } })
     expect(pill('NVDA').textContent).toBe('128.4M')
-    fireEvent.click(pill('NVDA'))
+    fireEvent.change(sortBy, { target: { value: 'marketCap' } })
     expect(pill('NVDA').textContent).toBe('$4.7T')
-    fireEvent.click(pill('NVDA'))
-    expect(pill('NVDA').textContent).toBe('+2.6%')
-  })
-
-  it('sorts from one control and reads the direction back', () => {
-    renderMarket()
-
-    const symbols = () => [...document.querySelectorAll('.watch-row .ticker-table-button strong')]
-      .map((node) => node.textContent)
-    const sortBy = screen.getByLabelText('Sort by')
-    fireEvent.change(sortBy, { target: { value: 'premium' } })
-    expect(symbols().slice(0, 2)).toEqual(['TSLA', 'NVDA'])
-    fireEvent.click(screen.getByRole('button', { name: 'Sort ascending' }))
-    expect(symbols()[0]).toBe('SPY')
-    expect(screen.getByRole('button', { name: 'Sort descending' })).toBeTruthy()
-  })
-
-  it('keeps the selected name in a strip and opens the card as a sheet on a tap', () => {
-    const selected: string[] = []
-
-    renderMarket((symbol) => selected.push(symbol))
-
-    // The list is the screen: the card is not in the document until asked for.
-    expect(document.querySelector('.focus-strip-symbol')?.textContent).toBe('NVDA')
-    expect(document.querySelector('.focus-strip-read')?.textContent).toContain('Expensive 72')
-    expect(document.querySelector('.instrument-focus')).toBeNull()
-
-    fireEvent.click(screen.getByRole('button', { name: /^TSLA, Tesla/ }))
-
-    expect(selected).toEqual(['TSLA'])
-    expect(document.querySelector('[data-slot="drawer-popup"] .instrument-focus')).not.toBeNull()
-    expect(screen.getByRole('button', { name: 'Close detail' })).toBeTruthy()
-  })
-})
-
-describe('the phone row chart', () => {
-  it('draws the year when the feed carries no session candles', async () => {
-    stubPhoneViewport()
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).startsWith('/api/public-year-candles')) {
-        return Response.json({ asOf: '2026-08-31', series: [{ closes: [100, 104, 99, 110], symbol: 'NVDA' }] })
-      }
-      return Response.json({ catalysts: [], ran: false })
-    }))
-    const snapshot = marketSnapshotFixture()
-    for (const ticker of snapshot.tickers) ticker.sparkline = []
-
-    renderMarketScreen({ tickers: snapshot.tickers })
-
-    await waitFor(() => { expect(document.querySelectorAll('.watch-row .year-sparkline')).toHaveLength(1) })
-    expect(document.querySelector('.watch-row .session-sparkline')).toBeNull()
+    fireEvent.change(sortBy, { target: { value: 'liquidity' } })
+    expect(pill('NVDA').textContent).toMatch(/\/5$/)
+    fireEvent.change(sortBy, { target: { value: 'year' } })
+    // This snapshot has no year anchor; missing returns stay visibly unavailable.
+    expect(pill('NVDA').textContent).toBe('—')
   })
 })

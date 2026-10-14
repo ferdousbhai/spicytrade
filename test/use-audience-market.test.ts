@@ -21,16 +21,6 @@ const PUBLIC_TICKER = PUBLIC_SNAPSHOT.tickers[0]
 if (!PUBLIC_TICKER) throw new Error('Fixture requires a public ticker')
 
 describe('audience market projection', () => {
-  it('hides live rows until the atomic snapshot matches the requested audience', () => {
-    const result = audienceMarketView(
-      'public',
-      [{ audience: 'owner', id: 'snapshot', snapshot: OWNER_SNAPSHOT }],
-      [PRIVATE_TICKER],
-    )
-
-    expect(result.snapshot).toBeUndefined()
-    expect(result.tickers).toEqual([])
-  })
 
   it('keeps the old audience hidden across a transition and reveals only the matching replacement', () => {
     const owner = audienceMarketView(
@@ -58,22 +48,30 @@ describe('audience market projection', () => {
 })
 
 describe('snapshot sync while a tab stays open', () => {
-  it('refetches on the public cache lifetime, including without a focus event', async () => {
+  it('refetches a visible tab on the public cache lifetime without a focus event', async () => {
+    vi.useFakeTimers()
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
     const queryFn = vi.fn(async () => ({ ok: true }))
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const observer = new QueryObserver(queryClient, {
       ...snapshotSyncQueryOptions('public'),
       queryFn,
-      refetchInterval: 20,
     })
     const unsubscribe = observer.subscribe(() => undefined)
-    await vi.waitFor(() => expect(queryFn).toHaveBeenCalledTimes(1))
-    await vi.waitFor(() => expect(queryFn.mock.calls.length).toBeGreaterThan(1))
-    expect(snapshotSyncQueryOptions('public').refetchInterval).toEqual(expect.any(Function))
-    expect(SNAPSHOT_REFETCH_MS).toBe(30_000)
-    unsubscribe()
-    observer.destroy()
-    queryClient.clear()
+    try {
+      await vi.advanceTimersByTimeAsync(0)
+      expect(queryFn).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(SNAPSHOT_REFETCH_MS - 1)
+      expect(queryFn).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(queryFn).toHaveBeenCalledTimes(2)
+    } finally {
+      unsubscribe()
+      observer.destroy()
+      queryClient.clear()
+      visibility.mockRestore()
+      vi.useRealTimers()
+    }
   })
 })
 

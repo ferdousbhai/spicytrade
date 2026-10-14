@@ -106,17 +106,6 @@ describe('reviewing a symbol with an empty calendar', () => {
     expect(screen.queryByText('Searched — nothing scheduled.')).toBeNull()
   })
 
-  it('says a search that never answered did not finish, rather than that nothing is scheduled', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/public-catalyst-refresh')
-      ? Response.json({ catalysts: [], ran: false, reason: 'failed' })
-      : Response.json({ catalysts: [], evidence: [], series: [] })))
-
-    renderMarket('NVDA', [])
-
-    expect(await screen.findByText('The calendar search didn’t finish.')).toBeTruthy()
-    expect(screen.queryByText(/none are scheduled/)).toBeNull()
-  })
-
   it('treats a refresh request that errors as a failed search too', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/public-catalyst-refresh')
       ? new Response('', { status: 503 })

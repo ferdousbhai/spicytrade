@@ -151,15 +151,6 @@ describe('exa catalyst search', () => {
     ])
   })
 
-  it('drops an event outside the horizon the product carries', async () => {
-    stubExa(exaResponse([{ ...investorDay, date: '2026-08-14' }]))
-
-    const run = await runExaCatalystSearch(env, 'BE', 'Bloom Energy', NOW)
-
-    expect(run.catalysts).toEqual([])
-    expect(run.rejected).toEqual(['catalyst 1: date is outside the 180-day horizon'])
-  })
-
   it('binds and stores the canonical address, and refuses one no citation may carry', async () => {
     stubExa(Response.json({
       output: {

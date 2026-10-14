@@ -277,8 +277,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .watch-empty { min-height: 100px; }
 
 /* The phone list. One row is one screen wide: star, instrument, a chart when there is one
-   (session, else year), then the price over a solid pill carrying whichever reading the reader
-   last tapped for. The row rhythm leaves room for readable names and distinct touch targets. */
+   (session, else year), then the active sorting metric and its label. The row rhythm leaves room for readable names and distinct touch targets. */
 .watch-list { border-top: 1px solid var(--hairline); }
 .watch-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) 56px auto; align-items: center; column-gap: 8px; min-height: 80px; padding: 12px 0; border-bottom: 1px solid var(--hairline); }
 .watch-row[data-state="selected"] { margin-inline: calc(-1 * var(--page-gutter)); padding-inline: var(--page-gutter); background: rgba(255, 255, 255, .04); }
@@ -287,8 +286,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .watch-row .sparkline { height: 28px; }
 /* Always the last column, whether or not a chart sits before it. */
 .watch-row-quote { grid-column: 4; display: grid; justify-items: end; row-gap: 4px; text-align: right; font-variant-numeric: tabular-nums; }
-.watch-row-quote strong { font-size: 19px; font-weight: 600; letter-spacing: -.02em; }
-.watch-pill { min-width: 76px; padding: 5px 8px; background: var(--surface-2); color: var(--ink-soft); font: 600 14px/1.2 var(--sans); font-variant-numeric: tabular-nums; white-space: nowrap; cursor: pointer; border-radius: 5px; position: relative; }
+.watch-pill { min-width: 76px; padding: 5px 8px; background: var(--surface-2); color: var(--ink-soft); font: 600 14px/1.2 var(--sans); font-variant-numeric: tabular-nums; white-space: nowrap; border-radius: 5px; position: relative; }
 .watch-pill[data-tone="up"] { background: var(--up); color: #06120b; }
 .watch-pill[data-tone="down"] { background: var(--down); color: #1b0a0c; }
 .watch-pill[data-tone="cheap"] { background: var(--cheap); color: #121603; }
@@ -597,8 +595,6 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
   .connect-screen > .connect-aside { display: grid; gap: 28px; grid-column: 2; grid-row: 1 / span 4; position: sticky; top: 24px; }
 }
 
-/* A 44px hit area around the reading pill keeps the compact visual readable and tappable. */
-.watch-pill::after { content: ""; position: absolute; inset: -9px 0; }
 
 @media (max-width: 959px) {
   /* A phone. The top bar keeps what a glance needs and drops the word and the link it has no

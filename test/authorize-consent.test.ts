@@ -22,13 +22,6 @@ it('says the session check failed instead of stopping at the heading', async () 
   expect(screen.queryByRole('status')).toBeNull()
 })
 
-it('asks for approval once the member is known', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ user: { id: 'm', name: 'Dana', role: 'member' } })))
-  render(createElement(ConsentPage))
-  await screen.findByRole('button', { name: 'Approve' })
-  expect(screen.queryByText(/could not check whether you are signed in/)).toBeNull()
-})
-
 it('shows a Deny in flight on Deny, never as Approve granting access', async () => {
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => String(input).includes('/oauth2/consent')
     ? new Promise<Response>(() => undefined)

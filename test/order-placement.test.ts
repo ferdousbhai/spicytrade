@@ -463,16 +463,18 @@ describe('cancelling a working order', () => {
   })
 
   it('surfaces an ambiguous cancellation instead of retrying it', async () => {
+    const cancelOrder = vi.fn(async () => { throw new BrokerCancellationAmbiguousError() })
     setBrokerAdapters({
       [STUB_BROKER_ID]: {
         ...stubAdapter(),
-        cancelOrder: async () => { throw new BrokerCancellationAmbiguousError() },
+        cancelOrder,
       },
     })
     // The order may or may not still be working. Anything that looks like success here would
     // let the next placement through on a false reading of the account.
     await expect(cancelBrokerageOrder({}, '12345', stubBrokerCredential))
       .rejects.toBeInstanceOf(BrokerCancellationAmbiguousError)
+    expect(cancelOrder).toHaveBeenCalledOnce()
   })
 })
 

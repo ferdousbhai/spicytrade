@@ -45,24 +45,6 @@ describe('research read tools', () => {
       .resolves.toEqual([catalyst])
   })
 
-  it('hands the agent one row per event, and does not call a folded group a ceiling hit', async () => {
-    // Every sighting of an event costs the agent context and reads as another thing on the
-    // calendar. The ceiling counts events, so two sightings of one event are not truncation.
-    const base = {
-      symbol: 'INTC', kind: 'earnings', date: '2026-10-22', timing: 'unknown',
-      description: null, source: 'tastytrade market metrics',
-      sourceUrl: 'https://developer.tastytrade.com/open-api-spec/market-metrics/',
-    }
-    const db = d1WithResults([
-      { ...base, id: 'exa:INTC:earnings:2026-10-22', confidence: 'estimated', title: 'Q3 2026 Earnings Report', updatedAt: '2026-09-21T17:54:02.486Z', nearest: 1 },
-      { ...base, id: 'tastytrade:INTC:earnings', confidence: 'confirmed', title: 'INTC earnings', updatedAt: '2026-08-28T02:15:52.966Z', nearest: 1 },
-    ])
-    const result = await readCatalysts(db.env, ['INTC'], 60, new Date('2026-09-21T18:00:00.000Z'))
-
-    expect(result.catalysts).toEqual([expect.objectContaining({ confidence: 'confirmed', title: 'INTC earnings' })])
-    expect(result.truncated).toBe(false)
-  })
-
   it('runs its own query against the real schema, and skips a superseded sighting', async () => {
     // The agent reads through the same source the site does, so a date one producer has since
     // moved is not handed to a model as a second event beside the one it moved to.

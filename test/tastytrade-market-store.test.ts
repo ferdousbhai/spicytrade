@@ -18,7 +18,10 @@ beforeEach(async () => {
   store = await migrationStore()
 })
 
-afterEach(() => store.close())
+afterEach(() => {
+  store.close()
+  vi.restoreAllMocks()
+})
 
 function sourceRecords(
   tickers: readonly Ticker[],

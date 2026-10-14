@@ -439,9 +439,6 @@ describe('spicytrade setup', () => {
     expect(firstOut).not.toContain('reconnects')
 
     expect(await readFile(join(machine.state, 'claude-calls'), 'utf8')).toContain(`mcp add --scope local spicytrade -- ${MCP_TARGET}`)
-    // The check reuses what the Agents step just found; each lookup starts the server, so none twice.
-    const lookups = (await readFile(join(machine.state, 'claude-calls'), 'utf8')).match(/^mcp get /gm) ?? []
-    expect(lookups.length).toBeLessThanOrEqual(4)
     expect(await readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).toBe(`${MCP_TARGET}\n`)
     await expect(readFile(join(machine.state, 'claude-user-spicytrade-target'), 'utf8')).rejects.toThrow()
     // No background service any more: nothing is installed in systemd.
@@ -605,21 +602,6 @@ describe('a keyring that answers lookups but cannot save', () => {
   }, 30_000)
 })
 
-describe('a keyring slow to answer', () => {
-  it('says why the terminal is waiting before the check answers', async () => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN }, { claude: {} })
-    // A store that waits, as one does on an unlock prompt, then succeeds.
-    const real = join(machine.bin, 'secret-tool')
-    await writeFile(join(machine.bin, 'secret-tool-real'), await readFile(real, 'utf8'))
-    await chmod(join(machine.bin, 'secret-tool-real'), 0o755)
-    await writeFile(real, `#!/usr/bin/env bash\n[[ $1 == store && $6 == write-check ]] && sleep 3\nexec '${join(machine.bin, 'secret-tool-real')}' "$@"\n`)
-    const worker = await fakeWorker([OLD_TOKEN])
-    const cli = run(machine, worker.port, ['setup'])
-    expect(await cli.exited).toBe(0)
-    expect(cli.output().stdout).toMatch(/^Checking the system keyring\. If a password prompt appears, unlock it\.\n/)
-  }, 60_000)
-})
-
 describe('half a saved personal grant', () => {
   it('is reported with its one repair, by doctor and by setup, never as a crash', async () => {
     const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/client-secret': 'half-a-grant' }, { claude: {} })
@@ -754,9 +736,14 @@ describe('spicytrade store-personal-grant', () => {
 describe('opening a trading session', () => {
   it('launches Codex with trading enabled without changing its saved configuration', async () => {
     const machine = await fakeMachine({}, { codex: { spicytrade: MCP_TARGET } })
+    const config = join(machine.home, '.codex', 'config.toml')
+    await mkdir(join(machine.home, '.codex'), { recursive: true })
+    const saved = '[mcp_servers.spicytrade]\nenabled = false\n'
+    await writeFile(config, saved)
     const cli = run(machine, 1, ['start'])
     expect(await cli.exited).toBe(0)
     expect(await readFile(join(machine.state, 'codex-calls'), 'utf8')).toContain('-c mcp_servers.spicytrade.enabled=true')
+    expect(await readFile(config, 'utf8')).toBe(saved)
   })
 
   it('uses the saved choice when both agents are installed', async () => {

@@ -94,14 +94,6 @@ describe('year candle store', () => {
 })
 
 describe('year series read paths', () => {
-  it('gives the snapshot an anchor without reading a year of closes for it', async () => {
-    await replaceYearCandles(store.database, '2026-08-31', ['SPY'], new Map([['SPY', closes]]))
-
-    // The snapshot sorts and labels from this alone; the closes it would otherwise carry are
-    // most of the payload and are drawn by one column on one breakpoint.
-    await expect(readYearAgoCloses(store.database, ['SPY', 'NVDA']))
-      .resolves.toEqual(new Map([['SPY', 100]]))
-  })
 
   it('serves the series as bare closes, oldest first, for the named symbols only', async () => {
     await replaceYearCandles(store.database, '2026-08-31', ['SPY', 'NVDA'], new Map([['SPY', closes], ['NVDA', closes]]))

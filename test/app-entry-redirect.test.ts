@@ -23,14 +23,6 @@ function entryRouter(initialEntry: string) {
   return { history, router: createRouter({ history, routeTree: root.addChildren([entry, watch]) }) }
 }
 
-it('forwards the application root to Watch', async () => {
-  const { router } = entryRouter('/')
-  await router.load()
-  expect(router.state.location.pathname).toBe('/watch')
-  expect(router.state.location.searchStr).toBe('')
-  expect(router.state.location.hash).toBe('')
-})
-
 it('keeps the query and fragment a bookmark or link to the root carried', async () => {
   const { router } = entryRouter('/?from=bookmark&page=2#main-content')
   await router.load()

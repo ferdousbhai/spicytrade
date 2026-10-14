@@ -11,17 +11,22 @@ import { renderMarketScreen } from './fixtures/render-market-screen'
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
-it('reports a failed year read rather than an empty year, and reads again on focus', async () => {
+it('retries failed year reads and renews successful reads on the next market date', async () => {
   vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
     addEventListener: () => undefined,
     matches: query.startsWith('(max-width'),
     removeEventListener: () => undefined,
   })))
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-09-01T16:00:00Z'))
   let yearOk = false
+  let yearReads = 0
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     if (String(input).startsWith('/api/public-year-candles')) {
+      yearReads += 1
       return yearOk
         ? Response.json({ asOf: '2026-08-31', series: [{ closes: [100, 104, 99, 110], symbol: 'NVDA' }] })
         : Response.json({ series: [{ closes: [-1], symbol: 'NVDA' }] })
@@ -46,4 +51,12 @@ it('reports a failed year read rather than an empty year, and reads again on foc
     expect(document.querySelector('.watch-row .year-sparkline')).not.toBeNull()
   })
   expect(screen.queryByText('Year charts are unavailable just now.')).toBeNull()
+  const successfulReads = yearReads
+  window.dispatchEvent(new Event('focus'))
+  expect(yearReads).toBe(successfulReads)
+  vi.setSystemTime(new Date('2026-09-02T16:00:00Z'))
+  await waitFor(() => {
+    window.dispatchEvent(new Event('focus'))
+    expect(yearReads).toBe(successfulReads + 1)
+  })
 })

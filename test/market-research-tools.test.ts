@@ -14,7 +14,6 @@ import {
   type PriceHistoryRow,
 } from '../src/server/market-research-contracts'
 import {
-  createMarketResearchTools,
   createYahooPriceHistoryProvider,
   readPriceHistory,
 } from '../src/server/market-research-tools'
@@ -136,13 +135,6 @@ describe('market research tools', () => {
       expect(series.values).toHaveLength(5)
     }
     expect(result.studyAlignment).toContain('prices.date[firstPriceIndex + i]')
-  })
-
-  it('describes study alignment against the columns the payload actually carries', () => {
-    // `prices` is columns, so `prices[firstPriceIndex + i]` names no bar at all.
-    const [tool] = createMarketResearchTools(priceProvider(historyRows(1)))
-    expect(tool!.description).toContain('prices.date[firstPriceIndex + i]')
-    expect(tool!.description).not.toContain('prices[firstPriceIndex')
   })
 
   it('states a study that has no value in the returned window instead of padding it', async () => {

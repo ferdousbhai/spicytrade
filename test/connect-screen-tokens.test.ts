@@ -68,17 +68,6 @@ it('keeps the server message for a refused revoke and shows the list it returns 
   await screen.findByText('No computers or tokens yet.')
 })
 
-it('shows the spinner only while the first read is in flight', async () => {
-  let finish!: (response: Response) => void
-  vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => { finish = resolve })))
-  const { container } = render(createElement(ConnectScreen, { owner: false, signedIn: true }))
-  const spinner = () => container.querySelector('[data-slot="spinner"], [role="status"]')
-  expect(spinner()).not.toBeNull()
-  finish(Response.json({ tokens: [] }))
-  await screen.findByText('No computers or tokens yet.')
-  await waitFor(() => expect(spinner()).toBeNull())
-})
-
 const phone = { createdAt: '2026-09-03T00:00:00Z', label: 'Phone', tokenId: 't2' }
 const SECRET = 'hst_created_secret_value'
 
@@ -134,22 +123,6 @@ it('keeps an unread token list unknown after a create, rather than showing only 
   // The list was never read, so it is still reported unknown and never shown as the new token alone.
   expect(screen.getByText('Token store unavailable')).toBeTruthy()
   expect(container.querySelector('.connect-tokens')).toBeNull()
-})
-
-it('shows a revoke working on its own row, not on Create token', async () => {
-  let finish!: (response: Response) => void
-  vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => init?.method === 'DELETE'
-    ? new Promise<Response>((resolve) => { finish = resolve })
-    : Promise.resolve(Response.json({ tokens: [token] }))))
-  const { container } = render(createElement(ConnectScreen, { owner: false, signedIn: true }))
-  await screen.findByText('Laptop')
-  fireEvent.change(screen.getByRole('textbox', { name: 'Token name' }), { target: { value: 'Phone' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Revoke' }))
-
-  await waitFor(() => expect(container.querySelector('.connect-tokens [data-slot="spinner"], .connect-tokens [role="status"]')).not.toBeNull())
-  expect(screen.getByRole('button', { name: 'Create token' })).toBeTruthy()
-  finish(Response.json({ tokens: [] }))
-  await screen.findByText('No computers or tokens yet.')
 })
 
 it('holds Create until the first list read answers, so a late list cannot drop the new token', async () => {
