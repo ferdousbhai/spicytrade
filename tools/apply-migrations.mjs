@@ -13,6 +13,9 @@ import { spawnSync } from 'node:child_process'
  * tables did not exist because nothing applied them at all; a slightly worse-placed apply beats
  * no apply.
  *
+ * Workers Builds installs the lockfile dependencies before that command; the script reuses
+ * that install rather than running npm ci a second time.
+ *
  * Ordering is the thing that makes it defensible. Because this is the last step of the build,
  * everything that can fail on the way to a deployable artifact — the bundle, the typecheck — has
  * already succeeded. The only failure that can still strand the schema ahead of the code is

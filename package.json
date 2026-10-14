@@ -10,7 +10,7 @@
     "dev": "node tools/build-agent.mjs && vite dev --port 3000",
     "lint": "eslint \"{src,test}/**/*.{ts,tsx}\" --max-warnings=0 && oxlint",
     "build": "node tools/build-agent.mjs && cf build && tsc --noEmit && node tools/apply-migrations.mjs",
-    "workers-builds:build": "npm ci && npm run lint && npm test && npm run build",
+    "workers-builds:build": "npm run lint && npm test && npm run build",
     "preview": "vite preview",
     "deploy": "npm run build && cf d1 migrations apply e45e35cc-bd01-4e29-8940-b5d2ef5e840c --dir migrations && cf deploy --prebuilt",
     "deploy:preview": "npm run build && cf workers versions create --prebuilt",
