@@ -270,7 +270,7 @@ test('unauthenticated visitors can read market data and the install, and sign in
   await expect(page.locator('.focus-tape')).not.toContainText('borrow')
   await closeDetail(page)
   await page.getByRole('button', { name: 'Pin META' }).click()
-  await expect(page.locator('.watch-list .watch-row').first()).toContainText('NVDA')
+  await expect(page.locator('.watch-list .watch-row').first()).toContainText('META')
   await expect(page.getByRole('region', { name: 'Upcoming catalysts' })).toBeVisible()
   await expect(page.getByText('No pinned catalysts are scheduled.')).toBeVisible()
   await page.getByRole('button', { name: 'Pin NVDA' }).click()
@@ -435,9 +435,11 @@ test('mobile market, recommendations, search, sorting, and connect flows remain 
   await expect(rows.nth(1)).toContainText('NVDA')
   await expect(rows.nth(1).locator('.watch-pill')).toHaveText('Expensive 72')
   await page.getByRole('button', { name: 'Sort ascending' }).click()
-  await expect(rows.nth(0)).toContainText('SPY')
-  // Favorites participate in the same ordering, rather than overriding the selected metric.
-  await expect(rows.nth(5)).toContainText('TQQQ')
+  // Favorites stay on top in either direction; the metric orders each group.
+  await expect(rows.nth(0)).toContainText('TQQQ')
+  await expect(rows.nth(1)).toContainText('NVDA')
+  await expect(rows.nth(2)).toContainText('TSLA')
+  await expect(rows.nth(3)).toContainText('SPY')
   await expect(page.locator('.watch-list .session-sparkline')).toHaveCount(11)
   // The discovered favorite survives clearing search, and opens its own details.
   await searchedRow.click()

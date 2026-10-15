@@ -13,7 +13,7 @@ afterEach(() => {
 })
 
 describe('searching beyond the loaded watchlist', () => {
-  it('sorts favorites by the selected metric and preserves relevance while searching', () => {
+  it('keeps favorites on top, ordered by relevance while searching and by the metric otherwise', () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ catalysts: [], evidence: [], series: [], ran: false })))
     const meta = marketSnapshotFixture().tickers.find((ticker) => ticker.symbol === 'META')!
     const tickers = [
@@ -29,17 +29,17 @@ describe('searching beyond the loaded watchlist', () => {
     const rowSymbols = () => screen.getAllByRole('button', { name: /^(Unpin|Pin) / })
       .map((button) => button.getAttribute('aria-label'))
 
-    expect(rowSymbols()).toEqual(['Unpin MET', 'Pin METU', 'Unpin META'])
+    expect(rowSymbols()).toEqual(['Unpin MET', 'Unpin META', 'Pin METU'])
     fireEvent.change(screen.getByLabelText('Search all symbols'), { target: { value: ' meta ' } })
-    expect(rowSymbols()).toEqual(['Unpin META', 'Pin METU', 'Unpin MET'])
+    expect(rowSymbols()).toEqual(['Unpin META', 'Unpin MET', 'Pin METU'])
     fireEvent.click(screen.getByRole('button', { name: 'Volume' }))
-    expect(rowSymbols()).toEqual(['Unpin META', 'Pin METU', 'Unpin MET'])
+    expect(rowSymbols()).toEqual(['Unpin META', 'Unpin MET', 'Pin METU'])
     fireEvent.click(screen.getByRole('button', { name: 'Volume' }))
-    expect(rowSymbols()).toEqual(['Unpin MET', 'Pin METU', 'Unpin META'])
+    expect(rowSymbols()).toEqual(['Unpin MET', 'Unpin META', 'Pin METU'])
     fireEvent.change(screen.getByLabelText('Search all symbols'), { target: { value: '$META' } })
-    expect(rowSymbols()).toEqual(['Unpin META', 'Pin METU', 'Unpin MET'])
+    expect(rowSymbols()).toEqual(['Unpin META', 'Unpin MET', 'Pin METU'])
     fireEvent.change(screen.getByLabelText('Search all symbols'), { target: { value: '' } })
-    expect(rowSymbols()).toEqual(['Unpin MET', 'Pin METU', 'Unpin META'])
+    expect(rowSymbols()).toEqual(['Unpin MET', 'Unpin META', 'Pin METU'])
   })
 
   it.each(['META', 'F'])('looks up %s despite fuzzy loaded matches and passes its data to selection', async (symbol) => {

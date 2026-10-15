@@ -849,9 +849,12 @@ export function MarketScreen({
     ? [found, ...matched]
     : matched
   const relevance = Boolean(trimmedQuery) && !searchSort
+  // Favorites always lead, under every sort and search; the metric or relevance orders within
+  // each group. Keeping the reader's own picks on top is the point of favoriting.
   const watchTickers = [...universe].sort((left, right) =>
-    relevance ? 0 : compareBySort(left, right, sort)
-      || left.symbol.localeCompare(right.symbol))
+    Number(pinned.has(right.symbol)) - Number(pinned.has(left.symbol))
+    || (relevance ? 0 : compareBySort(left, right, sort)
+      || left.symbol.localeCompare(right.symbol)))
   const selectResult = useCallback((symbol: string) => {
     onSelectTicker(symbol, lookup?.ticker.symbol === symbol ? lookup : undefined)
   }, [onSelectTicker, lookup])
