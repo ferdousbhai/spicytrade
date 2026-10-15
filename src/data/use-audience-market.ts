@@ -20,6 +20,10 @@ import {
 /** A visible tab refetches on the public snapshot's max-age, so a new observation lands. */
 export const SNAPSHOT_REFETCH_MS = PUBLIC_RESPONSE_MAX_AGE_SECONDS * 1_000
 
+/** Attempts after the first, and the wait before each. */
+export const SNAPSHOT_RETRY_LIMIT = 1
+export const SNAPSHOT_RETRY_DELAY_MS = 1_000
+
 export function snapshotSyncQueryOptions(audience: SnapshotAudience) {
   return {
     queryFn: ({ signal }: { signal?: AbortSignal }) => syncFromCloud(audience, signal),
@@ -30,7 +34,11 @@ export function snapshotSyncQueryOptions(audience: SnapshotAudience) {
     refetchOnMount: 'always' as const,
     refetchOnReconnect: 'always' as const,
     refetchOnWindowFocus: 'always' as const,
-    retry: false,
+    // One more attempt before the reader is told the market is unavailable: a single dropped
+    // request on a cold start should not put an error screen up. A newer deployment is not a
+    // transient failure, so it is never retried.
+    retry: (failureCount: number, error: Error) => failureCount < SNAPSHOT_RETRY_LIMIT && !(error instanceof DeploymentMismatchError),
+    retryDelay: SNAPSHOT_RETRY_DELAY_MS,
     staleTime: 0,
   }
 }

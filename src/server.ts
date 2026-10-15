@@ -4,6 +4,7 @@ import { handleWellKnownDiscovery } from './server/auth'
 import { type AppEnv } from './server/env'
 import { finalizeDocumentResponse } from './server/http'
 import { mcpEndpointRedirect } from './server/mcp-endpoint-redirect'
+import { injectWatchSummary, isWatchDocument, readPublicSnapshotForDocument } from './server/watch-summary'
 import { configureTypeboxRuntime } from './server/typebox-runtime'
 import { MCP_PATH } from './domain/site'
 import { errorName, toError } from './domain/failure'
@@ -17,6 +18,8 @@ import { errorName, toError } from './domain/failure'
  * and OAuth discovery is imported statically.
  */
 const mcpSurface = () => import('./server/mcp')
+// Same reasoning: only a `/watch` document reads the snapshot on the server, through the broker client.
+const publicSnapshotCache = () => import('./server/public-snapshot-cache')
 
 configureTypeboxRuntime()
 
@@ -43,6 +46,23 @@ export default {
     // redirect it answers with needs nothing from that graph either.
     const misdirected = await mcpEndpointRedirect(request)
     if (misdirected) return misdirected
+    // `/watch` is client-rendered; the server writes a plain reading of the public snapshot into
+    // the shell's placeholder so a crawler, a link preview, or a reader without JavaScript sees
+    // the market rather than an empty page. Read alongside the render, never ahead of it.
+    if (request.method === 'GET' && isWatchDocument(url.pathname)) {
+      const [document, snapshot] = await Promise.all([
+        handler.fetch(request),
+        readPublicSnapshotForDocument(request, async (snapshotRequest) => {
+          const { edgeCache, servePublicSnapshot } = await publicSnapshotCache()
+          const read = servePublicSnapshot(snapshotRequest, env, edgeCache(), (work) => ctx.waitUntil(work))
+          // The document latency budget can expire before a cold-store read finishes. Keep that
+          // read alive so its refresh claim can land a snapshot for the next reader.
+          ctx.waitUntil(read)
+          return read
+        }),
+      ])
+      return finalizeDocumentResponse(request, injectWatchSummary(document, snapshot))
+    }
     return finalizeDocumentResponse(request, await handler.fetch(request))
   },
   scheduled(controller: ScheduledController, env: AppEnv, context: ExecutionContext) {
