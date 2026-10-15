@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { PublicMarketSnapshotSchema } from '../src/domain/market'
-import { isWatchDocument, renderWatchSummary } from '../src/server/watch-summary'
+import { isWatchDocument, readPublicSnapshotForDocument, renderWatchSummary, SUMMARY_TIMEOUT_MS } from '../src/server/watch-summary'
 import { marketSnapshotFixture } from './fixtures/market'
 
 const fixture = marketSnapshotFixture()
@@ -34,5 +34,43 @@ describe('watch summary', () => {
   it('applies to the watch document only', () => {
     expect(isWatchDocument('/watch')).toBe(true)
     expect(isWatchDocument('/connect')).toBe(false)
+  })
+})
+
+
+describe('document snapshot boundary', () => {
+  const request = new Request('https://spicy.trade/watch', { headers: { Authorization: 'Bearer private', Cookie: 'session=private' } })
+
+  it('reads anonymously and clears the latency timer after success', async () => {
+    vi.useFakeTimers()
+    try {
+      const serve = vi.fn(async (input: Request) => {
+        expect(input.headers.get('Authorization')).toBeNull()
+        expect(input.headers.get('Cookie')).toBeNull()
+        expect(new URL(input.url).pathname).toBe('/api/public-snapshot')
+        return Response.json(snapshot)
+      })
+      expect(await readPublicSnapshotForDocument(request, serve)).toEqual(snapshot)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
+  })
+
+  it.each([
+    async () => new Response(null, { status: 502 }),
+    async () => Response.json({ invalid: true }),
+    async () => new Response('invalid json'),
+    async () => { throw new Error('unavailable') },
+  ])('reports an unusable snapshot as unavailable', async (serve) => {
+    expect(await readPublicSnapshotForDocument(request, serve)).toBeUndefined()
+  })
+
+  it('bounds a stalled read by the document latency budget', async () => {
+    vi.useFakeTimers()
+    try {
+      const result = readPublicSnapshotForDocument(request, () => new Promise(() => undefined))
+      await vi.advanceTimersByTimeAsync(SUMMARY_TIMEOUT_MS)
+      expect(await result).toBeUndefined()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
   })
 })

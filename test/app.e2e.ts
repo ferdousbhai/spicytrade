@@ -714,3 +714,18 @@ test('two signed-out devices converge on the account union without granting owne
   expect(ownerSnapshotRequests).toBe(0)
   await mobileContext.close()
 })
+
+test('watch gives a no-JavaScript reader a snapshot or explicit unavailability', async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ baseURL, javaScriptEnabled: false })
+  try {
+    const page = await context.newPage()
+    await page.goto('/watch')
+    const summary = page.getByRole('region', { name: 'Market snapshot' })
+    await expect(summary.getByRole('heading', { name: 'Options Watch' })).toBeVisible()
+    // Local runs may have no provider bindings; that must be visible to the reader too.
+    await expect(summary).toContainText(/updated|Market snapshot is temporarily unavailable/)
+    await expect(summary.getByRole('link', { name: 'risk disclosures' })).toHaveAttribute('href', '/disclosures')
+  } finally {
+    await context.close()
+  }
+})

@@ -54,7 +54,11 @@ export default {
         handler.fetch(request),
         readPublicSnapshotForDocument(request, async (snapshotRequest) => {
           const { edgeCache, servePublicSnapshot } = await publicSnapshotCache()
-          return servePublicSnapshot(snapshotRequest, env, edgeCache(), (work) => ctx.waitUntil(work))
+          const read = servePublicSnapshot(snapshotRequest, env, edgeCache(), (work) => ctx.waitUntil(work))
+          // The document latency budget can expire before a cold-store read finishes. Keep that
+          // read alive so its refresh claim can land a snapshot for the next reader.
+          ctx.waitUntil(read)
+          return read
         }),
       ])
       return finalizeDocumentResponse(request, injectWatchSummary(document, snapshot))
