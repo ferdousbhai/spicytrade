@@ -112,9 +112,9 @@ export function latestSelectionReporter(
  * spares the owner a full public sync they never see.
  */
 export function useAudienceMarket(audience: SnapshotAudience | undefined) {
-  const tickerQuery = useLiveQuery((query) => query.from({ ticker: tickerCollection }))
-  const snapshotQuery = useLiveQuery((query) => query.from({ snapshot: offlineSnapshotCollection }))
-  const preferenceQuery = useLiveQuery((query) => query.from({ preference: preferenceCollection }))
+  const tickerQuery = useLiveQuery({ query: (query) => query.from({ ticker: tickerCollection }) })
+  const snapshotQuery = useLiveQuery({ query: (query) => query.from({ snapshot: offlineSnapshotCollection }) })
+  const preferenceQuery = useLiveQuery({ query: (query) => query.from({ preference: preferenceCollection }) })
   const [bootstrappedAudience, setBootstrappedAudience] = useState<SnapshotAudience>()
   const [warning, setWarning] = useState<string>()
   // A selection that could not be saved is not stale market data, so it keeps its own state

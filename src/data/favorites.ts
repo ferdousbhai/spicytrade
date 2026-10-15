@@ -36,6 +36,8 @@ export const favoriteStageMarkerCollection = createCollection(
     schema: FavoriteStageMarkerSchema,
     getKey: (marker) => marker.id,
     startSync: true,
+    // Module-level state for the page's lifetime: never garbage-collected, so always loaded.
+    gcTime: 0,
   }),
 )
 
@@ -96,10 +98,6 @@ async function markAnonymousStageConsumed(stageId: string): Promise<void> {
 }
 
 async function toggleAnonymousFavorite(symbol: string): Promise<boolean> {
-  await Promise.all([
-    preferenceCollection.preload(),
-    favoriteStageMarkerCollection.preload(),
-  ])
   const current = preferenceCollection.get('primary')
   if (!current) throw new Error('Favorite preferences are unavailable')
   const marker = favoriteStageMarkerCollection.get('primary')
@@ -151,10 +149,6 @@ export function createFavoriteSync(userId: string) {
       refetchOnWindowFocus: 'always',
       retry: false,
       queryFn: async ({ signal }) => {
-        await Promise.all([
-          preferenceCollection.preload(),
-          favoriteStageMarkerCollection.preload(),
-        ])
         const pendingStage = pendingFavoriteStage(
           preferenceCollection.get('primary'),
           favoriteStageMarkerCollection.get('primary'),

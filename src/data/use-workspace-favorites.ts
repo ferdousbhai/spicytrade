@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from '@tanstack/react-db'
 
 import { toError } from '../domain/failure'
@@ -17,13 +17,14 @@ export function useWorkspaceFavorites(viewerId: string | undefined, preference: 
     () => viewerId ? createFavoriteSync(viewerId) : undefined,
     [viewerId],
   )
-  const stageQuery = useLiveQuery(
-    (query) => query.from({ favoriteStageMarker: favoriteStageMarkerCollection }),
-  )
-  const favoriteQuery = useLiveQuery(
-    () => favoriteSync,
-    [favoriteSync],
-  )
+  // A viewer's collection owns its own QueryClient; release it when the viewer changes.
+  useEffect(() => () => { void favoriteSync?.cleanup() }, [favoriteSync])
+  const stageQuery = useLiveQuery({
+    query: (query) => query.from({ favoriteStageMarker: favoriteStageMarkerCollection }),
+  })
+  const favoriteQuery = useLiveQuery({
+    query: (query) => favoriteSync ? query.from({ favorite: favoriteSync }) : undefined,
+  })
   const [mutationError, setMutationError] = useState<string>()
   const stageMarker = (stageQuery.data ?? [])[0]
   const pinnedSymbols = favoriteSync

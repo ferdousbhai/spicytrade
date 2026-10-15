@@ -105,6 +105,8 @@ export const offlineSnapshotCollection = createCollection(
     schema: OfflineSnapshotSchema,
     getKey: (record) => record.id,
     startSync: true,
+    // Module-level state for the page's lifetime: never garbage-collected, so always loaded.
+    gcTime: 0,
   }),
 )
 
@@ -128,6 +130,7 @@ export const preferenceCollection = createCollection(
     schema: PreferenceSchema,
     getKey: (preference) => preference.id,
     startSync: true,
+    gcTime: 0,
   }),
 )
 
@@ -217,12 +220,7 @@ async function replaceLiveTickers(
  */
 let legacySnapshotStorageRetired = false
 
-async function preloadSnapshotCollections(): Promise<void> {
-  await Promise.all([
-    offlineSnapshotCollection.preload(),
-    tickerCollection.preload(),
-    preferenceCollection.preload(),
-  ])
+function retireLegacySnapshotStorageOnce(): void {
   if (legacySnapshotStorageRetired) return
   retireLegacySnapshotStorage(browserStorage)
   legacySnapshotStorageRetired = true
@@ -298,7 +296,7 @@ async function replaceLiveOverlay(
 }
 
 async function hydrateCollectionsImmediately(snapshot: MarketSnapshot, audience: SnapshotAudience): Promise<void> {
-  await preloadSnapshotCollections()
+  retireLegacySnapshotStorageOnce()
   const previous = offlineSnapshotCollection.get('snapshot')
   const audienceChanged = Boolean(previous && previous.audience !== audience)
   if (audienceChanged) {
@@ -332,7 +330,7 @@ export function hydrateCollections(
 }
 
 async function restoreOfflineSnapshotImmediately(audience: SnapshotAudience): Promise<void> {
-  await preloadSnapshotCollections()
+  retireLegacySnapshotStorageOnce()
   const record = offlineSnapshotCollection.get('snapshot')
   if (record?.audience === audience) {
     await replaceLiveOverlay(record.snapshot.tickers, audience)
@@ -346,7 +344,7 @@ async function restoreOfflineSnapshotImmediately(audience: SnapshotAudience): Pr
 }
 
 async function previewPublicSnapshotImmediately(): Promise<void> {
-  await preloadSnapshotCollections()
+  retireLegacySnapshotStorageOnce()
   const record = offlineSnapshotCollection.get('snapshot')
   // Only a public record may be drawn before the session check names the viewer. An owner
   // record is the one thing that must wait: on a shared device the person looking may have
