@@ -5,7 +5,7 @@ import { TooltipProvider } from '#/components/ui/tooltip'
 import { bootRecoveryScript } from '../boot-recovery'
 import { PUBLIC_SNAPSHOT_URL } from '../deployment'
 import appCss from '../styles.css?url'
-import { SITE_NAME } from '../domain/site'
+import { SITE_DESCRIPTION, SITE_NAME, SITE_ORIGIN } from '../domain/site'
 
 export const Route = createRootRoute({
   head: () => ({
@@ -34,8 +34,18 @@ export const Route = createRootRoute({
       },
       {
         name: 'description',
-        content: 'Public options intelligence and market research with guarded order placement through your own brokerage credentials.',
+        content: SITE_DESCRIPTION,
       },
+      // Link previews read these from the server-rendered document; the shell itself is client-rendered.
+      { property: 'og:type', content: 'website' },
+      { property: 'og:site_name', content: SITE_NAME },
+      { property: 'og:title', content: SITE_NAME },
+      { property: 'og:description', content: SITE_DESCRIPTION },
+      { property: 'og:image', content: `${SITE_ORIGIN}/spice-mark-512.png` },
+      { name: 'twitter:card', content: 'summary' },
+      { name: 'twitter:title', content: SITE_NAME },
+      { name: 'twitter:description', content: SITE_DESCRIPTION },
+      { name: 'twitter:image', content: `${SITE_ORIGIN}/spice-mark-512.png` },
     ],
     links: [
       // Starts the public boot read alongside the bundle. `syncFromCloud` only reuses this

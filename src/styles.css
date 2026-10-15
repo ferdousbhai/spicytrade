@@ -677,3 +677,23 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
   /* Small controls on a phone still take a full touch target. */
   .connect-code-head button, .connect-issue button, .connect-issue input, .connect-tokens button, .brief-navigation button, .trade-link { min-height: var(--touch-target); }
 }
+
+/* The server-rendered snapshot reading on /watch (server/watch-summary.ts), shown until the app mounts. */
+.watch-summary {
+  margin: 0 auto;
+  max-width: 64rem;
+  padding: 1.5rem 1rem;
+}
+
+.watch-summary table {
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  width: 100%;
+}
+
+.watch-summary th,
+.watch-summary td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.375rem 0.5rem;
+  text-align: left;
+}
