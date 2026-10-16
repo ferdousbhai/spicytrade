@@ -828,7 +828,7 @@ export function MarketScreen({
         return ticker ? [ticker] : []
       }), [activeWatchlist.symbols, tickers, tickersBySymbol, trimmedQuery])
   // A fuzzy local match is not proof that the catalog lacks the exact requested symbol.
-  const unlisted = Boolean(trimmedQuery) && !tickersBySymbol.has(trimmedQuery.toUpperCase())
+  const unlisted = Boolean(trimmedQuery) && !tickersBySymbol.has(trimmedQuery)
   const search = useSymbolSearch(trimmedQuery, unlisted)
   const lookup = search.status === 'found' ? search.lookup : undefined
   const found = lookup && tickerFromPublic(lookup.ticker)

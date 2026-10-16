@@ -118,7 +118,7 @@ function earningsTiming(value: JsonValue): Catalyst['timing'] {
 export function catalystsFromMarketMetrics(metrics: readonly JsonObject[], now = new Date()): Catalyst[] {
   const today = marketDate(now)
   return metrics.flatMap((metric) => {
-    const symbol = EquitySymbolSchema.parse(jsonText(metric.symbol)?.toUpperCase())
+    const symbol = EquitySymbolSchema.parse(jsonText(metric.symbol))
     const earnings = earningsRecord(metric)
     if (!earnings) return []
     const earningsDate = upcomingEarningsDate(earnings, today)
