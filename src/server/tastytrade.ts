@@ -1,5 +1,6 @@
 import { chunked } from '../domain/chunked'
 import { errorName, toError } from '../domain/failure'
+import { equitySymbolFromModelText } from '../domain/instrument'
 import {
   MarketSnapshotSchema,
   PublicMarketSnapshotSchema,
@@ -58,7 +59,7 @@ import {
   tastytradeRowsByRequestedSymbol,
 } from './tastytrade-market-normalization'
 import { defineSeam, type SeamValue } from './seam'
-import { searchInstrumentCatalog, symbolCandidate } from './symbol-search'
+import { searchInstrumentCatalog } from './symbol-search'
 import { loadStoredPublicMarketUniverse, publishInternalWatchlistUniverse } from './public-market-universe'
 import { readYearAgoCloses } from './year-candle-store'
 import { readLatestDailyBrief } from './daily-brief-store'
@@ -534,7 +535,7 @@ async function catalogSymbolForQuery(
   env: AppEnv,
   query: string,
 ): Promise<{ candidate: string | undefined; symbol: string | undefined }> {
-  const candidate = symbolCandidate(query)
+  const candidate = equitySymbolFromModelText(query)
   const [match] = await searchInstrumentCatalog(env, candidate ?? query, 1)
   // A stored fuzzy match cannot establish that an unchecked exact ticker is absent.
   if (candidate && match?.symbol !== candidate) return { candidate, symbol: undefined }

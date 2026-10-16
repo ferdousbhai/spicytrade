@@ -7,7 +7,7 @@ import {
   unresolvedInstrumentCatalogItem,
 } from '../src/server/instrument-catalog'
 import { stubBrokerGate } from './broker-stub'
-import { MAX_QUERY_LENGTH, searchInstrumentCatalog, searchableQuery, symbolCandidate } from '../src/server/symbol-search'
+import { MAX_QUERY_LENGTH, searchInstrumentCatalog, searchableQuery } from '../src/server/symbol-search'
 import { readInternalWatchlist } from '../src/server/internal-watchlist'
 
 afterEach(() => {
@@ -29,12 +29,6 @@ async function seedCatalog(
 }
 
 describe('symbol search query shape', () => {
-  it('reads a ticker out of a cashtag or any letter case, and nothing out of a name', () => {
-    expect(symbolCandidate('sofi')).toBe('SOFI')
-    expect(symbolCandidate(' $brk/b ')).toBe('BRK/B')
-    expect(symbolCandidate('SoFi Technologies')).toBeUndefined()
-  })
-
   it('refuses an empty or oversized search and neutralizes LIKE wildcards', () => {
     expect(searchableQuery('   ')).toBeUndefined()
     expect(searchableQuery('a'.repeat(MAX_QUERY_LENGTH + 1))).toBeUndefined()

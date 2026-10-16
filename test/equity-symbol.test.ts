@@ -124,7 +124,7 @@ describe('reading a symbol out of model text', () => {
     expect(equitySymbolFromModelText(written)).toBe(expected)
   })
 
-  it.each(['BRK.B', '#NXE', 'NXE.TO', 'TOOLONGSYMBOL', ''])('refuses %s', (written) => {
+  it.each(['BRK.B', '#NXE', 'NXE.TO', 'TOOLONGSYMBOL', 'SoFi Technologies', ''])('refuses %s', (written) => {
     // Only the convention the owner named is read; any other venue's notation stays a
     // visible refusal rather than being guessed at.
     expect(equitySymbolFromModelText(written)).toBeUndefined()
