@@ -182,9 +182,9 @@ const MARKET_COLUMNS: MarketColumn[] = [
 ]
 
 // Symbols and nominal share prices identify instruments; neither ranks opportunities.
-const SORT_COLUMNS = MARKET_COLUMNS.filter(
-  (column): column is MarketColumn & { key: SortKey } => column.key !== 'price' && column.key !== 'symbol',
-)
+type SortColumn = MarketColumn & { key: SortKey }
+const isSortColumn = (column: MarketColumn): column is SortColumn => column.key !== 'price' && column.key !== 'symbol'
+const SORT_COLUMNS = MARKET_COLUMNS.filter(isSortColumn)
 
 /**
  * Percent move across the cached year. The anchor rides the snapshot and the current price is
@@ -213,23 +213,29 @@ function sparkY(value: number, low: number, span: number): number {
   return SPARK_HEIGHT - SPARK_BOTTOM_INSET - ((value - low) / span) * drawable
 }
 
+/** One polyline in the shared box, scaled between the series' low and high. */
+function SparkPolyline({ className, points }: { className: string; points: ReadonlyArray<readonly [x: number, close: number]> }) {
+  const closes = points.map(([, close]) => close)
+  const low = Math.min(...closes)
+  const span = Math.max(...closes) - low || 1
+  const line = points
+    .map(([x, close]) => `${x.toFixed(2)},${sparkY(close, low, span).toFixed(2)}`)
+    .join(' ')
+  return (
+    <svg aria-hidden="true" className={`sparkline ${className}`} preserveAspectRatio="none" viewBox={SPARK_VIEW_BOX}>
+      <polyline points={line} />
+    </svg>
+  )
+}
+
 /**
  * A year of daily closes reads on its own elapsed span rather than a fixed one: the series is
  * whatever the cache holds, so stretching it to the full width is honest here in a way it is
  * not for a session that has barely started. The caller guarantees at least two closes.
  */
 function YearSparkline({ closes }: { closes: readonly number[] }) {
-  const low = Math.min(...closes)
-  const span = Math.max(...closes) - low || 1
   const step = SPARK_WIDTH / (closes.length - 1)
-  const line = closes
-    .map((close, index) => `${(index * step).toFixed(2)},${sparkY(close, low, span).toFixed(2)}`)
-    .join(' ')
-  return (
-    <svg aria-hidden="true" className="sparkline year-sparkline" preserveAspectRatio="none" viewBox={SPARK_VIEW_BOX}>
-      <polyline points={line} />
-    </svg>
-  )
+  return <SparkPolyline className="year-sparkline" points={closes.map((close, index) => [index * step, close] as const)} />
 }
 
 /**
@@ -238,23 +244,14 @@ function YearSparkline({ closes }: { closes: readonly number[] }) {
  * holds one point, and the polyline would be a single vertex — an empty chart in a filled slot.
  */
 function Sparkline({ session }: { session: readonly CandlePoint[] }) {
-  const closes = session.map((point) => point.close)
-  const low = Math.min(...closes)
-  const span = Math.max(...closes) - low || 1
   // The axis is the whole session rather than the data it has so far, so a partial morning
   // draws a short line at the left instead of stretching a few bars across the full width.
   const openedAt = session[0]!.time
-  const line = session
-    .map((point) => {
-      const x = Math.min(SPARK_WIDTH, ((point.time - openedAt) / REGULAR_SESSION_MS) * SPARK_WIDTH)
-      return `${x.toFixed(2)},${sparkY(point.close, low, span).toFixed(2)}`
-    })
-    .join(' ')
-  return (
-    <svg aria-hidden="true" className="sparkline session-sparkline" preserveAspectRatio="none" viewBox={SPARK_VIEW_BOX}>
-      <polyline points={line} />
-    </svg>
-  )
+  const points = session.map((point) => [
+    Math.min(SPARK_WIDTH, ((point.time - openedAt) / REGULAR_SESSION_MS) * SPARK_WIDTH),
+    point.close,
+  ] as const)
+  return <SparkPolyline className="session-sparkline" points={points} />
 }
 
 const SORT_METRICS = {
@@ -875,9 +872,8 @@ export function MarketScreen({
     return [...merged.values()]
   }, [catalysts, catalystSearch.catalysts, focusedRead.catalysts, looked])
   const nextCatalysts = nextCatalystsBySymbol(visibleCatalysts, now)
-  const toggleSort = (column: MarketColumn) => {
+  const toggleSort = (column: SortColumn) => {
     const { key } = column
-    if (key === 'price' || key === 'symbol') return
     setSearchSort(true)
     setSort((current) => current.key === key
       ? { direction: current.direction === 'asc' ? 'desc' : 'asc', key: key }
@@ -886,7 +882,6 @@ export function MarketScreen({
   const pinnedTickers = tickers.filter((ticker) => pinned.has(ticker.symbol))
   const selectedVerdict = volatilityVerdict(selected)
   const selectedCopy = verdictCopy[selectedVerdict]
-  const selectedPremiumRank = selected.ivRank
   const selectedAsset = assetLabel(selected)
   const selectedRecommendation = brief?.recommendations.find((recommendation) => recommendation.symbol === selected.symbol)
   const selectedTape = focusTape(selected)
@@ -916,8 +911,8 @@ export function MarketScreen({
           <div className="premium-gauge">
             <span>Option premium</span>
             <strong className="premium-verdict">{selectedCopy}</strong>
-            {selectedPremiumRank === undefined ? null : (
-              <Progress className="premium-axis" aria-label={`IV rank ${selectedPremiumRank} out of 100`} value={selectedPremiumRank} />
+            {selected.ivRank === undefined ? null : (
+              <Progress className="premium-axis" aria-label={`IV rank ${selected.ivRank} out of 100`} value={selected.ivRank} />
             )}
           </div>
         </CardHeader>
@@ -1093,7 +1088,7 @@ export function MarketScreen({
                   className={column.cellClass}
                   key={column.key}
                 >
-                  {column.key === 'price' || column.key === 'symbol' ? column.label : (
+                  {!isSortColumn(column) ? column.label : (
                   <button className="sort-button" onClick={() => toggleSort(column)} type="button">
                     {column.label}
                     {!relevance && sort.key === column.key && (sort.direction === 'asc'

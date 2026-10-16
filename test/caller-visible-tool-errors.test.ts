@@ -5,7 +5,6 @@ import { type PriceHistoryProvider } from '../src/server/market-research-contrac
 import { stubBrokerGate } from './broker-stub'
 
 afterEach(() => {
-  vi.restoreAllMocks()
   vi.resetModules()
 })
 

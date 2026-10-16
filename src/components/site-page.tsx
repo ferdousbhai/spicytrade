@@ -3,6 +3,18 @@ import { type ReactNode } from 'react'
 import { SUPPORT_EMAIL } from '../domain/site'
 import { BrandMark, HOME_LINK_LABEL } from './wordmark'
 
+/** Support and the legal pages, shared by the legal pages' header and the Connect view's footer. */
+export function LegalLinks() {
+  return (
+    <>
+      <a href={`mailto:${SUPPORT_EMAIL}`}>Support</a>
+      <Link to="/terms">Terms</Link>
+      <Link to="/privacy">Privacy</Link>
+      <Link to="/disclosures">Disclosures</Link>
+    </>
+  )
+}
+
 export function SitePage({
   children,
   intro,
@@ -20,10 +32,7 @@ export function SitePage({
           <BrandMark />
         </Link>
         <nav aria-label="Information">
-          <a href={`mailto:${SUPPORT_EMAIL}`}>Support</a>
-          <Link to="/terms">Terms</Link>
-          <Link to="/privacy">Privacy</Link>
-          <Link to="/disclosures">Disclosures</Link>
+          <LegalLinks />
         </nav>
       </header>
       <main className="site-content" id="page-content">

@@ -91,6 +91,9 @@ function unconfigured(missing: string): undefined {
   return undefined
 }
 
+/** What the browser is told when the callback cannot reach its configuration or its row. */
+const CALLBACK_UNAVAILABLE = 'Connecting tastytrade is unavailable right now. Go back to the terminal and press Ctrl-C to skip it, then run spicytrade setup later to connect.'
+
 const unavailable = () => jsonNoStore({ error: 'Connecting tastytrade is unavailable' }, { status: 503 })
 
 /**
@@ -220,7 +223,7 @@ function plainNoStore(text: string, status: number): Response {
  */
 export async function tastytradeCallback(request: Request, env: AppEnv, now = new Date()): Promise<Response> {
   const config = connectConfig(env)
-  if (!config) return plainNoStore('Connecting tastytrade is unavailable right now. Go back to the terminal and press Ctrl-C to skip it, then run spicytrade setup later to connect.', 503)
+  if (!config) return plainNoStore(CALLBACK_UNAVAILABLE, 503)
   const params = new URL(request.url).searchParams
   const state = BrokerAuthorizationStateSchema.safeParse(params.get('state'))
   const code = params.get('code')
@@ -237,7 +240,7 @@ export async function tastytradeCallback(request: Request, env: AppEnv, now = ne
     ).bind(await sha256Base64Url(state.data), BROKER, now.toISOString()).first<{ loopback_port: number }>()
   } catch (cause) {
     console.error('TastytradeCallbackFailed', errorName(toError(cause)))
-    return plainNoStore('Connecting tastytrade is unavailable right now. Go back to the terminal and press Ctrl-C to skip it, then run spicytrade setup later to connect.', 503)
+    return plainNoStore(CALLBACK_UNAVAILABLE, 503)
   }
   if (!row) return plainNoStore(expired, 400)
 

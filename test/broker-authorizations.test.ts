@@ -75,8 +75,6 @@ beforeEach(async () => {
 
 afterEach(() => {
   store.close()
-  vi.restoreAllMocks()
-  vi.unstubAllGlobals()
 })
 
 function post(path: string, body: JsonValue, bearer?: string): Request {

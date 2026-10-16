@@ -21,8 +21,6 @@ afterEach(() => {
   resetBrokerAdapters()
   resetInternalWatchlistWriter()
   resetTradeGuards()
-  vi.restoreAllMocks()
-  vi.unstubAllGlobals()
 })
 
 const EQUITY_ORDER = {

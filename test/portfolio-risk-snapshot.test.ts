@@ -5,7 +5,7 @@ import { assertPortfolioActionAllowed } from '../src/server/portfolio-risk'
 import { resetBrokerApi, setBrokerApi } from '../src/server/tastytrade'
 import { type JsonValue } from '../src/domain/json-payload'
 import { brokerCredential, stubBroker, tastytradeBalances as balances } from './broker-stub'
-import { untouchedDb } from './fake-d1'
+import { unsupportedDatabase } from './fake-d1'
 
 /**
  * The account context and the portfolio guard read one broker snapshot. These pin the
@@ -37,7 +37,7 @@ function respondWith(overrides: Overrides = {}) {
   })
 }
 
-function guard(env = { DB: untouchedDb() }) {
+function guard(env = { DB: unsupportedDatabase() }) {
   return assertPortfolioActionAllowed(env, openEquityOrder, brokerCredential, { accountNumber: 'TEST123', optionContracts: [] })
 }
 
@@ -59,7 +59,7 @@ describe('portfolio guard over the merged account snapshot', () => {
       kind: 'place_option_order', underlying: 'SPY', optionType: 'C', strike: 700, expiry: '2026-09-18',
       action: 'Buy to Open', quantity: 1, limitPrice: 1, priceEffect: 'Debit',
     } as const
-    await expect(assertPortfolioActionAllowed({ DB: untouchedDb() }, optionOrder, brokerCredential, {
+    await expect(assertPortfolioActionAllowed({ DB: unsupportedDatabase() }, optionOrder, brokerCredential, {
       accountNumber: 'TEST123', optionContracts: [],
     })).rejects.toThrow('The guard could not verify the option contract.')
     expect(tastytrade.tastyRequest.mock.calls.map(([, path]) => String(path)))

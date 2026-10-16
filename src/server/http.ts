@@ -121,17 +121,16 @@ export async function authenticateRequest(
 
 /**
  * The owner-only gate for a cookie-authenticated route: a signed-in identity whose email is the
- * owner's, and for a `write` the request's own origin as well. It guards the owner's market
- * snapshot (`/api/snapshot`, whose `?live=1` rebuilds from the broker on this Worker's own
- * credential).
+ * owner's. It guards the owner's market snapshot (`/api/snapshot`, whose `?live=1` rebuilds from
+ * the broker on this Worker's own credential). No owner-only route writes, so it has no write mode;
+ * a write route goes through `authenticateRequest(..., true)`, which holds it to its own origin.
  */
 export async function authorizePersonalRequest(
   request: Request,
   env: AppEnv,
-  write = false,
   readIdentity: IdentityReader = getAuthenticatedIdentity,
 ): Promise<Response | undefined> {
-  const authenticated = await authenticateRequest(request, env, write, readIdentity)
+  const authenticated = await authenticateRequest(request, env, false, readIdentity)
   if ('response' in authenticated) return authenticated.response
   if (!isOwnerEmail(authenticated.identity.email)) {
     return jsonNoStore({ error: 'Owner access required' }, { status: 403 })

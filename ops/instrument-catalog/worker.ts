@@ -1,7 +1,4 @@
-import {
-  previewInternalInstrumentCatalogChunkFromTastytrade,
-  refreshInternalInstrumentCatalogChunkFromTastytrade,
-} from '../../src/server/tastytrade'
+import { internalInstrumentCatalogChunkFromTastytrade } from '../../src/server/tastytrade'
 import { summarizeOwnerMarketSync } from '../shared/market-sync'
 import { type OpsEnv, serveOpsRequest } from '../shared/worker-auth'
 
@@ -18,9 +15,7 @@ export default {
       if (!/^\d+$/.test(offsetValue) || !Number.isSafeInteger(offset)) {
         throw new Error('InstrumentCatalog:invalid-offset')
       }
-      const result = path === '/preview'
-        ? await previewInternalInstrumentCatalogChunkFromTastytrade(env, offset)
-        : await refreshInternalInstrumentCatalogChunkFromTastytrade(env, offset)
+      const result = await internalInstrumentCatalogChunkFromTastytrade(env, offset, path !== '/preview')
       return Response.json({
         mode: path.slice(1),
         result,

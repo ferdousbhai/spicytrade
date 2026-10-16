@@ -21,6 +21,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
 import { GoogleSignInButton } from './auth-gate'
 import { SUPPORT_EMAIL } from '../domain/site'
+import { nyWeekdayTime } from './ny-time'
 import { BrandMark, HOME_LINK_LABEL } from './wordmark'
 
 // Fine enough that "just now" becomes "1 min ago" while a reader is still looking at it.
@@ -104,13 +105,7 @@ const SESSION_NAMES = {
 } satisfies Record<MarketState, string>
 
 export function marketClockLabel(now: number): string {
-  return new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: 'America/New_York',
-    timeZoneName: 'short',
-    weekday: 'short',
-  }).format(new Date(now))
+  return nyWeekdayTime.format(new Date(now))
 }
 
 function waitLabel(target: number, now: number): string | undefined {

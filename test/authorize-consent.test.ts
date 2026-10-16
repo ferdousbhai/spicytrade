@@ -8,7 +8,6 @@ import { Route } from '../src/routes/authorize.consent'
 
 afterEach(() => {
   cleanup()
-  vi.unstubAllGlobals()
 })
 
 // SAFETY: the route is declared with `component: ConsentPage`, which takes no props.

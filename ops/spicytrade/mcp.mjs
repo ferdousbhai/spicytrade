@@ -3,7 +3,7 @@ import { createInterface } from 'node:readline'
 import { z } from 'zod'
 
 import { grantMinter, grantRefused, mintUnavailable, TastytradeAuthError, tastytradeUnavailable } from './broker-grants.mjs'
-import { CLI_PATH, cliCommand, UPSTREAM, workerFault } from './config.mjs'
+import { CLI_PATH, cliCommand, MCP_PROTOCOL_VERSION, UPSTREAM, workerFault } from './config.mjs'
 import { agentToken, KeyringUnavailable, TASTYTRADE, tastytradeCredentialKind } from './keyring.mjs'
 import { tokenRetiresAt, UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
 
@@ -187,8 +187,6 @@ function routingHeaders(message, headers) {
   if (name !== undefined && /^[\x20-\x7e]*$/.test(name)) headers.set('Mcp-Name', name)
 }
 
-/** The protocol revision a local answer to `initialize` speaks when the client names none. */
-const LOCAL_PROTOCOL_VERSION = '2025-06-18'
 /** The one tool a session that needs setup offers, so the agent reads the fix when asked anything. */
 const SETUP_TOOL = 'setup_required'
 const CONNECT_TOOL = {
@@ -225,7 +223,7 @@ function localAnswer(message, fix) {
       return ok({
         capabilities: { tools: { listChanged: true } },
         instructions: `${NOT_READY} ${fix}`,
-        protocolVersion: requested?.protocolVersion ?? LOCAL_PROTOCOL_VERSION,
+        protocolVersion: requested?.protocolVersion ?? MCP_PROTOCOL_VERSION,
         serverInfo: { name: 'spicytrade', version: '1' },
       })
     }

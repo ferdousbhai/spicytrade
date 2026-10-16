@@ -8,7 +8,6 @@ import { marketSnapshotFixture } from './fixtures/market'
 const CURRENT_DEPLOYMENT = 'test'
 
 afterEach(() => {
-  vi.unstubAllGlobals()
   vi.resetModules()
 })
 

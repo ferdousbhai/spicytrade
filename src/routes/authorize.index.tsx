@@ -1,7 +1,7 @@
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 
-import { AuthorizeFrame, GoogleSignInButton, useViewer } from '../components/auth-gate'
+import { AuthorizeFrame, GoogleSignInButton, useRawQuery, useViewer } from '../components/auth-gate'
 import { pageTitle } from '../domain/site'
 
 /**
@@ -22,13 +22,6 @@ export const Route = createFileRoute('/authorize/')({
   head: () => ({ meta: [{ title: pageTitle('Connect your agent') }] }),
 })
 
-/**
- * The authorization request is fixed for the life of this page: the provider hands it over once,
- * and anything that would change it navigates away instead. So there is nothing to subscribe to.
- */
-const subscribeToQuery = () => () => undefined
-const readRawQuery = () => window.location.search
-
 function AuthorizePage() {
   const viewer = useViewer()
   const signedIn = viewer.phase === 'ready' && viewer.user !== null
@@ -37,7 +30,7 @@ function AuthorizePage() {
   // and the provider verifies its signature over the literal string, so either spelling would
   // invalidate the request. A server pass has no query to read and no reader for one: both uses
   // below wait for the viewer check, which only ever resolves in the browser.
-  const rawSearch = useSyncExternalStore(subscribeToQuery, readRawQuery, () => '')
+  const rawSearch = useRawQuery()
 
   useEffect(() => {
     if (!signedIn) return

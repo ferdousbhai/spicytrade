@@ -86,10 +86,7 @@ export class BrokerGateCore {
       await previous
       await this.waitForStoredMutationLease()
       const token = crypto.randomUUID()
-      await this.ctx.storage.put(MUTATION_LEASE_KEY, {
-        expiresAt: this.now() + MUTATION_LEASE_MS,
-        token,
-      } satisfies StoredMutationLease)
+      await this.writeLease(token)
       const timeout = this.expiryTimer(token, MUTATION_LEASE_MS)
       this.activeMutation = { release, timeout, token }
       return token
@@ -105,13 +102,9 @@ export class BrokerGateCore {
    * owns the caller-visible wording (`BrokerMutationLeaseExpiredError` in `tastytrade.ts`).
    */
   async renewMutation(token: string): Promise<boolean> {
-    const value = await this.ctx.storage.get(MUTATION_LEASE_KEY)
-    const stored = StoredMutationLeaseSchema.safeParse(value).data
+    const { stored } = await this.readLease()
     if (!stored || stored.token !== token || stored.expiresAt <= this.now()) return false
-    await this.ctx.storage.put(MUTATION_LEASE_KEY, {
-      expiresAt: this.now() + MUTATION_LEASE_MS,
-      token,
-    } satisfies StoredMutationLease)
+    await this.writeLease(token)
     if (this.activeMutation?.token === token) {
       clearTimeout(this.activeMutation.timeout)
       this.activeMutation.timeout = this.expiryTimer(token, MUTATION_LEASE_MS)
@@ -120,9 +113,8 @@ export class BrokerGateCore {
   }
 
   async releaseMutation(token: string): Promise<void> {
-    const value = await this.ctx.storage.get(MUTATION_LEASE_KEY)
-    const stored = StoredMutationLeaseSchema.safeParse(value).data
-    if (value !== undefined && (!stored || stored.token !== token)) return
+    const { present, stored } = await this.readLease()
+    if (present && (!stored || stored.token !== token)) return
     if (stored) await this.ctx.storage.delete(MUTATION_LEASE_KEY)
     if (this.activeMutation?.token !== token) return
     clearTimeout(this.activeMutation.timeout)
@@ -132,8 +124,7 @@ export class BrokerGateCore {
   }
 
   private async expireMutation(token: string): Promise<void> {
-    const value = await this.ctx.storage.get(MUTATION_LEASE_KEY)
-    const stored = StoredMutationLeaseSchema.safeParse(value).data
+    const { stored } = await this.readLease()
     if (!stored || stored.token !== token) return
     const remaining = stored.expiresAt - this.now()
     if (remaining > 0) {
@@ -145,6 +136,19 @@ export class BrokerGateCore {
       return
     }
     await this.releaseMutation(token)
+  }
+
+  /** The persisted lease, and whether anything at all is stored under its key (even unreadable). */
+  private async readLease(): Promise<{ present: boolean; stored: StoredMutationLease | undefined }> {
+    const value = await this.ctx.storage.get(MUTATION_LEASE_KEY)
+    return { present: value !== undefined, stored: StoredMutationLeaseSchema.safeParse(value).data }
+  }
+
+  private async writeLease(token: string): Promise<void> {
+    await this.ctx.storage.put(MUTATION_LEASE_KEY, {
+      expiresAt: this.now() + MUTATION_LEASE_MS,
+      token,
+    } satisfies StoredMutationLease)
   }
 
   private expiryTimer(token: string, delay: number): ReturnType<typeof setTimeout> {

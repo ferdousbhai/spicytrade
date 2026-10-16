@@ -511,10 +511,13 @@ export async function findOptionContracts(
       truncated: expirationDates.length < allExpirationDates.length,
     }
   }
-  const rankedByStrike = [...matching].sort((left, right) => left.expirationDate.localeCompare(right.expirationDate)
-    || (input.nearStrike === undefined
-      ? 0
-      : Math.abs(left.strikePrice - input.nearStrike) - Math.abs(right.strikePrice - input.nearStrike))
+  // Both orderings start by expiration, then distance from nearStrike when one was asked for.
+  const nearStrike = input.nearStrike
+  const byExpiryThenNearness = (left: { expirationDate: string; strikePrice: number }, right: typeof left) => (
+    left.expirationDate.localeCompare(right.expirationDate)
+    || (nearStrike === undefined ? 0 : Math.abs(left.strikePrice - nearStrike) - Math.abs(right.strikePrice - nearStrike))
+  )
+  const rankedByStrike = [...matching].sort((left, right) => byExpiryThenNearness(left, right)
     || left.strikePrice - right.strikePrice
     || left.optionType.localeCompare(right.optionType))
   // nearStrike already picked the window; activity is attached to those rows, not used to
@@ -526,10 +529,7 @@ export async function findOptionContracts(
   const activity = await readOptionActivity(env, candidates.map((contract) => contract.brokerSymbol))
   const contracts = candidates
     .map((contract) => publishedContract(contract, activity.get(contract.brokerSymbol)))
-    .sort((left, right) => left.expirationDate.localeCompare(right.expirationDate)
-      || (input.nearStrike === undefined
-        ? 0
-        : Math.abs(left.strikePrice - input.nearStrike) - Math.abs(right.strikePrice - input.nearStrike))
+    .sort((left, right) => byExpiryThenNearness(left, right)
       || compareCountDesc(left.openInterest, right.openInterest)
       || compareCountDesc(left.volume, right.volume)
       || left.strikePrice - right.strikePrice

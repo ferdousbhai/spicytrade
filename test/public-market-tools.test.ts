@@ -111,8 +111,6 @@ describe('anonymous symbol search', () => {
 
   afterEach(() => {
     resetBrokerApi()
-    vi.unstubAllGlobals()
-    vi.restoreAllMocks()
   })
 
   function searchTool() {

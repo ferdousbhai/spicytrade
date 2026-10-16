@@ -8,7 +8,6 @@ import { ConnectScreen } from '../src/components/connect-screen'
 
 afterEach(() => {
   cleanup()
-  vi.unstubAllGlobals()
 })
 
 /** A browser's storage for the page, shared across renders within one test. */

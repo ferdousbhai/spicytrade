@@ -1,13 +1,13 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmod, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
-import { createServer, request as httpRequest, type IncomingMessage, type Server } from 'node:http'
-import { type AddressInfo } from 'node:net'
+import { type IncomingMessage, type Server } from 'node:http'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import { fakeSecretTool } from './fake-secret-tool.ts'
+import { closeLoopback, listenLoopback, visit } from './loopback.ts'
 
 /*
  * `spicytrade` end to end against a stand-in Worker, with every tool it drives replaced on PATH:
@@ -47,28 +47,18 @@ const directories: string[] = []
 
 afterEach(async () => {
   for (const child of children.splice(0)) child.kill('SIGKILL')
-  await Promise.all(servers.splice(0).map((server) => new Promise<void>((done) => {
-    server.closeAllConnections()
-    server.close(() => done())
-  })))
+  await Promise.all(servers.splice(0).map(closeLoopback))
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { force: true, recursive: true })))
 })
 
 async function serve(handler: (request: IncomingMessage, body: string) => { body?: unknown; status: number }): Promise<number> {
-  const server = createServer((request, response) => {
-    const chunks: Buffer[] = []
-    request.on('data', (chunk: Buffer) => chunks.push(chunk))
-    request.on('end', () => {
-      const answer = handler(request, Buffer.concat(chunks).toString())
-      response.writeHead(answer.status, { 'content-type': 'application/json' })
-      response.end(answer.body === undefined ? '' : JSON.stringify(answer.body))
-    })
+  const { port, server } = await listenLoopback((request, body, response) => {
+    const answer = handler(request, body)
+    response.writeHead(answer.status, { 'content-type': 'application/json' })
+    response.end(answer.body === undefined ? '' : JSON.stringify(answer.body))
   })
   servers.push(server)
-  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
-  // SAFETY: this server was just listened on a TCP port, which is the case where Node returns
-  // an AddressInfo rather than a pipe path or null.
-  return (server.address() as AddressInfo).port
+  return port
 }
 
 /**
@@ -217,19 +207,6 @@ function run(
   child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
   const exited = new Promise<number | null>((done) => child.on('exit', done))
   return { exited, output: () => ({ stderr, stdout }) }
-}
-
-/** A browser-shaped GET to the loopback listener; `host` lets a test imitate a rebound page. */
-function visit(port: number, path: string, headers: Record<string, string> = {}) {
-  return new Promise<{ body: string; status: number }>((done, reject) => {
-    const outgoing = httpRequest({ headers: { host: `127.0.0.1:${port}`, ...headers }, host: '127.0.0.1', path, port }, (reply) => {
-      let body = ''
-      reply.on('data', (chunk: Buffer) => { body += chunk.toString() })
-      reply.on('end', () => done({ body, status: reply.statusCode ?? 0 }))
-    })
-    outgoing.on('error', reject)
-    outgoing.end()
-  })
 }
 
 /** The approval URL the CLI printed, once it has. */

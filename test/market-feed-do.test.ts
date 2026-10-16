@@ -154,8 +154,6 @@ afterEach(() => {
   // A test that fails under fake timers must not leave them installed: every later test here
   // waits on a real-timer `vi.waitFor`, so one failure would cascade into unrelated timeouts.
   vi.useRealTimers()
-  vi.restoreAllMocks()
-  vi.unstubAllGlobals()
   resetBrokerApi()
 })
 

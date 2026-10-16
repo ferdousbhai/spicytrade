@@ -2,8 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { stubBrokerGate } from './broker-stub'
 
 afterEach(() => {
-  vi.restoreAllMocks()
-  vi.unstubAllGlobals()
   vi.resetModules()
 })
 

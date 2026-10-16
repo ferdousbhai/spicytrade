@@ -9,7 +9,6 @@ import { renderMarketScreen } from './fixtures/render-market-screen'
 
 afterEach(() => {
   cleanup()
-  vi.unstubAllGlobals()
 })
 
 function catalyst(symbol: string, daysAhead: number): Catalyst {

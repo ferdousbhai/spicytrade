@@ -42,7 +42,6 @@ function mount(overrides: Partial<WebMcpWorkspace> = {}) {
 afterEach(() => {
   cleanup()
   Reflect.deleteProperty(document, 'modelContext')
-  vi.unstubAllGlobals()
 })
 
 describe('WebMCP tools', () => {

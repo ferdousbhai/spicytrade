@@ -27,10 +27,16 @@ export const TASTYTRADE_API_BASE = process.env.TASTYTRADE_API_BASE ?? 'https://a
  * only in the challenge's description (`callerLookupFailed` in `src/server/mcp.ts`). A 401 carrying
  * this is spicytrade's trouble, to be waited out, not a sign-out. Change them together.
  */
-export const WORKER_FAULT_CHALLENGE = 'spicytrade could not verify this request.'
+const WORKER_FAULT_CHALLENGE = 'spicytrade could not verify this request.'
 export function workerFault(response) {
   return response.status === 401 && (response.headers.get('www-authenticate') ?? '').includes(WORKER_FAULT_CHALLENGE)
 }
+
+/**
+ * The MCP revision this CLI speaks, both probing the Worker and answering `initialize` locally
+ * when the client names none; any revision the Worker accepts would do.
+ */
+export const MCP_PROTOCOL_VERSION = '2025-06-18'
 
 /** The browser sign-ins' one-shot listeners bind here, never to a routable address. */
 export const LISTEN_HOST = '127.0.0.1'

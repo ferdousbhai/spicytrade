@@ -61,6 +61,11 @@ import { CallerVisibleError } from '../caller-visible-error'
 // (`FINAL_ABSENCE_DELAY_MS`) many times over for any account spicytrade expects to reconcile.
 const RECONCILIATION_HISTORY_PAGE_SIZE = 100
 
+/** One account's REST path; the account number is encoded once, here. */
+function accountPath(ref: BrokerAccountRef, suffix: string): string {
+  return `/accounts/${encodeURIComponent(ref.accountNumber)}/${suffix}`
+}
+
 /**
  * What of a record-parsing failure may reach the caller. Only this repository's own codes pass;
  * anything else -- a TypeError or ZodError from a parser, whose message can quote the payload --
@@ -157,15 +162,14 @@ async function loadAccountSnapshot(
   ref: BrokerAccountRef,
   credential: BrokerCredential | undefined,
 ): Promise<BrokerAccountSnapshot> {
-  const account = encodeURIComponent(ref.accountNumber)
   // Transport failures propagate untouched. "The broker would not answer" is a different
   // fact from "the broker answered something we refuse to believe", and only the second
   // arrives as a BrokerSnapshotError; callers report them differently.
   const [positionPayload, balancePayload, orderPayload, complexOrderPayload] = await Promise.all([
-    brokerApi().tastyRequest(env, `/accounts/${account}/positions?per-page=${BROKER_ACCOUNT_PAGE_SIZE}`, {}, credential),
-    brokerApi().tastyRequest(env, `/accounts/${account}/balances`, {}, credential),
-    brokerApi().tastyRequest(env, `/accounts/${account}/orders/live?per-page=${BROKER_ACCOUNT_PAGE_SIZE}`, {}, credential),
-    brokerApi().tastyRequest(env, `/accounts/${account}/complex-orders/live?per-page=${BROKER_ACCOUNT_PAGE_SIZE}`, {}, credential),
+    brokerApi().tastyRequest(env, accountPath(ref, `positions?per-page=${BROKER_ACCOUNT_PAGE_SIZE}`), {}, credential),
+    brokerApi().tastyRequest(env, accountPath(ref, 'balances'), {}, credential),
+    brokerApi().tastyRequest(env, accountPath(ref, `orders/live?per-page=${BROKER_ACCOUNT_PAGE_SIZE}`), {}, credential),
+    brokerApi().tastyRequest(env, accountPath(ref, `complex-orders/live?per-page=${BROKER_ACCOUNT_PAGE_SIZE}`), {}, credential),
   ])
   // Positions are parsed first, then balances, then orders, so the failure a caller sees is the
   // same whichever of the other pages is also malformed.
@@ -270,7 +274,7 @@ async function readAccountHistory(
   try {
     payload = await brokerApi().tastyRequest(
       env,
-      `/accounts/${encodeURIComponent(ref.accountNumber)}/${request.type}?${query.toString()}`,
+      accountPath(ref, `${request.type}?${query.toString()}`),
       {},
       credential,
     )
@@ -348,7 +352,7 @@ async function readOrder(
 ): Promise<BrokerOrderRecord> {
   return tastytradeOrderFromPayload(await brokerApi().tastyRequest(
     env,
-    `/accounts/${encodeURIComponent(ref.accountNumber)}/orders/${encodeURIComponent(orderId)}`,
+    accountPath(ref, `orders/${encodeURIComponent(orderId)}`),
     {},
     credential,
   ))
@@ -363,7 +367,7 @@ async function cancelOrder(
   try {
     await brokerApi().tastyRequest(
       env,
-      `/accounts/${encodeURIComponent(ref.accountNumber)}/orders/${encodeURIComponent(orderId)}`,
+      accountPath(ref, `orders/${encodeURIComponent(orderId)}`),
       { method: 'DELETE' },
       credential,
     )
@@ -384,7 +388,7 @@ async function readOrderHistory(
 ): Promise<BrokerOrderHistoryPage> {
   const payload = await brokerApi().tastyRequest(
     env,
-    `/accounts/${encodeURIComponent(ref.accountNumber)}/orders?per-page=${RECONCILIATION_HISTORY_PAGE_SIZE}`
+    accountPath(ref, `orders?per-page=${RECONCILIATION_HISTORY_PAGE_SIZE}`)
       + `&sort=Desc&start-date=${options.startDate}`,
     {},
     credential,

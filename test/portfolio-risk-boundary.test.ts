@@ -1,15 +1,14 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { executeOrderPlacement } from '../src/server/brokerage'
 import { type AppEnv } from '../src/server/env'
 import { brokerCredential, stubBrokerGate, tastytradeBalances as balances } from './broker-stub'
-import { untouchedDb } from './fake-d1'
+import { unsupportedDatabase } from './fake-d1'
 
 function secret(value: string): SecretsStoreSecret {
   return { get: async () => value }
 }
 
-afterEach(() => vi.unstubAllGlobals())
 
 describe('brokerage dispatch portfolio guard', () => {
   it('fails before dry-run or submission when fresh positions contain unbounded exposure', async () => {
@@ -38,7 +37,7 @@ describe('brokerage dispatch portfolio guard', () => {
     const brokerGate = stubBrokerGate()
     const env: AppEnv = {
       BROKER_GATE: brokerGate.namespace,
-      DB: untouchedDb(),
+      DB: unsupportedDatabase(),
       TASTYTRADE_CLIENT_SECRET: secret('client'),
       TASTYTRADE_REFRESH_TOKEN: secret('refresh'),
     }
@@ -72,7 +71,7 @@ describe('brokerage dispatch portfolio guard', () => {
     const brokerGate = stubBrokerGate()
     const env: AppEnv = {
       BROKER_GATE: brokerGate.namespace,
-      DB: untouchedDb(),
+      DB: unsupportedDatabase(),
       TASTYTRADE_CLIENT_SECRET: secret('client'),
       TASTYTRADE_REFRESH_TOKEN: secret('refresh'),
     }
@@ -108,7 +107,7 @@ describe('brokerage dispatch portfolio guard', () => {
     const brokerGate = stubBrokerGate()
     const env: AppEnv = {
       BROKER_GATE: brokerGate.namespace,
-      DB: untouchedDb(),
+      DB: unsupportedDatabase(),
       TASTYTRADE_CLIENT_SECRET: secret('client'),
       TASTYTRADE_REFRESH_TOKEN: secret('refresh'),
     }

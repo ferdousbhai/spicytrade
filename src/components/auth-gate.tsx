@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react'
 import { z } from 'zod'
 
 import { Alert, AlertDescription, AlertTitle } from '#/components/ui/alert'
@@ -51,6 +51,19 @@ export function AuthorizeFrame(
       {children}
     </main>
   )
+}
+
+/**
+ * The page's query exactly as it arrived. The router's `searchStr` is re-serialized from parsed
+ * parameters, and the provider verifies signatures over the literal string, so the sign-in and
+ * approval pages read it from the browser. It is fixed for the life of the page -- anything that
+ * would change it navigates away -- so there is nothing to subscribe to. A server pass reads ''.
+ */
+const subscribeToRawQuery = () => () => undefined
+const readRawQuery = () => window.location.search
+
+export function useRawQuery(): string {
+  return useSyncExternalStore(subscribeToRawQuery, readRawQuery, () => '')
 }
 
 export function useViewer(): AuthState {

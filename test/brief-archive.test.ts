@@ -1,11 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { loadPreviousDailyBrief } from '../src/data/brief-archive'
 import { dailyBriefFixture } from './fixtures/market'
-
-afterEach(() => {
-  vi.unstubAllGlobals()
-})
 
 describe('the brief archive reader', () => {
   it('asks for the brief before the market date the reader is on', async () => {

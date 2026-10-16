@@ -326,15 +326,6 @@ function HeadlessTokens() {
   const busy = pending !== undefined
   const [label, setLabel] = useState('')
 
-  // Both blocks carry the freshly issued token, so the shortest path never splices a token into a
-  // config by hand -- the token is shown exactly once, so that splice is the step with the most to
-  // lose. They are shown only while it is on screen; the digest is all the server kept.
-  const bearer = issued?.token ?? ''
-  const mcpConfig = JSON.stringify({
-    mcpServers: { [MCP_SERVER_NAME]: { headers: { Authorization: `Bearer ${bearer}` }, type: 'http', url: MCP_ENDPOINT } },
-  }, null, 2)
-  const headlessCommand = `${addCommands(MCP_ENDPOINT).claude} --header "Authorization: Bearer ${bearer}"`
-
   return (
     <>
         {/* What a member opens this section for most -- signing a computer out -- comes first; the
@@ -411,28 +402,34 @@ function HeadlessTokens() {
           </Alert>
         )}
 
-        {issued && (
-          <>
-            <Alert>
-              <AlertTitle>Copy this now</AlertTitle>
-              <AlertDescription>
-                This is the only time this token is shown. If you lose it, revoke it and create another.
-              </AlertDescription>
-            </Alert>
-            <CopyBlock label="Your token" value={issued.token} />
-          </>
-        )}
+        {issued && <IssuedToken token={issued.token} />}
+    </>
+  )
+}
 
-        {/* Only once there is a token to put in them: before that they would hold a placeholder the
-            member has to splice a token into by hand. The header flag is Claude Code's; every other
-            client takes the same entry as JSON. */}
-        {issued && (
-          <>
-            <p>Both blocks below already carry the token you just created — copy either one.</p>
-            <CopyBlock label="Claude Code" value={headlessCommand} />
-            <CopyBlock label=".mcp.json" value={mcpConfig} />
-          </>
-        )}
+/**
+ * Both config blocks carry the freshly issued token, so the shortest path never splices a token
+ * into a config by hand -- the token is shown exactly once, so that splice is the step with the
+ * most to lose. They render only while it is on screen; the digest is all the server kept. The
+ * header flag is Claude Code's; every other client takes the same entry as JSON.
+ */
+function IssuedToken({ token }: { token: string }) {
+  const mcpConfig = JSON.stringify({
+    mcpServers: { [MCP_SERVER_NAME]: { headers: { Authorization: `Bearer ${token}` }, type: 'http', url: MCP_ENDPOINT } },
+  }, null, 2)
+  const headlessCommand = `${addCommands(MCP_ENDPOINT).claude} --header "Authorization: Bearer ${token}"`
+  return (
+    <>
+      <Alert>
+        <AlertTitle>Copy this now</AlertTitle>
+        <AlertDescription>
+          This is the only time this token is shown. If you lose it, revoke it and create another.
+        </AlertDescription>
+      </Alert>
+      <CopyBlock label="Your token" value={token} />
+      <p>Both blocks below already carry the token you just created — copy either one.</p>
+      <CopyBlock label="Claude Code" value={headlessCommand} />
+      <CopyBlock label=".mcp.json" value={mcpConfig} />
     </>
   )
 }

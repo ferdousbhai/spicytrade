@@ -96,8 +96,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .google-sign-in span { grid-column: 2; }
 .google-sign-in:hover { background: white; }
 .google-sign-in:disabled { color: #65666a; background: #d8d8dc; }
-.auth-inline-error { max-width: 420px; padding: 13px 0; border-block: 1px solid rgba(255, 107, 120, .25); border-inline: 0; border-radius: 0; background: transparent; color: #efb4b9; font-size: 13px; line-height: 1.5; }
-.auth-inline-error { margin: 12px 0 0; }
+.auth-inline-error { max-width: 420px; padding: 13px 0; border-block: 1px solid rgba(255, 107, 120, .25); border-inline: 0; border-radius: 0; background: transparent; color: #efb4b9; font-size: 13px; line-height: 1.5; margin: 12px 0 0; }
 
 
 .site-page { padding: 0 22px; }

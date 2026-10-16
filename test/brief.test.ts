@@ -4,9 +4,6 @@ import {
   BriefRecommendationSchema,
   BriefLinkSchema,
   DailyBriefSubmissionSchema,
-  MAX_BRIEF_LINK_SNIPPET_LENGTH,
-  MAX_BRIEF_LINK_TITLE_LENGTH,
-  MAX_THESIS_LENGTH,
 } from '../src/domain/brief'
 import { parseThesisMarkdown } from '../src/domain/thesis-markdown'
 import { dailyBriefFixture } from './fixtures/market'
@@ -15,7 +12,6 @@ describe('brief contract', () => {
 
   it('holds every field to its envelope and refuses unknown ones', () => {
     const recommendation = dailyBriefFixture.recommendations[0]!
-    expect(BriefRecommendationSchema.safeParse({ ...recommendation, thesis: 'x'.repeat(MAX_THESIS_LENGTH + 1) }).success).toBe(false)
     expect(BriefRecommendationSchema.safeParse({ ...recommendation, symbol: 'nvda' }).data?.symbol).toBe('NVDA')
     expect(BriefRecommendationSchema.safeParse({ ...recommendation, extra: 1 }).success).toBe(false)
     expect(DailyBriefSubmissionSchema.safeParse({ ...dailyBriefFixture }).success).toBe(false)
@@ -30,15 +26,12 @@ describe('brief contract', () => {
     }
   })
 
-  it('takes an optional headline and snippet on a link, and refuses rather than cuts them', () => {
+  // The exact length bounds are held by brief-contract.test.ts against the shared envelope.
+  it('takes an optional headline and snippet on a link, and refuses blank or control text', () => {
     const url = 'https://www.reuters.com/markets/us/capex-2026'
     // A link stored before headlines existed, or sent by a producer that has none, still parses.
     expect(BriefLinkSchema.parse({ url })).toEqual({ url })
-    const full = { url, title: 'x'.repeat(MAX_BRIEF_LINK_TITLE_LENGTH), snippet: 'y'.repeat(MAX_BRIEF_LINK_SNIPPET_LENGTH) }
-    expect(BriefLinkSchema.parse(full)).toEqual(full)
     for (const refused of [
-      { url, title: 'x'.repeat(MAX_BRIEF_LINK_TITLE_LENGTH + 1) },
-      { url, snippet: 'y'.repeat(MAX_BRIEF_LINK_SNIPPET_LENGTH + 1) },
       { url, title: '' },
       { url, title: '   ' },
       { url, snippet: '\t' },

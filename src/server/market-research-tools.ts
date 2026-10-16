@@ -3,7 +3,7 @@ import createYahooFinance from 'yahoo-finance2/createYahooFinance'
 import chart, { type ChartResultArray } from 'yahoo-finance2/modules/chart'
 
 import { marketDate } from '../domain/catalyst'
-import { EQUITY_SYMBOL_REGEX } from '../domain/instrument'
+import { EquitySymbolSchema } from '../domain/instrument'
 import { addDays, ISO_DATE_REGEX, isValidIsoDate } from '../domain/iso-date'
 import {
   DEFAULT_PRICE_HISTORY_LOOKBACK_DAYS,
@@ -48,8 +48,8 @@ function finite(value: number | null | undefined): number | undefined {
 }
 
 function normalizeSymbol(value: string): string {
-  const symbol = value.trim().toUpperCase()
-  if (!EQUITY_SYMBOL_REGEX.test(symbol)) throw new CallerVisibleError('Market research symbol is invalid.')
+  const symbol = EquitySymbolSchema.safeParse(value).data
+  if (symbol === undefined) throw new CallerVisibleError('Market research symbol is invalid.')
   return symbol
 }
 
@@ -306,21 +306,14 @@ export async function readPriceHistory(
   return result
 }
 
-function createPriceHistoryReadTool(
-  provider: PriceHistoryProvider,
-): AgentTool<typeof PriceHistoryReadParameters> {
-  return {
+export function createMarketResearchTools(): AgentTool<typeof PriceHistoryReadParameters>[] {
+  const provider = createYahooPriceHistoryProvider(createYahooClient())
+  return [{
     // The alignment sentence is the one thing a model cannot infer from the payload and must not
     // guess at: a study read one row out is worse than no study at all.
     description: `Dividend-adjusted Yahoo history with optional local SMA, EMA, RSI, MACD, or Bollinger studies; not a current quote. A study series carries only the values it has. ${STUDY_ALIGNMENT_NOTE}`,
     execute: async (params) => textResult(await readPriceHistory(params, provider)),
     name: 'read_price_history',
     parameters: PriceHistoryReadParameters,
-  }
-}
-
-export function createMarketResearchTools(
-  provider: PriceHistoryProvider = createYahooPriceHistoryProvider(createYahooClient()),
-) {
-  return [createPriceHistoryReadTool(provider)]
+  }]
 }

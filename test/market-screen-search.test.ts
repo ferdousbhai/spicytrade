@@ -9,7 +9,6 @@ import { renderMarketScreen } from './fixtures/render-market-screen'
 
 afterEach(() => {
   cleanup()
-  vi.unstubAllGlobals()
 })
 
 describe('searching beyond the loaded watchlist', () => {

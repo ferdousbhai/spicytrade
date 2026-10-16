@@ -119,7 +119,9 @@ describe('order replacement source boundary', () => {
         { DB: store.database }, { kind: 'replace_order', orderId: '123', limitPrice: 4.8 }, 'TEST', brokerCredential,
       )
       expect(resolved.payload).toEqual({ ...sourcePayload, price: '4.80' })
-      expect(resolved.optionContracts).toEqual([{ sharesPerContract: 100, symbol: contract }])
+      expect(resolved.optionContracts).toEqual([{
+        expiry: '2026-09-18', optionType: 'C', sharesPerContract: 100, strike: 700, symbol: contract, underlying: 'SPY',
+      }])
       const chainReads = tastytrade.tastyRequest.mock.calls.filter(([, path]) => String(path).startsWith('/option-chains/'))
       expect(chainReads).toHaveLength(1)
     } finally {

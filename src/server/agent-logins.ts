@@ -15,6 +15,7 @@ import {
   constantTimeDigestMatch,
   issueMcpToken,
   McpTokenLimitError,
+  presentedBearer,
   revokeMcpToken,
 } from './mcp-tokens'
 import { ConfigurationError } from './secrets'
@@ -144,18 +145,13 @@ export async function exchangeAgentLogin(request: Request, env: AppEnv, now = ne
 }
 
 /**
- * Drop approvals that lapsed unredeemed. A member's own lapsed rows also go whenever they approve
- * another; this catches the ones whose CLI never came back. A lapsed row can no longer be
- * redeemed, so deleting it loses nothing.
- */
-/**
  * A computer signing itself out: the bearer token it presents is revoked, and only that one, so
  * holding a token is authority over nothing but itself. An unknown or already revoked token is the
  * same 401 as any refused token.
  */
 export async function signOutAgentLogin(request: Request, env: AppEnv, now = new Date()): Promise<Response> {
   if (!env.DB) return unavailable()
-  const presented = /^Bearer (\S+)$/.exec(request.headers.get('authorization') ?? '')?.[1]
+  const presented = presentedBearer(request)
   try {
     const identity = presented ? await authenticateMcpToken(env.DB, presented, now) : undefined
     if (!identity) return jsonNoStore({ error: 'This computer is not signed in.' }, { status: 401 })
@@ -167,6 +163,11 @@ export async function signOutAgentLogin(request: Request, env: AppEnv, now = new
   }
 }
 
+/**
+ * Drop approvals that lapsed unredeemed. A member's own lapsed rows also go whenever they approve
+ * another; this catches the ones whose CLI never came back. A lapsed row can no longer be
+ * redeemed, so deleting it loses nothing.
+ */
 export async function sweepExpiredAgentLogins(env: AppEnv, now = new Date()): Promise<number> {
   // Scheduled only: a missing binding is a misconfiguration to name, not a sweep of zero rows.
   if (!env.DB) throw new ConfigurationError('BindingMissing', 'DB')

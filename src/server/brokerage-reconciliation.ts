@@ -95,7 +95,27 @@ export async function claimSubmission(
 
 type SubmissionOutcome =
   | { providerOrderId: string; status: 'executed' }
-  | { errorCode: 'TastytradeApiError' | 'TastytradeOrderRejected'; status: 'failed' }
+  | { errorCode: 'BrokerageSubmissionNotFound' | 'TastytradeApiError' | 'TastytradeOrderRejected'; status: 'failed' }
+
+/**
+ * The one way an `unresolved` row is settled, by a placement or by reconciliation. Conditional on
+ * the row still being unresolved, so whichever settles first wins and the other reads it back.
+ */
+function settleStatement(db: D1Database, id: string, outcome: SubmissionOutcome): D1PreparedStatement {
+  return outcome.status === 'executed'
+    ? db.prepare(
+      "UPDATE broker_submissions SET status = 'executed', error_code = NULL, provider_order_id = ? WHERE id = ? AND status = 'unresolved'",
+    ).bind(outcome.providerOrderId, id)
+    : db.prepare(
+      "UPDATE broker_submissions SET status = 'failed', error_code = ? WHERE id = ? AND status = 'unresolved'",
+    ).bind(outcome.errorCode, id)
+}
+
+function readSettlement(db: D1Database, id: string) {
+  return db.prepare(
+    'SELECT status, provider_order_id FROM broker_submissions WHERE id = ?',
+  ).bind(id).first<{ provider_order_id: string | null; status: string }>()
+}
 
 /**
  * Settle a claimed submission once the broker's answer is definite. Returns whether the row is
@@ -112,18 +132,9 @@ type SubmissionOutcome =
 export async function settleSubmission(env: AppEnv, id: string, outcome: SubmissionOutcome): Promise<boolean> {
   try {
     if (!env.DB) throw new CallerVisibleError('TastytradeReconciliation:store-unavailable')
-    const statement = outcome.status === 'executed'
-      ? env.DB.prepare(
-        "UPDATE broker_submissions SET status = 'executed', error_code = NULL, provider_order_id = ? WHERE id = ? AND status = 'unresolved'",
-      ).bind(outcome.providerOrderId, id)
-      : env.DB.prepare(
-        "UPDATE broker_submissions SET status = 'failed', error_code = ? WHERE id = ? AND status = 'unresolved'",
-      ).bind(outcome.errorCode, id)
-    const update = await statement.run()
+    const update = await settleStatement(env.DB, id, outcome).run()
     if (update.meta.changes === 1) return true
-    const row = await env.DB.prepare(
-      'SELECT status, provider_order_id FROM broker_submissions WHERE id = ?',
-    ).bind(id).first<{ provider_order_id: string | null; status: string }>()
+    const row = await readSettlement(env.DB, id)
     if (row && row.status === outcome.status
       && (outcome.status !== 'executed' || row.provider_order_id === outcome.providerOrderId)) return true
   } catch {
@@ -248,9 +259,7 @@ async function unclaimedOrders(
  * agent an account is still quarantined when it is not.
  */
 async function settledElsewhere(db: D1Database, id: string): Promise<ReconciliationResult> {
-  const row = await db.prepare(
-    'SELECT status, provider_order_id FROM broker_submissions WHERE id = ?',
-  ).bind(id).first<{ provider_order_id: string | null; status: string }>()
+  const row = await readSettlement(db, id)
   const already = 'The action was already reconciled by another request.'
   if (!row) return { detail: already, status: 'none' }
   if (row.status === 'executed') {
@@ -317,9 +326,7 @@ async function reconcileUnderLease(
   )
   if (matches.length !== 1) {
     if (matches.length === 0 && history.complete && now.getTime() - submittedAt.getTime() >= FINAL_ABSENCE_DELAY_MS) {
-      const update = await db.prepare(
-        "UPDATE broker_submissions SET status = 'failed', error_code = 'BrokerageSubmissionNotFound' WHERE id = ? AND status = 'unresolved'",
-      ).bind(stored.id).run()
+      const update = await settleStatement(db, stored.id, { errorCode: 'BrokerageSubmissionNotFound', status: 'failed' }).run()
       if (update.meta.changes === 1) {
         return { actionId: stored.id, detail: 'No matching broker order appeared after the reconciliation window.', status: 'failed' }
       }
@@ -348,14 +355,9 @@ async function reconcileUnderLease(
   // An executed match stores the broker's order id: this row is the only source a later
   // price-only replacement can resolve the order's shape from, exactly as if the placement had
   // settled it directly.
-  const update = await (rejected
-    ? db.prepare(
-      "UPDATE broker_submissions SET status = 'failed', error_code = 'TastytradeOrderRejected' WHERE id = ? AND status = 'unresolved'",
-    ).bind(stored.id)
-    : db.prepare(
-      "UPDATE broker_submissions SET status = 'executed', error_code = NULL, provider_order_id = ? WHERE id = ? AND status = 'unresolved'",
-    ).bind(providerOrderId, stored.id)
-  ).run()
+  const update = await settleStatement(db, stored.id, rejected
+    ? { errorCode: 'TastytradeOrderRejected', status: 'failed' }
+    : { providerOrderId, status: 'executed' }).run()
   if (update.meta.changes !== 1) return settledElsewhere(db, stored.id)
   return {
     actionId: stored.id,

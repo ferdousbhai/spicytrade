@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   instrumentCatalogFromPayload,
@@ -21,11 +21,6 @@ import { markdownBrowser } from './fake-browser'
 import { migrationStore, type SqliteD1Store } from './sqlite-d1'
 
 const NOW = new Date('2026-09-01T13:00:00.000Z')
-
-afterEach(() => {
-  vi.restoreAllMocks()
-  vi.unstubAllGlobals()
-})
 
 async function storeWithCatalog(): Promise<SqliteD1Store> {
   const store = await migrationStore()

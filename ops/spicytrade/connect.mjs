@@ -4,7 +4,7 @@ import { z } from 'zod'
 
 import { grantMinter, grantRefused, TastytradeAuthError } from './broker-grants.mjs'
 import { CLIENTS, EXPECTED_TARGET, namesSpicytrade } from './clients.mjs'
-import { CLI_PATH, cliCommand, MCP_SERVER_NAME } from './config.mjs'
+import { CLI_PATH, cliCommand, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME } from './config.mjs'
 import { agentToken, keyringWritable, secretToolInstalled, tastytradeCredentialKind } from './keyring.mjs'
 import { login } from './login.mjs'
 import { CliFailure } from './loopback.mjs'
@@ -13,7 +13,7 @@ import { TOKEN_REQUEST_TIMEOUT_MS, UPSTREAM_TIMEOUT_MS } from './token-refresh.m
 import { checkAgentToken, describeTokenCheck } from './worker.mjs'
 
 /** A verification uses the same stdio transport as the user's harness, and never prints account data. */
-export async function verifyAccount() {
+async function verifyAccount() {
   const child = spawn(process.execPath, [CLI_PATH, 'mcp'], { stdio: ['pipe', 'pipe', 'ignore'] })
   const lines = createInterface({ input: child.stdout })
   const pending = new Map()
@@ -43,7 +43,7 @@ export async function verifyAccount() {
   })
   try {
     const initialized = await request('initialize', {
-      protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'spicytrade-connect', version: '1' },
+      protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'spicytrade-connect', version: '1' },
     })
     if (!initialized.result?.protocolVersion || initialized.error) throw new CliFailure('The MCP connection could not be verified.')
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`)

@@ -8,7 +8,6 @@ import { renderMarketScreen } from './fixtures/render-market-screen'
 
 afterEach(() => {
   cleanup()
-  vi.unstubAllGlobals()
 })
 
 function card(overrides: Partial<SymbolEvidence> = {}): SymbolEvidence {

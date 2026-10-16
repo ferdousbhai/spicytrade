@@ -162,7 +162,7 @@ export const EARNINGS_SAME_REPORT_DAYS = Math.floor(QUARTER_DAYS / 2)
  * this keeps a calendar the browser merges from several reads -- a fresh search's answer among
  * them -- in agreement.
  */
-export function withoutSupersededEstimates(catalysts: readonly Catalyst[]): Catalyst[] {
+function withoutSupersededEstimates(catalysts: readonly Catalyst[]): Catalyst[] {
   const confirmedDays = new Map<string, number[]>()
   for (const catalyst of catalysts) {
     if (catalyst.kind !== 'earnings' || catalyst.confidence !== 'confirmed') continue
@@ -237,7 +237,7 @@ export function upcomingCatalystsForSymbol(
 const CATALYST_NEAR_TERM_DAYS = 30
 
 /** A row from the broker's earnings feed, which reports earnings and nothing else. */
-export function isBrokerCatalyst(catalyst: Catalyst): boolean {
+function isBrokerCatalyst(catalyst: Catalyst): boolean {
   return catalyst.id.startsWith('tastytrade:')
 }
 

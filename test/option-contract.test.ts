@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { type JsonObject } from '../src/domain/json-payload'
 import {
-  equityOptionContractFromChain,
   equityOptionContractFromChainTuple,
   resolveEquityOptionTuples,
 } from '../src/server/option-contract'
@@ -49,49 +48,49 @@ function payload(items: JsonObject[]) {
 
 describe('equity option contract resolution', () => {
   it('resolves one exact active standard contract from detailed instruments', () => {
-    expect(equityOptionContractFromChain(payload([
+    expect(equityOptionContractFromChainTuple(payload([
       option(),
       option({ symbol: 'NVDA  260814P00250000', 'option-type': 'P' }),
       option({ symbol: 'NVDA  260814C00255000', 'strike-price': '255.0' }),
-    ]), action)).toEqual({ symbol: 'NVDA  260814C00250000', sharesPerContract: 100 })
+    ]), action, { opening: true })).toEqual({ symbol: 'NVDA  260814C00250000', sharesPerContract: 100 })
   })
 
   it('rejects adjusted, inactive, closing-only, and ambiguous matches', () => {
-    expect(() => equityOptionContractFromChain(payload([
+    expect(() => equityOptionContractFromChainTuple(payload([
       option({ 'option-chain-type': 'Adjusted' }),
-    ]), action)).toThrow('Available standard expirations: none')
-    expect(() => equityOptionContractFromChain(payload([
+    ]), action, { opening: true })).toThrow('Available standard expirations: none')
+    expect(() => equityOptionContractFromChainTuple(payload([
       option({ active: false }),
-    ]), action)).toThrow('inactive')
-    expect(() => equityOptionContractFromChain(payload([
+    ]), action, { opening: true })).toThrow('inactive')
+    expect(() => equityOptionContractFromChainTuple(payload([
       option({ 'is-closing-only': true }),
-    ]), action)).toThrow('closing-only')
-    expect(() => equityOptionContractFromChain(payload([
+    ]), action, { opening: true })).toThrow('closing-only')
+    expect(() => equityOptionContractFromChainTuple(payload([
       option({ 'is-closing-only': undefined }),
-    ]), action)).toThrow('opening status could not be verified')
-    expect(() => equityOptionContractFromChain(payload([
+    ]), action, { opening: true })).toThrow('opening status could not be verified')
+    expect(() => equityOptionContractFromChainTuple(payload([
       option({ 'is-closing-only': true }),
       option({ active: false, symbol: 'NVDA2 260814C00250000' }),
-    ]), action)).toThrow('closing-only')
-    expect(() => equityOptionContractFromChain(payload([
+    ]), action, { opening: true })).toThrow('closing-only')
+    expect(() => equityOptionContractFromChainTuple(payload([
       option(), option({ symbol: 'NVDA2 260814C00250000' }),
-    ]), action)).toThrow('ambiguous')
-    expect(() => equityOptionContractFromChain(payload([
+    ]), action, { opening: true })).toThrow('ambiguous')
+    expect(() => equityOptionContractFromChainTuple(payload([
       option({ 'shares-per-contract': 0.5 }),
-    ]), action)).toThrow('multiplier could not be verified')
-    expect(() => equityOptionContractFromChain(payload([
+    ]), action, { opening: true })).toThrow('multiplier could not be verified')
+    expect(() => equityOptionContractFromChainTuple(payload([
       option(), option({ 'shares-per-contract': 10 }),
-    ]), action)).toThrow('ambiguous')
+    ]), action, { opening: true })).toThrow('ambiguous')
   })
 
   it('reports valid expirations or nearby strikes without guessing', () => {
-    expect(() => equityOptionContractFromChain(payload([
+    expect(() => equityOptionContractFromChainTuple(payload([
       option({ 'expiration-date': '2026-08-21' }),
-    ]), action)).toThrow('Available standard expirations: 2026-08-21')
-    expect(() => equityOptionContractFromChain(payload([
+    ]), action, { opening: true })).toThrow('Available standard expirations: 2026-08-21')
+    expect(() => equityOptionContractFromChainTuple(payload([
       option({ 'strike-price': '245' }),
       option({ 'strike-price': '255', symbol: 'NVDA  260814C00255000' }),
-    ]), action)).toThrow('Nearest call strikes: 245, 255')
+    ]), action, { opening: true })).toThrow('Nearest call strikes: 245, 255')
   })
 
   it('allows a standard option root to differ from its underlying and returns its exact streamer symbol', () => {

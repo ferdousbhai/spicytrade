@@ -437,11 +437,16 @@ type InternalInstrumentCatalogChunkRefresh = InstrumentCatalogRefresh & {
   totalCount: number
 }
 
-async function internalInstrumentCatalogChunk(
+/**
+ * One bounded ops chunk of the internal watchlist's catalog, put to the broker. A preview
+ * (`persist: false`) reports what the broker answers without writing; an apply persists it. One
+ * chunk stays below D1's per-invocation query limit.
+ */
+export async function internalInstrumentCatalogChunkFromTastytrade(
   env: AppEnv,
   offset: number,
-  now: Date,
   persist: boolean,
+  now = new Date(),
 ): Promise<InternalInstrumentCatalogChunkRefresh> {
   if (!Number.isSafeInteger(offset) || offset < 0) throw new CallerVisibleError('InstrumentCatalog:invalid-offset')
   const symbols = await readInternalWatchlistCatalogCandidates(env)
@@ -458,23 +463,6 @@ async function internalInstrumentCatalogChunk(
     requestedCount: loaded.requestedCount,
     totalCount: symbols.length,
   }
-}
-
-export async function previewInternalInstrumentCatalogChunkFromTastytrade(
-  env: AppEnv,
-  offset: number,
-  now = new Date(),
-): Promise<InternalInstrumentCatalogChunkRefresh> {
-  return internalInstrumentCatalogChunk(env, offset, now, false)
-}
-
-/** One bounded ops chunk stays below D1's per-invocation query limit. */
-export async function refreshInternalInstrumentCatalogChunkFromTastytrade(
-  env: AppEnv,
-  offset: number,
-  now = new Date(),
-): Promise<InternalInstrumentCatalogChunkRefresh> {
-  return internalInstrumentCatalogChunk(env, offset, now, true)
 }
 
 async function refreshMissingTastytradeInstruments(env: AppEnv, symbols: readonly string[]): Promise<void> {

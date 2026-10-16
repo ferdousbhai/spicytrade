@@ -40,11 +40,3 @@ export function d1Result<T>(results: T[], changes = 0): D1Result<T> {
     success: true,
   }
 }
-
-/**
- * A database the portfolio guard must never touch: it reads no D1 state, only the broker
- * snapshot. Every call on this throws, so a guard that starts reading one fails loudly.
- */
-export function untouchedDb(): D1Database {
-  return unsupportedDatabase()
-}

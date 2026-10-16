@@ -7,7 +7,6 @@ import { renderMarketScreen } from './fixtures/render-market-screen'
 
 afterEach(() => {
   cleanup()
-  vi.unstubAllGlobals()
 })
 
 /** A viewport that answers only the phone breakpoint, the way a 400px window does. */

@@ -7,5 +7,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts'],
+    // Every test starts with real globals and unspied functions, so no file restores them itself.
+    restoreMocks: true,
+    unstubGlobals: true,
   },
 })

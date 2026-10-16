@@ -8,7 +8,6 @@ import { ConnectScreen } from '../src/components/connect-screen'
 
 afterEach(() => {
   cleanup()
-  vi.unstubAllGlobals()
 })
 
 const UNEXPECTED = 'spicytrade answered with something unexpected. Reload the page and try again.'

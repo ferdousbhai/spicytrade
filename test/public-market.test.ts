@@ -11,8 +11,6 @@ import {
 } from '../src/server/public-market-universe'
 
 afterEach(() => {
-  vi.restoreAllMocks()
-  vi.unstubAllGlobals()
   vi.resetModules()
 })
 

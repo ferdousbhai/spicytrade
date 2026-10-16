@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { CATALYST_HORIZON_DAYS } from '../src/domain/catalyst'
 import { MAX_EXA_RESULTS, runExaCatalystSearch } from '../src/server/catalyst-research-exa'
@@ -25,11 +25,6 @@ type ExaEventFixture = {
   timing?: string
   title: string
 }
-
-afterEach(() => {
-  vi.restoreAllMocks()
-  vi.unstubAllGlobals()
-})
 
 function page(date: string): string {
   return `Bloom Energy said the investor day is scheduled for ${date} at its headquarters.`

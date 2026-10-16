@@ -20,7 +20,6 @@ beforeEach(async () => {
 
 afterEach(() => {
   store.close()
-  vi.restoreAllMocks()
 })
 
 describe('year candle store', () => {

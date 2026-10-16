@@ -8,6 +8,11 @@ export const nyTime = new Intl.DateTimeFormat('en-US', {
   hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York', timeZoneName: 'short',
 })
 
+/** The New York wall clock with its weekday, for the market-session status. */
+export const nyWeekdayTime = new Intl.DateTimeFormat('en-US', {
+  hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York', timeZoneName: 'short', weekday: 'short',
+})
+
 /**
  * The calendar day of an instant, in New York. For a stored instant only: a date-only value such
  * as a catalyst's day has no time zone to convert from, and is formatted as the day it names.

@@ -21,8 +21,8 @@ import {
 export const SNAPSHOT_REFETCH_MS = PUBLIC_RESPONSE_MAX_AGE_SECONDS * 1_000
 
 /** Attempts after the first, and the wait before each. */
-export const SNAPSHOT_RETRY_LIMIT = 1
-export const SNAPSHOT_RETRY_DELAY_MS = 1_000
+const SNAPSHOT_RETRY_LIMIT = 1
+const SNAPSHOT_RETRY_DELAY_MS = 1_000
 
 export function snapshotSyncQueryOptions(audience: SnapshotAudience) {
   return {

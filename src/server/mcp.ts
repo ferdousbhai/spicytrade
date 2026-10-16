@@ -349,6 +349,13 @@ function serveMcp(
  */
 const PROTECTED_RESOURCE_METADATA_PATH = `/.well-known/oauth-protected-resource${MCP_PATH}`
 
+/**
+ * The challenge description for a fault on this side (the token store or the auth runtime), as
+ * opposed to a credential the caller can fix. `ops/spicytrade/config.mjs` (WORKER_FAULT_CHALLENGE)
+ * reads this text to wait the fault out rather than sign the computer in again -- change both.
+ */
+const SERVER_FAULT_DESCRIPTION = 'spicytrade could not verify this request.'
+
 /** A 401 `invalid_token` challenge that names the discovery document, for every refusal below. */
 function authChallenge(request: Request, description: string): Response {
   return bearerAuthChallengeResponse(new OAuthError('invalid_token', description), {
@@ -361,15 +368,13 @@ function authChallenge(request: Request, description: string): Response {
  * challenge rather than an escaped exception, which the platform would turn into a bare 500 with
  * no challenge and no named log. Only the error's name is recorded; D1 detail can carry a token
  * id or user id.
- */
-/**
+ *
  * A 401 like any refusal, so a fault here can never read as access; only its description tells a
- * caller it was this server's trouble. `ops/spicytrade/config.mjs` (WORKER_FAULT_CHALLENGE) reads
- * that description to wait the fault out rather than sign the computer in again -- change both.
+ * caller it was this server's trouble.
  */
 function callerLookupFailed(request: Request, errorName: string): Response {
   console.error('McpCallerLookupFailed', errorName)
-  return authChallenge(request, 'spicytrade could not verify this request.')
+  return authChallenge(request, SERVER_FAULT_DESCRIPTION)
 }
 
 /**
@@ -426,7 +431,7 @@ export async function handleMcpRequest(request: Request, env: AppEnv, ctx: McpEx
     // would be the one shape that risks opening the surface. The outage is observable in this log
     // line rather than in the status code.
     console.error('McpAuthUnavailable', errorName(toError(error)))
-    return authChallenge(request, 'spicytrade could not verify this request.')
+    return authChallenge(request, SERVER_FAULT_DESCRIPTION)
   }
 
   let claims

@@ -11,8 +11,6 @@ import { MAX_QUERY_LENGTH, searchInstrumentCatalog, searchableQuery, symbolCandi
 import { readInternalWatchlist } from '../src/server/internal-watchlist'
 
 afterEach(() => {
-  vi.restoreAllMocks()
-  vi.unstubAllGlobals()
   vi.resetModules()
 })
 

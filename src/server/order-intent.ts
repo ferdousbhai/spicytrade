@@ -16,11 +16,7 @@ import {
   sameOrderPayload,
   type OrderPayload,
 } from './order-payload'
-import {
-  resolveEquityOptionContract,
-  resolveEquityOptionTuples,
-  type EquityOptionContract,
-} from './option-contract'
+import { resolveEquityOptionTuples, type EquityOptionContract } from './option-contract'
 import { type BrokerCredential } from './broker-credential'
 import { CallerVisibleError } from './caller-visible-error'
 
@@ -52,12 +48,10 @@ async function resolveFreshOrder(
     return { optionContracts: [], payload: buildOrderPayload(action, [action.symbol]) }
   }
   if (action.kind === 'place_option_order') {
-    const contract = mode === 'execution'
-      ? await resolveEquityOptionContract(env, action)
-      : (await resolveEquityOptionTuples(env, [
-        { underlying: action.underlying, expiry: action.expiry, optionType: action.optionType, strike: action.strike },
-      ], { identityOnly: true }))[0]!
-    return { optionContracts: [contract], payload: buildOrderPayload(action, [contract.symbol]) }
+    const [contract] = await resolveEquityOptionTuples(env, [
+      { underlying: action.underlying, expiry: action.expiry, optionType: action.optionType, strike: action.strike },
+    ], mode === 'execution' ? { opening: action.action.endsWith('to Open') } : { identityOnly: true })
+    return { optionContracts: [contract!], payload: buildOrderPayload(action, [contract!.symbol]) }
   }
   const contracts = await resolveEquityOptionTuples(env, [
     { underlying: action.underlying, expiry: action.expiry, optionType: action.optionType, strike: action.longStrike },

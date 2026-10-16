@@ -1,64 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
-import { type JsonValue } from '../src/domain/json-payload'
-
 import { SPICE_GUIDE } from '../src/server/doctrine'
 import {
   handleMcpRequest,
   McpCallerLookupError,
   resolveMcpCaller,
-  type McpExecutionContext,
 } from '../src/server/mcp'
 import { mcpEndpointRedirect } from '../src/server/mcp-endpoint-redirect'
 import { resetBrokerApi, setBrokerApi } from '../src/server/tastytrade'
 import { stubBroker } from './broker-stub'
 import { unsupportedDatabase } from './fake-d1'
-
-/**
- * Every caller is now a row in `user_mcp_tokens`, so a test that reaches `/mcp` needs a real
- * store and a real issued token. `ownerHarness` seeds the owner; `harness('member@example.com')`
- * seeds someone else, which is what separates the two tool tiers.
- */
-async function harness(email: string) {
-  const { migrationStore } = await import('./sqlite-d1')
-  const { issueMcpToken } = await import('../src/server/mcp-tokens')
-  const store = await migrationStore()
-  store.sqlite.prepare(
-    `INSERT INTO "user" ("id", "name", "email", "emailVerified", "createdAt", "updatedAt")
-     VALUES (?, ?, ?, 1, ?, ?)`,
-  ).run('member-1', 'Member', email, 'now', 'now')
-  const issued = await issueMcpToken(store.database, 'member-1', 'laptop')
-  return { env: { DB: store.database }, store, token: issued.token }
-}
-
-async function ownerHarness() {
-  const { OWNER_EMAIL } = await import('../src/server/auth')
-  return harness(OWNER_EMAIL)
-}
-
-type JsonRpcFrame = { id: number; jsonrpc: '2.0'; method: string; params?: Record<string, JsonValue> }
-
-function mcpRequest(body: JsonRpcFrame | Record<string, never>, token?: string): Request {
-  const headers = new Headers({
-    Accept: 'application/json, text/event-stream',
-    'content-type': 'application/json',
-  })
-  if (token !== undefined) headers.set('Authorization', `Bearer ${token}`)
-  return new Request('https://spicy.trade/mcp', {
-    body: JSON.stringify(body),
-    headers,
-    method: 'POST',
-  })
-}
-
-/** Responses come back as an SSE frame; the JSON body starts at the first brace. */
-async function mcpPayload(response: Response) {
-  const body = await response.text()
-  return JSON.parse(body.slice(body.indexOf('{')))
-}
-
-const executionContext: McpExecutionContext = { props: undefined, waitUntil: () => undefined }
+import { executionContext, harness, mcpPayload, mcpRequest, ownerHarness } from './mcp-harness'
 
 describe('MCP bearer authentication', () => {
   it('admits exactly the issued token and identifies who presented it', async () => {
@@ -283,8 +236,7 @@ describe('MCP tool tiers', () => {
   })
 
   it('gives the owner the watchlist management surface', async () => {
-    const { OWNER_EMAIL } = await import('../src/server/auth')
-    const { store, token } = await harness(OWNER_EMAIL)
+    const { store, token } = await ownerHarness()
     const names = await toolNames(token, store.database)
     for (const ownerOnly of OWNER_ONLY) expect(names).toContain(ownerOnly)
     store.close()

@@ -14,9 +14,9 @@ import { useAudienceMarket } from '../data/use-audience-market'
 import { useWorkspaceFavorites } from '../data/use-workspace-favorites'
 import { type Viewer, useViewer } from './auth-gate'
 import { MarketScreen } from './market-screen'
+import { LegalLinks } from './site-page'
 import { TopBar } from './top-bar'
-import { useWebMcpTools } from './webmcp-tools'
-import { SUPPORT_EMAIL } from '../domain/site'
+import { type AppView, useWebMcpTools } from './webmcp-tools'
 
 const ConnectScreen = lazy(async () => {
   const { ConnectScreen: Screen } = await import('./connect-screen')
@@ -178,7 +178,7 @@ export function SpiceApp() {
           </main>
         </div>
         <nav aria-label="Primary navigation" className="bottom-nav items-center text-muted-foreground">
-          <PrimaryLink icon={<Gauge />} label="Watch" to="/watch" />
+          <PrimaryLink icon={<Gauge />} label="Watch" to={WATCH_PATH} />
           <PrimaryLink icon={<Newspaper />} label="Recommendations" to="/recommendations" />
           <PrimaryLink icon={<Plug />} label="Connect" to="/connect" />
         </nav>
@@ -188,7 +188,7 @@ export function SpiceApp() {
 }
 
 /** The router marks the current view `aria-current="page"`, which is also what the nav styles key on. */
-function PrimaryLink({ icon, label, to }: { icon: ReactNode; label: string; to: '/watch' | '/recommendations' | '/connect' }) {
+function PrimaryLink({ icon, label, to }: { icon: ReactNode; label: string; to: AppView }) {
   return (
     <Link
       className="primary-link inline-flex flex-1 rounded-md items-center justify-center whitespace-nowrap transition-all focus-visible:outline-1 focus-visible:outline-ring [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
@@ -300,10 +300,7 @@ export function ConnectView() {
       {/* The top bar has no room for these on a phone, so the view about the reader's own
           account carries them for every width. */}
       <nav aria-label="Legal and support" className="connect-footer">
-        <a href={`mailto:${SUPPORT_EMAIL}`}>Support</a>
-        <Link to="/terms">Terms</Link>
-        <Link to="/privacy">Privacy</Link>
-        <Link to="/disclosures">Disclosures</Link>
+        <LegalLinks />
       </nav>
     </>
   )

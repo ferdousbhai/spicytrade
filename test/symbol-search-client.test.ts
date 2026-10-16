@@ -9,7 +9,6 @@ import { marketSnapshotFixture } from './fixtures/market'
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
-  vi.unstubAllGlobals()
 })
 
 it('distinguishes a rejected query from a completed search with no match', async () => {

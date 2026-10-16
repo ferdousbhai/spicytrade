@@ -741,11 +741,10 @@ export class MarketFeedCore {
       if (!type) throw new FeedFrameError('Unexpected feed channel.')
       if (message.service !== 'FEED') throw new FeedFrameError('Unexpected channel service.')
       JsonObjectSchema.parse(message.parameters)
-      const channel = messageChannel
-      this.openedChannels.add(channel)
-      this.configuredChannels.delete(channel)
+      this.openedChannels.add(messageChannel)
+      this.configuredChannels.delete(messageChannel)
       if (!await this.sendToUpstream(socket, {
-        type: 'FEED_SETUP', channel, acceptAggregationPeriod: 0.25,
+        type: 'FEED_SETUP', channel: messageChannel, acceptAggregationPeriod: 0.25,
         acceptDataFormat: 'COMPACT', acceptEventFields: { [type]: [...FIELDS[type]] },
       })) return
       await this.reconcile()
@@ -844,16 +843,15 @@ export class MarketFeedCore {
     ))
   }
 
-  private broadcastFeedData(data: JsonValue[], channelType: FeedType): void {
+  private broadcastFeedData(data: JsonValue[], type: FeedType): void {
     if (!data.length || data.length % 2 !== 0) throw new FeedFrameError('Malformed upstream feed envelope.')
     const batches: JsonObject[][] = []
     for (let offset = 0; offset < data.length; offset += 2) {
-      const type = TextFrameSchema.parse(data[offset])
-      if (type !== channelType) throw new FeedFrameError('Feed descriptor does not match its channel.')
-      batches.push(streamRows(channelType, data[offset + 1]))
+      const descriptor = TextFrameSchema.parse(data[offset])
+      if (descriptor !== type) throw new FeedFrameError('Feed descriptor does not match its channel.')
+      batches.push(streamRows(type, data[offset + 1]))
     }
     const rows = batches.flat()
-    const type = channelType
     if (type === 'Greeks') {
       for (const row of rows) {
         const event = optionGreeksFromRow(row)

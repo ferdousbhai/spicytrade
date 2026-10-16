@@ -2,10 +2,11 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 
 import { authIssuerFor, getAuthRuntime, mcpResourceIdentifier } from '../src/server/auth'
 import { type AppEnv } from '../src/server/env'
-import { handleMcpRequest, type McpExecutionContext } from '../src/server/mcp'
+import { handleMcpRequest } from '../src/server/mcp'
 import { issueMcpToken, revokeMcpToken } from '../src/server/mcp-tokens'
 import { resetBrokerApi, setBrokerApi } from '../src/server/tastytrade'
 import { stubBroker } from './broker-stub'
+import { executionContext, mcpRequest, TOOLS_LIST } from './mcp-harness'
 import { migrationStore, seedMember, type SqliteD1Store } from './sqlite-d1'
 
 /*
@@ -14,7 +15,6 @@ import { migrationStore, seedMember, type SqliteD1Store } from './sqlite-d1'
  * The runtime is cached per isolate, so the file shares one store.
  */
 const BASE_URL = 'https://spicy.trade'
-const executionContext: McpExecutionContext = { props: undefined, waitUntil: () => undefined }
 
 let store: SqliteD1Store
 let env: AppEnv
@@ -34,7 +34,6 @@ afterAll(() => store.close())
 
 afterEach(() => {
   resetBrokerApi()
-  vi.restoreAllMocks()
 })
 
 async function accessTokenFor(sub: string): Promise<string> {
@@ -45,23 +44,11 @@ async function accessTokenFor(sub: string): Promise<string> {
   return token
 }
 
-function toolsList(authorization: string): Request {
-  return new Request(`${BASE_URL}/mcp`, {
-    body: JSON.stringify({ id: 1, jsonrpc: '2.0', method: 'tools/list', params: {} }),
-    headers: {
-      Accept: 'application/json, text/event-stream',
-      Authorization: authorization,
-      'content-type': 'application/json',
-    },
-    method: 'POST',
-  })
-}
-
 describe('MCP OAuth callers', () => {
   it('serves a verified subject who is a member', async () => {
     seedMember(store, 'oauth-member')
     setBrokerApi(stubBroker())
-    const response = await handleMcpRequest(toolsList(`Bearer ${await accessTokenFor('oauth-member')}`), env, executionContext)
+    const response = await handleMcpRequest(mcpRequest(TOOLS_LIST, await accessTokenFor('oauth-member')), env, executionContext)
     expect(response.status).toBe(200)
   })
 
@@ -72,7 +59,7 @@ describe('MCP OAuth callers', () => {
     store.sqlite.prepare('DELETE FROM "user" WHERE id = ?').run('deleted-member')
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
-    const response = await handleMcpRequest(toolsList(`Bearer ${token}`), env, executionContext)
+    const response = await handleMcpRequest(mcpRequest(TOOLS_LIST, token), env, executionContext)
     expect(response.status).toBe(401)
     expect(response.headers.get('WWW-Authenticate')).toContain('invalid_token')
     expect(response.headers.get('WWW-Authenticate'))
@@ -94,7 +81,7 @@ describe('MCP OAuth callers', () => {
     })
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
-    const response = await handleMcpRequest(toolsList(`Bearer ${token}`), env, executionContext)
+    const response = await handleMcpRequest(mcpRequest(TOOLS_LIST, token), env, executionContext)
     expect(response.status).toBe(401)
     expect(response.headers.get('WWW-Authenticate')).toContain('spicytrade could not verify this request.')
     expect(logged.mock.calls).toEqual([['McpCallerLookupFailed', 'D1Error']])
@@ -104,13 +91,13 @@ describe('MCP OAuth callers', () => {
     seedMember(store, 'minted-member')
     setBrokerApi(stubBroker())
     const issued = await issueMcpToken(store.database, 'minted-member', 'laptop')
-    const live = await handleMcpRequest(toolsList(`bearer ${issued.token}`), env, executionContext)
+    const live = await handleMcpRequest(mcpRequest(TOOLS_LIST, issued.token, 'bearer'), env, executionContext)
     expect(live.status).toBe(200)
 
     await revokeMcpToken(store.database, 'minted-member', issued.tokenMetadata.tokenId)
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     for (const scheme of ['Bearer', 'bearer', 'BEARER']) {
-      const revoked = await handleMcpRequest(toolsList(`${scheme} ${issued.token}`), env, executionContext)
+      const revoked = await handleMcpRequest(mcpRequest(TOOLS_LIST, issued.token, scheme), env, executionContext)
       expect(revoked.status).toBe(401)
       expect(revoked.headers.get('WWW-Authenticate')).toContain('invalid_token')
     }

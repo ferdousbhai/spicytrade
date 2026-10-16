@@ -54,13 +54,9 @@ function indexResult(symbols: string[]): WatchlistReadResult {
   return { fetchedAt: new Date().toISOString(), mode: 'index', source: 'spice', status: 'ok', symbols }
 }
 
-/** The owner's index: the maintained list itself, including names held back from readers. */
-async function readWatchlistIndex(env: AppEnv): Promise<WatchlistReadResult> {
-  return indexResult((await readInternalWatchlist(env)).map((item) => item.symbol))
-}
-
 async function readWatchlist(env: AppEnv, symbol?: string): Promise<WatchlistReadResult> {
-  if (!symbol) return readWatchlistIndex(env)
+  // The owner's index: the maintained list itself, including names held back from readers.
+  if (!symbol) return indexResult((await readInternalWatchlist(env)).map((item) => item.symbol))
   const fetchedAt = new Date().toISOString()
   const details = await readInternalWatchlistSymbolDetails(env, symbol)
   return details

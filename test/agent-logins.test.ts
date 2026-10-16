@@ -35,7 +35,6 @@ beforeEach(async () => {
 
 afterEach(() => {
   store.close()
-  vi.restoreAllMocks()
 })
 
 function random32(): string {

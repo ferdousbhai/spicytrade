@@ -3,32 +3,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   brokerCredentialFromHeaders,
 } from '../src/server/broker-credential'
-import { handleMcpRequest, type McpExecutionContext } from '../src/server/mcp'
-import { type JsonObject } from '../src/domain/json-payload'
+import { handleMcpRequest } from '../src/server/mcp'
 import { stubBrokerGate } from './broker-stub'
-
-const executionContext: McpExecutionContext = { props: undefined, waitUntil: () => undefined }
-
-function mcpRequest(method: string, params: JsonObject, token: string): Request {
-  return new Request('https://spice.test/mcp', {
-    body: JSON.stringify({ id: 1, jsonrpc: '2.0', method, params }),
-    headers: {
-      Accept: 'application/json, text/event-stream',
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    method: 'POST',
-  })
-}
-
-async function mcpPayload(response: Response) {
-  const body = await response.text()
-  return JSON.parse(body.slice(body.indexOf('{')))
-}
+import { executionContext, mcpPayload, mcpRequest, ownerHarness, TOOLS_LIST } from './mcp-harness'
 
 afterEach(() => {
-  vi.restoreAllMocks()
-  vi.unstubAllGlobals()
   vi.resetModules()
 })
 
@@ -182,19 +161,10 @@ describe('request-scoped broker credential', () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
     // Every caller is a real token row now; there is no shared secret to stand in for one.
-    const { migrationStore } = await import('./sqlite-d1')
-    const { issueMcpToken } = await import('../src/server/mcp-tokens')
-    const { OWNER_EMAIL } = await import('../src/server/auth')
-    const store = await migrationStore()
-    store.sqlite.prepare(
-      `INSERT INTO "user" ("id", "name", "email", "emailVerified", "createdAt", "updatedAt")
-       VALUES ('owner-1', 'Owner', ?, 1, 'now', 'now')`,
-    ).run(OWNER_EMAIL)
-    const issued = await issueMcpToken(store.database, 'owner-1', 'laptop')
-    const env = { DB: store.database }
+    const { env, store, token } = await ownerHarness()
 
     const listed = await mcpPayload(await handleMcpRequest(
-      mcpRequest('tools/list', {}, issued.token),
+      mcpRequest(TOOLS_LIST, token),
       env,
       executionContext,
     ))
@@ -204,7 +174,9 @@ describe('request-scoped broker credential', () => {
     expect(names).toContain('place_brokerage_order')
 
     const called = await mcpPayload(await handleMcpRequest(
-      mcpRequest('tools/call', { arguments: { type: 'orders' }, name: 'read_account_history' }, issued.token),
+      mcpRequest({
+        id: 2, jsonrpc: '2.0', method: 'tools/call', params: { arguments: { type: 'orders' }, name: 'read_account_history' },
+      }, token),
       env,
       executionContext,
     ))

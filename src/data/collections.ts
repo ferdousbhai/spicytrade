@@ -82,10 +82,9 @@ const PreferenceSchema = z.object({
   id: z.literal('primary'),
   pinnedSymbols: z.array(EquitySymbolSchema).max(MAX_FAVORITE_SYMBOLS),
   selectedByUser: z.boolean().optional(),
+  // Each audience publishes exactly one watchlist, so there is no choice of list to remember. A
+  // `selectedWatchlistId` stored before that may linger in an old row; nothing reads it.
   selectedSymbol: z.string(),
-  // Each audience publishes exactly one watchlist, so there is no choice of list to remember.
-  // Read-compatible only for preferences stored before that; nothing writes or reads it now.
-  selectedWatchlistId: z.string().optional(),
 })
 
 export type Preference = z.infer<typeof PreferenceSchema>

@@ -1,6 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { type AddressInfo } from 'node:net'
+import { type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,6 +9,7 @@ import { z } from 'zod'
 
 import { tokenRetiresAt, UPSTREAM_TIMEOUT_MS } from '../ops/spicytrade/token-refresh.mjs'
 import { fakeSecretTool } from './fake-secret-tool.ts'
+import { closeLoopback, listenLoopback } from './loopback.ts'
 
 /*
  * `spicytrade mcp` end to end: spawned the way an agent client launches it, spoken to over stdin
@@ -30,26 +30,10 @@ const keyrings: string[] = []
 
 afterEach(async () => {
   for (const child of children.splice(0)) child.kill('SIGKILL')
-  const server = upstream
-  await new Promise<void>((resolve) => {
-    if (server) {
-      server.closeAllConnections()
-      server.close(() => resolve())
-    } else {
-      resolve()
-    }
-  })
+  await closeLoopback(upstream)
   upstream = undefined
   await Promise.all(keyrings.splice(0).map((directory) => rm(directory, { force: true, recursive: true })))
 })
-
-async function listen(handler: (request: IncomingMessage, response: ServerResponse) => void): Promise<number> {
-  upstream = createServer(handler)
-  await new Promise<void>((resolve) => upstream!.listen(0, '127.0.0.1', resolve))
-  // SAFETY: this server was just listened on a TCP port, which is the case where Node returns
-  // an AddressInfo rather than a pipe path or null.
-  return (upstream.address() as AddressInfo).port
-}
 
 /** A Worker that records each request and answers it with `answer`, JSON by default. */
 async function worker(answer: (request: IncomingMessage, body: string, response: ServerResponse) => void = (_, body, response) => {
@@ -58,15 +42,11 @@ async function worker(answer: (request: IncomingMessage, body: string, response:
   response.end(id === undefined ? '' : JSON.stringify({ id, jsonrpc: '2.0', result: { ok: true } }))
 }) {
   const captured: Captured[] = []
-  const port = await listen((request, response) => {
-    const chunks: Buffer[] = []
-    request.on('data', (chunk: Buffer) => chunks.push(chunk))
-    request.on('end', () => {
-      const body = Buffer.concat(chunks).toString()
-      if (request.url === '/mcp') captured.push({ body, headers: request.headers })
-      answer(request, body, response)
-    })
+  const { port, server } = await listenLoopback((request, body, response) => {
+    if (request.url === '/mcp') captured.push({ body, headers: request.headers })
+    answer(request, body, response)
   })
+  upstream = server
   return { captured, port }
 }
 

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   MAX_ATTENTION_SEARCHES,
@@ -74,11 +74,6 @@ function failingSearch() {
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
   return fetchMock
 }
-
-afterEach(() => {
-  vi.restoreAllMocks()
-  vi.unstubAllGlobals()
-})
 
 describe('symbol attention', () => {
   it('reads the symbols a caller chose to look at', async () => {

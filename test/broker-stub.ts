@@ -31,9 +31,7 @@ export const brokerCredential = {
 const stubBrokerName: string = 'stub-broker'
 // SAFETY: no adapter is registered for this id in production, which is exactly the point —
 // the widening is what lets a test register one and prove the lookup is not hard-wired.
-const stubBrokerId = stubBrokerName as BrokerId
-
-export const STUB_BROKER_ID = stubBrokerId
+export const STUB_BROKER_ID = stubBrokerName as BrokerId
 
 export const stubBrokerCredential = {
   accessToken: 'stub-access-token',

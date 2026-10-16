@@ -22,7 +22,7 @@ import {
   stubAdapter,
   stubBroker,
 } from './broker-stub'
-import { untouchedDb } from './fake-d1'
+import { unsupportedDatabase } from './fake-d1'
 
 /**
  * Every tastytrade entry point, wired to fail. Installed for the stub-adapter run so the seam
@@ -70,7 +70,7 @@ describe('broker adapter seam', () => {
       positions: [{ symbol: 'SPY' }],
     })
 
-    await expect(assertPortfolioActionAllowed({ DB: untouchedDb() }, {
+    await expect(assertPortfolioActionAllowed({ DB: unsupportedDatabase() }, {
       kind: 'place_equity_order', symbol: 'SPY', action: 'Buy to Open',
       quantity: 1, limitPrice: 700, priceEffect: 'Debit',
     }, stubBrokerCredential, { accountNumber: 'STUB-1', optionContracts: [] })).resolves.toBeUndefined()

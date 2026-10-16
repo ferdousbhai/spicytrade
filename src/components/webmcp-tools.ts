@@ -34,7 +34,7 @@ export type WebMcpWorkspace = {
 }
 
 const APP_VIEWS = ['/watch', '/recommendations', '/connect'] as const
-type AppView = (typeof APP_VIEWS)[number]
+export type AppView = (typeof APP_VIEWS)[number]
 
 /** The intraday sparkline is drawing data, and large; an agent reads the numbers beside it. */
 function tickerFacts({ sparkline: _sparkline, ...facts }: Ticker | PublicSymbolLookup['ticker']) {

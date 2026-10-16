@@ -101,11 +101,11 @@ export async function migrationStore() {
  * The member row the foreign keys point at. Recording evidence keeps the account behind it, so
  * a store that records needs that account to exist here exactly as it does in production.
  */
-export function seedMember(store: SqliteD1Store, userId: string): void {
+export function seedMember(store: SqliteD1Store, userId: string, email = `${userId}@example.com`): void {
   store.sqlite.prepare(
     `INSERT INTO "user" ("id", "name", "email", "emailVerified", "createdAt", "updatedAt")
-     VALUES (?, 'Member', ? || '@example.com', 1, 'now', 'now')`,
-  ).run(userId, userId)
+     VALUES (?, 'Member', ?, 1, 'now', 'now')`,
+  ).run(userId, email)
 }
 
 /** The default row timestamp `seedWatchlist` writes when an item doesn't pass its own. */

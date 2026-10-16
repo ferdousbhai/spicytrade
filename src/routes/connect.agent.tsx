@@ -1,10 +1,10 @@
-import { useState, useSyncExternalStore } from 'react'
+import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
 
 import { Button } from '#/components/ui/button'
 import { Spinner } from '#/components/ui/spinner'
-import { AuthorizeFrame, GoogleSignInButton, useViewer } from '../components/auth-gate'
+import { AuthorizeFrame, GoogleSignInButton, useRawQuery, useViewer } from '../components/auth-gate'
 import { AgentLoginApproveResponseSchema, AgentLoginPageQuerySchema } from '../domain/agent-login'
 import { pageTitle } from '../domain/site'
 import { toError } from '../domain/failure'
@@ -31,10 +31,6 @@ const ErrorResponseSchema = z.object({ error: z.string().min(1) })
 const APPROVAL_NOT_RECORDED = 'spicytrade could not record that approval.'
 const SESSION_ENDED = 'Your spicytrade session ended. Reload this page and sign in again.'
 
-/** The address is fixed for the life of this page, so there is nothing to subscribe to. */
-const subscribeToQuery = () => () => undefined
-const readRawQuery = () => window.location.search
-
 /**
  * Read from the raw query rather than the router's parsed search, which JSON-decodes values: a
  * machine named `2024` would arrive as a number and fail the label check it should pass.
@@ -53,7 +49,7 @@ function ConnectAgentPage() {
   const viewer = useViewer()
   // Empty on the server pass; every use below waits for the viewer check, which resolves only in
   // the browser.
-  const rawSearch = useSyncExternalStore(subscribeToQuery, readRawQuery, () => '')
+  const rawSearch = useRawQuery()
   const query = parseQuery(rawSearch)
   const [submitting, setSubmitting] = useState<'approve' | 'cancel'>()
   const [failure, setFailure] = useState<string>()

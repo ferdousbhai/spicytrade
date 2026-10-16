@@ -1,12 +1,12 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { chmod, readFile, rm, writeFile } from 'node:fs/promises'
-import { createServer, request as httpRequest, type IncomingMessage, type Server } from 'node:http'
-import { type AddressInfo } from 'node:net'
+import { type IncomingMessage, type Server } from 'node:http'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import { fakeSecretTool } from './fake-secret-tool.ts'
+import { closeLoopback, listenLoopback, visit } from './loopback.ts'
 
 /*
  * `spicytrade connect-tastytrade` end to end against a stand-in Worker: the real loopback
@@ -35,8 +35,7 @@ const directories: string[] = []
 afterEach(async () => {
   cli?.kill('SIGKILL')
   cli = undefined
-  const server = worker
-  await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()))
+  await closeLoopback(worker)
   worker = undefined
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { force: true, recursive: true })))
 })
@@ -53,30 +52,24 @@ async function fakeTools(entries: Record<string, string>): Promise<string> {
 
 async function fakeWorker(exchangeAnswer: () => { body: unknown; status: number }) {
   const calls: WorkerCall[] = []
-  worker = createServer((request, response) => {
-    const chunks: Buffer[] = []
-    request.on('data', (chunk: Buffer) => chunks.push(chunk))
-    request.on('end', () => {
-      const body = WorkerCallBodySchema.parse(JSON.parse(Buffer.concat(chunks).toString() || '{}'))
-      calls.push({ body, headers: request.headers, path: request.url ?? '' })
-      const answer = request.url === '/api/brokers/tastytrade/authorize'
-        ? {
-            body: {
-              authorizationUrl: `https://my.tastytrade.com/auth.html?state=${STATE}`,
-              expiresAt: new Date(Date.now() + 60_000).toISOString(),
-              state: STATE,
-            },
-            status: 200,
-          }
-        : exchangeAnswer()
-      response.writeHead(answer.status, { 'content-type': 'application/json' })
-      response.end(JSON.stringify(answer.body))
-    })
+  const { port, server } = await listenLoopback((request, raw, response) => {
+    const body = WorkerCallBodySchema.parse(JSON.parse(raw || '{}'))
+    calls.push({ body, headers: request.headers, path: request.url ?? '' })
+    const answer = request.url === '/api/brokers/tastytrade/authorize'
+      ? {
+          body: {
+            authorizationUrl: `https://my.tastytrade.com/auth.html?state=${STATE}`,
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            state: STATE,
+          },
+          status: 200,
+        }
+      : exchangeAnswer()
+    response.writeHead(answer.status, { 'content-type': 'application/json' })
+    response.end(JSON.stringify(answer.body))
   })
-  await new Promise<void>((resolve) => worker!.listen(0, '127.0.0.1', resolve))
-  // SAFETY: this server was just listened on a TCP port, which is the case where Node returns
-  // an AddressInfo rather than a pipe path or null.
-  return { calls, port: (worker.address() as AddressInfo).port }
+  worker = server
+  return { calls, port }
 }
 
 function startCli(tools: string, workerPort: number) {
@@ -90,19 +83,6 @@ function startCli(tools: string, workerPort: number) {
   cli.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
   const exited = new Promise<number | null>((resolve) => cli!.on('exit', resolve))
   return { exited, output: () => ({ stderr, stdout }) }
-}
-
-/** A browser-shaped GET to the loopback listener; `host` lets a test imitate a rebound page. */
-function visit(port: number, path: string, headers: Record<string, string> = {}) {
-  return new Promise<{ body: string; status: number }>((resolve, reject) => {
-    const outgoing = httpRequest({ headers: { host: `127.0.0.1:${port}`, ...headers }, host: '127.0.0.1', path, port }, (reply) => {
-      let body = ''
-      reply.on('data', (chunk: Buffer) => { body += chunk.toString() })
-      reply.on('end', () => resolve({ body, status: reply.statusCode ?? 0 }))
-    })
-    outgoing.on('error', reject)
-    outgoing.end()
-  })
 }
 
 async function loopbackPort(calls: WorkerCall[], output: () => { stdout: string }): Promise<number> {

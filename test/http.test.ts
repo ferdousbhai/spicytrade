@@ -84,7 +84,6 @@ describe('personal API authorization', () => {
     const response = await authorizePersonalRequest(
       new Request('https://spice.test/api/snapshot'),
       {},
-      false,
       async () => ({ email: 'member@example.com', id: 'member-1', name: 'Member' }),
     )
     expect(response?.status).toBe(403)
@@ -95,24 +94,9 @@ describe('personal API authorization', () => {
     const response = await authorizePersonalRequest(
       new Request('https://spice.test/api/snapshot'),
       {},
-      false,
       async () => ({ email: 'ferdousbd@gmail.com', id: 'owner-1', name: 'Owner' }),
     )
     expect(response).toBeUndefined()
-  })
-
-  it('holds an owner write to the request\'s own origin', async () => {
-    const owner = async () => ({ email: 'ferdousbd@gmail.com', id: 'owner-1', name: 'Owner' })
-    const crossOrigin = await authorizePersonalRequest(new Request('https://spice.test/api/public-catalyst-refresh', {
-      method: 'POST',
-      headers: { Origin: 'https://attacker.test' },
-    }), {}, true, owner)
-    expect(crossOrigin?.status).toBe(403)
-    const sameOrigin = await authorizePersonalRequest(new Request('https://spice.test/api/public-catalyst-refresh', {
-      method: 'POST',
-      headers: { Origin: 'https://spice.test' },
-    }), {}, true, owner)
-    expect(sameOrigin).toBeUndefined()
   })
 
   it('allows a signed-in member only through the same-origin authenticated boundary', async () => {

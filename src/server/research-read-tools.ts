@@ -102,10 +102,10 @@ type DailyBriefReadResult = {
   source: 'spice-brief-store'
 } & ({ brief: DailyBrief; status: 'ok' } | { status: 'not_found' })
 
-async function readLatestDailyBriefState(env: AppEnv, now: Date): Promise<DailyBriefReadResult> {
+async function readLatestDailyBriefState(env: AppEnv): Promise<DailyBriefReadResult> {
   if (!env.DB) throw new CallerVisibleError('Daily brief is unavailable.')
   const brief = await readLatestDailyBrief(env.DB)
-  const fetchedAt = now.toISOString()
+  const fetchedAt = new Date().toISOString()
   return brief ? { brief, fetchedAt, source: 'spice-brief-store', status: 'ok' } : { fetchedAt, source: 'spice-brief-store', status: 'not_found' }
 }
 
@@ -196,7 +196,7 @@ export function createResearchReadTools(env: AppEnv) {
   }
   const brief: AgentTool<typeof BriefReadParameters> = {
     description: 'The standing daily brief: trade lines, theses and the day\'s links, as the site shows them.',
-    execute: async () => textResult(await readLatestDailyBriefState(env, new Date())),
+    execute: async () => textResult(await readLatestDailyBriefState(env)),
     name: 'read_daily_brief',
     parameters: BriefReadParameters,
   }

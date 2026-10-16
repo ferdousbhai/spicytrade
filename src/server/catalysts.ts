@@ -40,8 +40,8 @@ export function catalystUpsertStatements(
   // Every producer writes through here, so this is the one place the write envelope is held.
   //
   // A sighting never moves backwards. `CURRENT_CATALYSTS` reads only a producer's latest
-  // sighting, so a superseded run that finishes last -- an attention search still in flight when
-  // the owner forces a newer one that lands first -- would otherwise stamp its older instant back
+  // sighting, so a superseded run that finishes last -- a search that outlived its run budget
+  // while a newer claim's search landed first -- would otherwise stamp its older instant back
   // over the newer rows, retire what the newer run reported, and put its stale fields in their
   // place. The guard on the conflict branch makes that late write land nowhere for any row the
   // newer run touched. Every producer stamps the instant its own run began, so an equal stamp is

@@ -8,7 +8,6 @@ import { Route } from '../src/routes/connect.agent'
 
 afterEach(() => {
   cleanup()
-  vi.unstubAllGlobals()
   window.history.replaceState(null, '', '/')
 })
 

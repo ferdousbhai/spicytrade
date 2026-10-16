@@ -5,7 +5,8 @@ import { z } from 'zod'
 import { grantMinter, grantRefused, mintUnavailable, TastytradeAuthError, tastytradeUnavailable } from './broker-grants.mjs'
 import { CLIENTS, EXPECTED_TARGET, namesSpicytrade } from './clients.mjs'
 import {
-  AGENT_TOKEN_SERVICE, cliCommand, LEGACY_MCP_SERVER_NAME, MCP_COMMAND, MCP_SERVER_NAME, MCP_TOKEN_KEY,
+  AGENT_TOKEN_SERVICE, cliCommand, LEGACY_MCP_SERVER_NAME, MCP_COMMAND, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
+  MCP_TOKEN_KEY,
 } from './config.mjs'
 import {
   agentToken, keyringSecret, secretToolInstalled, tastytradeCredentialKind,
@@ -31,8 +32,6 @@ import { checkAgentToken, describeTokenCheck } from './worker.mjs'
  */
 const SERVER_CHECK_TIMEOUT_MS = UPSTREAM_TIMEOUT_MS + TOKEN_REQUEST_TIMEOUT_MS
 
-/** The MCP revision this probe speaks; any revision the Worker accepts would do for a liveness check. */
-const MCP_PROTOCOL_VERSION = '2025-06-18'
 
 const ReplySchema = z.object({
   error: z.object({ message: z.string() }).optional(),

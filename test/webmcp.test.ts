@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { registerWebMcpTools, type WebMcpTool } from '../src/lib/webmcp'
 
@@ -8,10 +8,6 @@ const tool: WebMcpTool = {
   inputSchema: { type: 'object' },
   name: 'test_tool',
 }
-
-afterEach(() => {
-  vi.unstubAllGlobals()
-})
 
 describe('registerWebMcpTools', () => {
   it('does nothing in a browser without a model context', () => {

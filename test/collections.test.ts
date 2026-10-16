@@ -331,7 +331,6 @@ describe('live market subscriptions', () => {
       selectedByUser: true,
       selectedSymbol: 'INTC',
     })
-    expect(preferenceCollection.get('primary')?.selectedWatchlistId).toBeUndefined()
   })
 
   it('falls back to the busiest symbol only when the chosen one is gone', async () => {

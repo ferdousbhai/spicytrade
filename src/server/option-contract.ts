@@ -1,4 +1,3 @@
-import { type OrderPlacement } from './agent-contracts'
 import { type AppEnv } from './env'
 import { type EquityOptionTuple } from '../domain/equity-option'
 import { isValidIsoDate } from '../domain/iso-date'
@@ -13,7 +12,6 @@ import {
 import { brokerApi } from './tastytrade'
 import { CallerVisibleError } from './caller-visible-error'
 
-type OptionAction = Extract<OrderPlacement, { kind: 'place_option_order' }>
 // Error details show enough alternatives to correct a tuple without echoing a full option chain.
 const MAX_RESOLUTION_SUGGESTIONS = 8
 
@@ -117,19 +115,6 @@ export function equityOptionContractFromChainTuple(
     throw new OptionContractUnavailableError('The matching contract is closing-only or its opening status could not be verified.')
   }
   throw new OptionContractUnavailableError('The matching contract is inactive or its multiplier could not be verified.')
-}
-
-/** Resolve one exact, standard, active contract for execution. */
-export function equityOptionContractFromChain(payload: JsonValue, action: OptionAction): EquityOptionContract {
-  return equityOptionContractFromChainTuple(payload, action, { opening: action.action.endsWith('to Open') })
-}
-
-export async function resolveEquityOptionContract(
-  env: AppEnv,
-  action: OptionAction,
-): Promise<EquityOptionContract> {
-  const payload = await brokerApi().tastyRequest(env, `/option-chains/${encodeURIComponent(action.underlying)}`)
-  return equityOptionContractFromChain(payload, action)
 }
 
 /** Fetch each underlying once, resolve its tuples immediately, then release the large chain payload. */

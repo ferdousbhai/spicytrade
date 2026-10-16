@@ -52,7 +52,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
-  vi.unstubAllGlobals()
 })
 
 function renderLiveMarket(symbols: string[]) {

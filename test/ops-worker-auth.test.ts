@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { serveOpsRequest, type OpsEnv } from '../ops/shared/worker-auth'
 
@@ -28,10 +28,6 @@ describe('temporary ops Worker request gate', () => {
       return leftBytes.length === rightBytes.length && leftBytes.every((value, index) => value === rightBytes[index])
     }
     vi.stubGlobal('crypto', { subtle: { digest, timingSafeEqual } })
-  })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
   })
 
   it('answers every unauthorized request with a 404 that discloses no route', async () => {

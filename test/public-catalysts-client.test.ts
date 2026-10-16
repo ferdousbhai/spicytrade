@@ -2,7 +2,6 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { marketSnapshotFixture } from './fixtures/market'
 
 afterEach(() => {
-  vi.unstubAllGlobals()
   vi.resetModules()
 })
 
