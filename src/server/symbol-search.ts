@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { EQUITY_SYMBOL_REGEX, EquitySymbolSchema, searchFold } from '../domain/instrument'
+import { equitySymbolFromModelText, EquitySymbolSchema, searchFold } from '../domain/instrument'
 import { type AppEnv } from './env'
 import { CallerVisibleError } from './caller-visible-error'
 
@@ -30,8 +30,8 @@ const MatchRowSchema = z.object({
 
 /** A reader types `sofi`, `$SOFI` or `SoFi Technologies`; only the first two are a ticker. */
 export function symbolCandidate(query: string): string | undefined {
-  const candidate = query.trim().replace(/^\$/, '').toUpperCase()
-  return EQUITY_SYMBOL_REGEX.test(candidate) ? candidate : undefined
+  // The same reading the browser's search box applies, so both sides agree on what is a ticker.
+  return equitySymbolFromModelText(query)
 }
 
 export function searchableQuery(rawQuery: string): string | undefined {
