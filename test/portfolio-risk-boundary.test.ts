@@ -9,7 +9,6 @@ function secret(value: string): SecretsStoreSecret {
   return { get: async () => value }
 }
 
-
 describe('brokerage dispatch portfolio guard', () => {
   it('fails before dry-run or submission when fresh positions contain unbounded exposure', async () => {
     const calls: Array<{ method: string; url: string }> = []

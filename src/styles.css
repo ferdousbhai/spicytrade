@@ -98,7 +98,6 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .google-sign-in:disabled { color: #65666a; background: #d8d8dc; }
 .auth-inline-error { max-width: 420px; padding: 13px 0; border-block: 1px solid rgba(255, 107, 120, .25); border-inline: 0; border-radius: 0; background: transparent; color: #efb4b9; font-size: 13px; line-height: 1.5; margin: 12px 0 0; }
 
-
 .site-page { padding: 0 22px; }
 .site-header, .site-content, .site-footer { width: min(100%, 1120px); margin-inline: auto; }
 .site-header { min-height: 84px; display: flex; align-items: center; justify-content: space-between; gap: 28px; border-bottom: 1px solid var(--hairline); }
@@ -592,7 +591,6 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
   .connect-screen > * { grid-column: 1; }
   .connect-screen > .connect-aside { display: grid; gap: 28px; grid-column: 2; grid-row: 1 / span 4; position: sticky; top: 24px; }
 }
-
 
 @media (max-width: 959px) {
   /* A phone. The top bar keeps what a glance needs and drops the word and the link it has no

@@ -760,7 +760,6 @@ describe('spicytrade store-personal-grant', () => {
   }, 30_000)
 })
 
-
 describe('opening a trading session', () => {
   it('launches Codex with trading enabled without changing its saved configuration', async () => {
     const machine = await fakeMachine({}, { codex: { spicytrade: MCP_TARGET } })

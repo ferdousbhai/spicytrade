@@ -32,7 +32,6 @@ import { checkAgentToken, describeTokenCheck } from './worker.mjs'
  */
 const SERVER_CHECK_TIMEOUT_MS = UPSTREAM_TIMEOUT_MS + TOKEN_REQUEST_TIMEOUT_MS
 
-
 const ReplySchema = z.object({
   error: z.object({ message: z.string() }).optional(),
   result: z.object({ instructions: z.string().optional() }).optional(),
@@ -196,7 +195,6 @@ export async function doctor(out = process.stdout, { quiet = false, settled = ne
   for (const name of await legacyUnits()) {
     checks.fail(`the old background proxy is still installed (${name})`, `Remove it with: ${setup}`)
   }
-
 
   let agentsFound = 0
   for (const client of CLIENTS) {
