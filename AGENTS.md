@@ -29,9 +29,9 @@ the `BriefPublisher` entrypoint over a service binding.
 - **Access is two independent gates.** The public market and research reads need no account.
   Signing in adds live broker quotes, chains and Greeks, plus that member's own favorites and
   agent tokens. A broker credential *presented on the request* — never a membership level —
-  unlocks account reads and placement, and only for the account that credential resolves to.
-  Owner adds watchlist provenance and watchlist removal, and those
-  tools are absent from a member's `tools/list` rather than present and refused.
+  unlocks account reads and placement, and only for the account that credential resolves to. Owner
+  adds watchlist provenance and watchlist removal, and those tools are absent from a member's
+  `tools/list` rather than present and refused.
 - **No member's long-lived broker credential is ever stored here**, for any broker; an adapter
   that cannot work without one does not get added. It lives in the member's OS keyring, and a
   separate local process exchanges it for a short-lived token per request — separate because an
@@ -70,17 +70,18 @@ the `BriefPublisher` entrypoint over a service binding.
   them for display but keep provider labels and per-source observation times. Derived
   recommendations and projections are never authoritative source storage.
 - **Agent loops do not run on Cloudflare.** The Worker serves a stateless MCP surface. A caller
-  presenting nothing gets only the public tier; every signed-in caller is a member row, reached
-  by a minted token whose digest alone is stored or an OAuth access token whose verified subject
-  names the member. There is no shared secret and no other way in, so a missing store is no
-  access rather than a bypass. The doctrine the server publishes as MCP `instructions` and
-  prompts is content it injects into someone else's agent, so it is assembled only from this
-  repository's constants — never from D1 rows, provider payloads, model output, or a fetched
-  page — and it advises rather than commands. **The daily brief has exactly one writer**: the private spicy-workflow Workflow, over a
-  service binding into `BriefPublisher`, never over HTTP and never through a tool. What arrives
-  is untrusted model output; this Worker parses it against its own schema and bounds, assigns
-  the id and the instant, and stores nothing partial. The research writes that remain —
-  catalysts and evidence — bind model output to pages this Worker re-reads itself.
+  presenting nothing gets only the public tier; every signed-in caller is a member row, reached by
+  a minted token whose digest alone is stored or an OAuth access token whose verified subject
+  names the member. There is no shared secret and no other way in, so a missing store is no access
+  rather than a bypass. The doctrine the server publishes as MCP `instructions` and prompts is
+  content it injects into someone else's agent, so it is assembled only from this repository's
+  constants — never from D1 rows, provider payloads, model output, or a fetched page — and it
+  advises rather than commands. **The daily brief has exactly one writer**: the private
+  spicy-workflow Workflow, over a service binding into `BriefPublisher`, never over HTTP and never
+  through a tool. What arrives is untrusted model output; this Worker parses it against its own
+  schema and bounds, assigns the id and the instant, and stores nothing partial. The research
+  writes that remain — catalysts and evidence — bind model output to pages this Worker re-reads
+  itself.
 - **Secrets and account numbers stay server-side**, missing bindings fail closed, and provider
   bodies or credentials must not enter logs. A log line carries an event name and an error
   name, never a token, digest, account number, or user id. A refusal names the check that
