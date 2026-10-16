@@ -831,17 +831,23 @@ export function MarketScreen({
   // On a phone the focus card lives in a sheet over the list, so the list is the screen.
   const [detailOpen, setDetailOpen] = useState(false)
   const narrow = useMediaQuery(NARROW_VIEWPORT)
-  const pinned = new Set(pinnedSymbols)
+  const pinned = useMemo(() => new Set(pinnedSymbols), [pinnedSymbols])
+  const tickersBySymbol = useMemo(() => {
+    const index = new Map<string, Ticker>()
+    for (const ticker of tickers) {
+      if (!index.has(ticker.symbol)) index.set(ticker.symbol, ticker)
+    }
+    return index
+  }, [tickers])
   const trimmedQuery = equitySymbolFromModelText(query) ?? query.trim()
-  const matched = trimmedQuery
+  const matched = useMemo(() => trimmedQuery
     ? matchSorter(tickers, trimmedQuery, { keys: ['symbol', 'name'] })
     : activeWatchlist.symbols.flatMap((symbol) => {
-        const ticker = tickers.find((candidate) => candidate.symbol === symbol)
+        const ticker = tickersBySymbol.get(symbol)
         return ticker ? [ticker] : []
-      })
+      }), [activeWatchlist.symbols, tickers, tickersBySymbol, trimmedQuery])
   // A fuzzy local match is not proof that the catalog lacks the exact requested symbol.
-  const unlisted = Boolean(trimmedQuery) && !tickers.some((ticker) =>
-    ticker.symbol === trimmedQuery.toUpperCase())
+  const unlisted = Boolean(trimmedQuery) && !tickersBySymbol.has(trimmedQuery.toUpperCase())
   const search = useSymbolSearch(trimmedQuery, unlisted)
   const lookup = search.status === 'found' ? search.lookup : undefined
   const found = lookup && tickerFromPublic(lookup.ticker)
