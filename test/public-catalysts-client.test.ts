@@ -20,9 +20,8 @@ it('reports a malformed catalyst response as a failed read, not an empty calenda
 })
 
 it('re-reads a symbol whose rows a search may have moved, rather than answering from the copy', async () => {
-  // The cache has no expiry, so a forced search that moves a date would otherwise leave the
-  // retired sighting on the runway beside the one it moved to for the rest of the session --
-  // the very duplicate the reader pressed the button to resolve.
+  // The cache has no expiry, so a search that moves a date would otherwise leave the retired
+  // sighting on the runway beside the one it moved to for the rest of the session.
   const catalysts = marketSnapshotFixture().catalysts.filter((row) => row.symbol === 'NVDA')
   // A fresh Response per call: a body is read once, and this test asks for the same page twice.
   const fetchMock = vi.fn(() => Promise.resolve(Response.json({ catalysts })))

@@ -17,7 +17,6 @@ function renderMarket(
     activeWatchlist: { ...snapshot.watchlists[0]!, kind: 'public' },
     brief: snapshot.brief,
     catalysts: overrides.catalysts ?? snapshot.catalysts,
-    owner: false,
     onSelectTicker: () => undefined,
     onTogglePinned: () => undefined,
     pinnedSymbols: [],

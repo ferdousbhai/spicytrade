@@ -29,8 +29,6 @@ import { CallerVisibleError } from './caller-visible-error'
  * curated tier, above discussed names (see RANKED_ITEMS_CTE in internal-watchlist). A name that
  * did not stay on the list answers `untracked` here rather than buying a search, which is the
  * bound working, not a fault.
- * The owner's forced run is unaffected -- it is deliberate rather than incidental, and already
- * costs an owner credential.
  *
  * How long a complete search holds its symbol depends on what the calendar says (`holdAfterComplete`),
  * and each span is a cost policy:
@@ -156,7 +154,6 @@ async function claimRun(
   db: D1Database,
   symbol: string,
   now: Date,
-  forced: boolean,
   completeHoldMs: number,
 ): Promise<'claimed' | 'fresh' | 'failed'> {
   const cutoff = (ms: number) => new Date(now.getTime() - ms).toISOString()
@@ -165,8 +162,7 @@ async function claimRun(
      VALUES (?, ?, ?, 0, 'running')
      ON CONFLICT(symbol, source_provider) DO UPDATE SET
        ran_at = excluded.ran_at, catalyst_count = 0, status = 'running', detail = NULL
-     WHERE ? = 1
-       OR julianday(catalyst_runs.ran_at) IS NULL
+     WHERE julianday(catalyst_runs.ran_at) IS NULL
        OR (catalyst_runs.status = 'complete' AND catalyst_runs.ran_at <= ?)
        OR (catalyst_runs.status = 'running' AND catalyst_runs.ran_at <= ?)
        OR (catalyst_runs.status = 'failed' AND catalyst_runs.ran_at <= ?)`,
@@ -174,7 +170,6 @@ async function claimRun(
     symbol,
     CATALYST_PROVIDER,
     now.toISOString(),
-    forced ? 1 : 0,
     cutoff(completeHoldMs),
     cutoff(CATALYST_RUN_BUDGET_MS),
     cutoff(CATALYST_FAILED_RETRY_MS),
@@ -237,10 +232,9 @@ type CatalystRefreshAttempt = { claimed: boolean; refresh: CatalystRefresh }
  * window. The symbol must be a resolved instrument this Worker already knows, so attention
  * paid to something the catalog cannot name buys nothing.
  *
- * `forced` spends a search the window would have refused. Incidental attention must stay
- * bounded, but an owner asking on purpose is a different signal, and without it a symbol
- * searched once reads as empty for the whole hold with no way to ask again. The receipt is still
- * written, so a forced run resets the window for everyone rather than escaping it.
+ * Nothing spends a search the window would refuse, not even the owner: every search costs money,
+ * and the holds in `holdAfterComplete` already bring a symbol back sooner when its calendar says
+ * the last answer may be stale. A manual override was one more way to buy searches by hand.
  *
  * A search that throws answers `ran: false, reason: 'failed'`: it bound nothing, and a reader
  * must not be told the calendar was searched and found empty when the search never finished.
@@ -249,9 +243,8 @@ export async function refreshCatalystsForSymbol(
   env: AppEnv,
   untrustedSymbol: string,
   now = new Date(),
-  forced = false,
 ): Promise<CatalystRefresh> {
-  return (await attemptCatalystRefresh(env, untrustedSymbol, now, forced)).refresh
+  return (await attemptCatalystRefresh(env, untrustedSymbol, now)).refresh
 }
 
 /** `refreshCatalystsForSymbol`, also saying whether the attempt claimed a run and so bought a search. */
@@ -259,7 +252,6 @@ export async function attemptCatalystRefresh(
   env: AppEnv,
   untrustedSymbol: string,
   now = new Date(),
-  forced = false,
 ): Promise<CatalystRefreshAttempt> {
   // Every receipt and every row lives in D1, so without it nothing here can be answered.
   const db = env.DB
@@ -271,10 +263,10 @@ export async function attemptCatalystRefresh(
   if (!instrument || !isTradeableInstrument(instrument)) {
     return { claimed: false, refresh: { catalysts: [], ran: false, reason: 'unknown-symbol' } }
   }
-  if (!forced && !await isTracked(db, symbol)) {
+  if (!await isTracked(db, symbol)) {
     return { claimed: false, refresh: { catalysts: [], ran: false, reason: 'untracked' } }
   }
-  const claim = await claimRun(db, symbol, now, forced, await holdAfterComplete(db, symbol, now))
+  const claim = await claimRun(db, symbol, now, await holdAfterComplete(db, symbol, now))
   if (claim !== 'claimed') return { claimed: false, refresh: { catalysts: [], ran: false, reason: claim } }
 
   try {

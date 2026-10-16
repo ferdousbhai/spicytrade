@@ -223,42 +223,9 @@ describe('catalyst coverage seeded by favorites', () => {
       await expect(refreshCatalystsForSymbol(env(store), 'BE', NOW))
         .resolves.toEqual({ catalysts: [], ran: false, reason: 'untracked' })
       expect(fetchMock).not.toHaveBeenCalled()
-
-      // The owner asking on purpose is a different signal and already costs a credential.
-      await refreshCatalystsForSymbol(env(store), 'BE', NOW, true)
-      expect(fetchMock).toHaveBeenCalledTimes(1)
     } finally {
       store.close()
     }
-  })
-
-  it('spends a forced search the window would have refused, and resets the window', async () => {
-    const store = await storeWithCatalog()
-    const fetchMock = stubExa()
-    await refreshCatalystsForSymbol(env(store), 'BE', NOW)
-
-    const withinWindow = new Date(NOW.getTime() + 86_400_000)
-    // An owner asking on purpose is a different signal from a reader happening to look, and
-    // without it a symbol searched once reads as empty for the whole hold with no way to ask again.
-    await expect(refreshCatalystsForSymbol(env(store), 'BE', withinWindow, true))
-      .resolves.toMatchObject({ ran: true })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-
-    // The forced run writes its own receipt, so it moves the window rather than escaping it.
-    await expect(refreshCatalystsForSymbol(env(store), 'BE', new Date(withinWindow.getTime() + 60_000)))
-      .resolves.toEqual({ catalysts: [], ran: false, reason: 'fresh' })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    store.close()
-  })
-
-  it('will not force a search for a symbol the catalog cannot name', async () => {
-    const store = await storeWithCatalog()
-    const fetchMock = stubExa()
-
-    await expect(refreshCatalystsForSymbol(env(store), 'ZZZZ', NOW, true))
-      .resolves.toEqual({ catalysts: [], ran: false, reason: 'unknown-symbol' })
-    expect(fetchMock).not.toHaveBeenCalled()
-    store.close()
   })
 
   it('spends nothing on a symbol the catalog cannot name', async () => {

@@ -15,9 +15,9 @@ import { useRetryOnFocus } from './retry-on-focus'
  * does looking at one whose next month is empty. The server owns the window that decides
  * whether a search is actually bought, so asking is cheap and asking twice costs nothing.
  */
-async function requestCatalystRefresh(symbol: string, force = false): Promise<CatalystRefresh> {
+async function requestCatalystRefresh(symbol: string): Promise<CatalystRefresh> {
   const response = await fetch('/api/public-catalyst-refresh', {
-    body: JSON.stringify({ force, symbol: EquitySymbolSchema.parse(symbol) }),
+    body: JSON.stringify({ symbol: EquitySymbolSchema.parse(symbol) }),
     headers: { 'content-type': 'application/json' },
     method: 'POST',
   })
@@ -34,7 +34,6 @@ async function requestCatalystRefresh(symbol: string, force = false): Promise<Ca
  * `revision` is what every subscriber watches; it moves when a search starts or answers.
  */
 const searches = new Set<string>()
-const forcing = new Set<string>()
 /** Symbols a search actually ran for, as opposed to ones a receipt merely refused. */
 const searched = new Set<string>()
 /** Symbols whose last search never answered, which a reader is told rather than shown empty. */
@@ -100,31 +99,12 @@ export function seedCatalystSearch(symbol: string): void {
   notify()
 }
 
-/**
- * Spend a search the window would have refused. The owner asked for this one on purpose, so
- * it runs whatever the receipt says, and a second click while one is in flight is ignored.
- */
-async function forceCatalystSearch(symbol: string): Promise<void> {
-  if (forcing.has(symbol)) return
-  forcing.add(symbol)
-  notify()
-  try {
-    record(symbol, await requestCatalystRefresh(symbol, true))
-  } catch {
-    record(symbol, FAILED_REFRESH)
-  } finally {
-    forcing.delete(symbol)
-    notify()
-  }
-}
-
 type CatalystSearchState = {
   catalysts: readonly Catalyst[]
   /** True once a search has run and bound nothing, which is not the same as never having looked. */
   confirmedEmpty: boolean
   /** True when the last search for this symbol never answered, so its calendar is unknown. */
   failed: boolean
-  refresh: () => void
   searching: boolean
 }
 
@@ -156,7 +136,6 @@ export function useCatalystSearch(
     catalysts: answer ?? NO_CATALYSTS,
     confirmedEmpty: searched.has(symbol) && (answer?.length ?? 0) === 0,
     failed: isFailed,
-    refresh: () => void forceCatalystSearch(symbol),
-    searching: (answer === undefined && searches.has(symbol)) || forcing.has(symbol),
+    searching: answer === undefined && searches.has(symbol),
   }
 }

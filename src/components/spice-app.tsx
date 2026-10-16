@@ -231,7 +231,6 @@ export function WatchView() {
     catalysts,
     chooseSymbol,
     favorites,
-    owner,
     selected,
     selectionError,
     snapshotReady,
@@ -256,7 +255,6 @@ export function WatchView() {
         <MarketScreen
           activeWatchlist={activeWatchlist}
           catalysts={catalysts}
-          owner={owner}
           onSelectTicker={chooseSymbol}
           onTogglePinned={favorites.togglePinned}
           pinnedSymbols={favorites.pinnedSymbols}

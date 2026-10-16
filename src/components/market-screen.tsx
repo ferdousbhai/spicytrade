@@ -22,7 +22,6 @@ import { type DailyBrief } from '../domain/brief'
 import { latestSessionCandles, REGULAR_SESSION_MS, type CandlePoint } from '../domain/candle'
 import {
   CATALYST_KIND_NAMES,
-  hasNearTermCatalyst,
   catalystCountdown,
   catalystKindName,
   catalystLabel,
@@ -383,7 +382,6 @@ function CatalystRunway({
   confirmedEmpty,
   failed,
   now,
-  onRefresh,
   readFailed,
   searching,
   symbol,
@@ -392,17 +390,12 @@ function CatalystRunway({
   confirmedEmpty: boolean
   failed: boolean
   now: Date
-  onRefresh?: () => void
   /** The symbol's full rows could not be read, so the calendar shown may be missing some. */
   readFailed: boolean
   searching: boolean
   symbol: string
 }) {
   const upcoming = upcomingCatalystsForSymbol(symbol, catalysts, now)
-  // A calendar with something on it months out is still uncovered for the weeks a reader is
-  // actually trading, and that is the case a search is bought for. Reporting the search only
-  // inside the empty state left it running invisibly on exactly those symbols.
-  const thin = !hasNearTermCatalyst(symbol, catalysts, now)
 
   return (
     <section className="focus-runway" aria-label="What&rsquo;s coming">
@@ -473,14 +466,6 @@ function CatalystRunway({
               symbol={symbol}
             />
           )}
-      {/* A search runs at most once a week for any symbol, so coverage can read thin long
-          after the web has something to say. Spending another costs money per call, which is
-          why only the owner may. What it finds is stored, so every reader gets it. */}
-      {onRefresh && thin && !searching && (
-        <Button className="runway-refresh" onClick={onRefresh} size="sm" type="button" variant="outline">
-          Search again
-        </Button>
-      )}
     </section>
   )
 }
@@ -801,7 +786,6 @@ function SortControl({
 export function MarketScreen({
   activeWatchlist,
   catalysts,
-  owner,
   onSelectTicker,
   onTogglePinned,
   pinnedSymbols,
@@ -811,7 +795,6 @@ export function MarketScreen({
 }: {
   activeWatchlist: Watchlist
   catalysts: Catalyst[]
-  owner: boolean
   onSelectTicker: (symbol: string, lookup?: PublicSymbolLookup) => void
   onTogglePinned: (symbol: string, lookup?: PublicSymbolLookup) => void
   pinnedSymbols: readonly string[]
@@ -972,7 +955,6 @@ export function MarketScreen({
             confirmedEmpty={catalystSearch.confirmedEmpty}
             failed={catalystSearch.failed}
             now={now}
-            onRefresh={owner ? catalystSearch.refresh : undefined}
             readFailed={focusedRead.failed}
             searching={catalystSearch.searching}
             symbol={selected.symbol}

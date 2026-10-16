@@ -28,8 +28,8 @@ function catalyst(symbol: string, daysAhead: number): Catalyst {
   }
 }
 
-function renderMarket(symbol: string, catalysts: readonly Catalyst[], owner = false): void {
-  renderMarketScreen({ symbol, catalysts: [...catalysts], owner })
+function renderMarket(symbol: string, catalysts: readonly Catalyst[]): void {
+  renderMarketScreen({ symbol, catalysts: [...catalysts] })
 }
 
 describe('reviewing a symbol with an empty calendar', () => {
@@ -117,32 +117,25 @@ describe('reviewing a symbol with an empty calendar', () => {
   })
 })
 
-describe('owner catalyst refresh', () => {
-  it('offers the owner another search on a thin calendar, and never a visitor', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ catalysts: [], ran: true })))
-
-    renderMarket('BE', [])
-    await screen.findByText('Searched — nothing scheduled.')
-    // A visitor cannot spend a search: the call costs money and the window that bounds
-    // incidental attention is the only thing standing between it and every reader.
-    expect(screen.queryByRole('button', { name: 'Search again' })).toBeNull()
-
-    cleanup()
-    renderMarket('BE', [], true)
-    expect(await screen.findByRole('button', { name: 'Search again' })).toBeTruthy()
-  })
-
+describe('a thin calendar', () => {
   it('reports a search running on a calendar that already has a far-off date on it', async () => {
     // Nothing resolves while the search is in flight, which is the state a reader was left
     // staring at with no sign anything was happening.
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => undefined)))
 
     // Dated past the near-term window, so the runway renders a row and a search still runs.
-    renderMarket('QQQ', [catalyst('QQQ', 70)], true)
+    renderMarket('QQQ', [catalyst('QQQ', 70)])
 
     expect(await screen.findByText(/Searching for more/)).toBeTruthy()
-    // The control that would spend a second search is not offered while one is running.
-    expect(screen.queryByRole('button', { name: 'Search again' })).toBeNull()
+  })
+
+  it('offers no manual search once one has answered', async () => {
+    // Every search costs money, so only the server's attention windows decide when one runs.
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ catalysts: [], ran: true })))
+
+    renderMarket('BE', [])
+    await screen.findByText('Searched — nothing scheduled.')
+    expect(screen.queryByRole('button', { name: /search/i })).toBeNull()
   })
 })
 
@@ -189,7 +182,7 @@ describe('a calendar read that fails', () => {
 })
 
 describe('a calendar search that fails', () => {
-  it('searches again when the window regains focus, for a reader who cannot force one', async () => {
+  it('searches again when the window regains focus', async () => {
     const requested: string[] = []
     let searchOk = false
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

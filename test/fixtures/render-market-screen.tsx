@@ -25,7 +25,6 @@ export function renderMarketScreen(overrides: Partial<MarketScreenProps> & { sym
   render(createElement(MarketScreen, {
     activeWatchlist: { ...snapshot.watchlists[0]!, kind: 'public' as const },
     catalysts: snapshot.catalysts,
-    owner: false,
     onSelectTicker: () => undefined,
     onTogglePinned: () => undefined,
     pinnedSymbols: [],

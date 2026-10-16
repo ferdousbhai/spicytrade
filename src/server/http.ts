@@ -123,8 +123,7 @@ export async function authenticateRequest(
  * The owner-only gate for a cookie-authenticated route: a signed-in identity whose email is the
  * owner's, and for a `write` the request's own origin as well. It guards the owner's market
  * snapshot (`/api/snapshot`, whose `?live=1` rebuilds from the broker on this Worker's own
- * credential) and the owner's forced catalyst refresh, which spends a paid search the
- * reader-attention window would have refused.
+ * credential).
  */
 export async function authorizePersonalRequest(
   request: Request,
