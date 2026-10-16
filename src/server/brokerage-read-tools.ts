@@ -1,7 +1,7 @@
 import { chunked } from '../domain/chunked'
 import { type AgentTool } from '../domain/agent-tool'
 import { BROKER_SYMBOL_MAX_LENGTH } from '../domain/broker'
-import { EQUITY_SYMBOL_REGEX, MAX_EQUITY_SYMBOL_LENGTH } from '../domain/instrument'
+import { EQUITY_SYMBOL_REGEX, EquitySymbolSchema, MAX_EQUITY_SYMBOL_LENGTH } from '../domain/instrument'
 
 import { type AppEnv } from './env'
 import {
@@ -470,8 +470,8 @@ export async function findOptionContracts(
   input: OptionContractFindInput,
   now = new Date(),
 ): Promise<OptionContractFindResult> {
-  const underlying = input.underlying.trim().toUpperCase()
-  if (!EQUITY_SYMBOL_REGEX.test(underlying)) throw new CallerVisibleError('Option underlying is invalid.')
+  const underlying = EquitySymbolSchema.safeParse(input.underlying).data
+  if (underlying === undefined) throw new CallerVisibleError('Option underlying is invalid.')
   if (input.expiry !== undefined && !isValidIsoDate(input.expiry)) throw new CallerVisibleError('Option expiry is invalid.')
   if (input.optionType !== undefined && input.optionType !== 'C' && input.optionType !== 'P') {
     throw new CallerVisibleError('Option type is invalid.')

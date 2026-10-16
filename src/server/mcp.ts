@@ -339,7 +339,7 @@ function serveMcp(
     // Out-of-band failures — a rejected request, an error raised after the response is under
     // way — are otherwise dropped without a trace. Named, never bodied: the argument may carry
     // provider or caller content, so only the error's own name is recorded.
-    onerror: (error: Error) => console.error('McpHandlerError', error.name),
+    onerror: (error: Error) => console.error('McpHandlerError', errorName(error)),
   })(request, env, ctx as ExecutionContext)
 }
 

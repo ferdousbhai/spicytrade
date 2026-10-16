@@ -2,7 +2,9 @@ import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { z } from 'zod'
 
-import { grantMinter, grantRefused, mintUnavailable, TastytradeAuthError, tastytradeUnavailable } from './broker-grants.mjs'
+import {
+  grantMinter, grantRefused, mintUnavailable, TastytradeAuthError, tastytradeUnavailable, transportCode,
+} from './broker-grants.mjs'
 import { CLI_PATH, cliCommand, MCP_PROTOCOL_VERSION, UPSTREAM, workerFault } from './config.mjs'
 import { agentToken, KeyringUnavailable, TASTYTRADE, tastytradeCredentialKind } from './keyring.mjs'
 import { tokenRetiresAt, UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
@@ -148,7 +150,7 @@ function failureFor(error, grantKind) {
   if (error instanceof TypeError && error.cause instanceof Error && 'code' in error.cause) {
     return {
       code: FAILURE_CODES.unreachable,
-      message: `spicytrade could not be reached from this computer (${String(error.cause.code)}). ${network}`,
+      message: `spicytrade could not be reached from this computer (${transportCode(error) ?? 'UnknownError'}). ${network}`,
     }
   }
   if (mintUnavailable(error)) {
@@ -576,7 +578,7 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
       const detail = error instanceof TastytradeAuthError || error instanceof AgentTokenRefused
         ? ` ${String(error.code)}${error.transport ? ` ${error.transport}` : ''}`
         : error instanceof Error && error.cause instanceof Error && 'code' in error.cause
-          ? ` ${String(error.cause.code)}`
+          ? ` ${transportCode(error) ?? 'UnknownError'}`
           : ''
       process.stderr.write(`${PROGRAM}: ${message.method ?? 'reply'} ${name}${detail}\n`)
       // A notification or a reply to the server has no one to tell; a request that already has

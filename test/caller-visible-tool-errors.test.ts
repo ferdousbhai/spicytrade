@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { toError } from '../src/domain/failure'
 import { type AppEnv } from '../src/server/env'
 import { type FreshOrderPlacement } from '../src/server/agent-contracts'
 import { type PriceHistoryProvider } from '../src/server/market-research-contracts'
@@ -27,7 +28,7 @@ async function thrown(run: () => Promise<void> | void): Promise<Error | undefine
   try {
     await run()
   } catch (error) {
-    return error instanceof Error ? error : undefined
+    return toError(error)
   }
   throw new Error('expected a throw')
 }
