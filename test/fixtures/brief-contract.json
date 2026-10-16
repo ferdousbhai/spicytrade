@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "stock, options and ordered optional link previews",
+      "input": {
+        "marketDate": "2026-10-15",
+        "model": "fixture-model",
+        "links": [
+          "https://news.example/full",
+          "https://news.example/bare",
+          "https://news.example/title"
+        ],
+        "previews": {
+          "https://news.example/full": {
+            "title": "Company guidance",
+            "snippet": "A dated update."
+          },
+          "https://news.example/title": {
+            "title": "Only a headline"
+          }
+        },
+        "recommendations": [
+          {
+            "ticker": "AAPL",
+            "thesis": "A stock thesis.",
+            "legs": [
+              {
+                "action": "BUY"
+              }
+            ]
+          },
+          {
+            "ticker": "NVDA",
+            "thesis": "A call spread thesis.",
+            "legs": [
+              {
+                "action": "BUY_TO_OPEN",
+                "option_type": "C",
+                "strike": 150,
+                "expiry": "2027-01-15"
+              },
+              {
+                "action": "SELL_TO_OPEN",
+                "option_type": "C",
+                "strike": 170,
+                "expiry": "2027-01-15"
+              }
+            ]
+          }
+        ],
+        "openTickers": []
+      },
+      "submission": {
+        "marketDate": "2026-10-15",
+        "model": "fixture-model",
+        "links": [
+          {
+            "url": "https://news.example/full",
+            "title": "Company guidance",
+            "snippet": "A dated update."
+          },
+          {
+            "url": "https://news.example/bare"
+          },
+          {
+            "url": "https://news.example/title",
+            "title": "Only a headline"
+          }
+        ],
+        "recommendations": [
+          {
+            "symbol": "AAPL",
+            "direction": "bullish",
+            "trade": "Buy AAPL",
+            "thesis": "A stock thesis."
+          },
+          {
+            "symbol": "NVDA",
+            "direction": "neutral",
+            "trade": "NVDA 1/15/27: Buy 150c Sell 170c",
+            "thesis": "A call spread thesis."
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty daily brief",
+      "input": {
+        "marketDate": "2026-10-15",
+        "model": "fixture-model",
+        "links": [],
+        "previews": {},
+        "recommendations": [],
+        "openTickers": []
+      },
+      "submission": {
+        "marketDate": "2026-10-15",
+        "model": "fixture-model",
+        "links": [],
+        "recommendations": []
+      }
+    }
+  ],
+  "envelope": {
+    "thesis": 4096,
+    "trade": 80,
+    "links": 50,
+    "linkTitle": 200,
+    "linkSnippet": 500,
+    "recommendations": 10,
+    "model": 80
+  },
+  "symbols": {
+    "accepted": [
+      "A",
+      "NVDA",
+      "BRK/A",
+      "ABCDEF/XYZ",
+      "A1"
+    ],
+    "refused": [
+      "ABC.DE",
+      "ABCDEFG",
+      "ABC/ABCD",
+      "/ES",
+      "A/B/C",
+      "A:B"
+    ]
+  }
+}

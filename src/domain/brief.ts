@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { BRIEF_ENVELOPE } from './brief-envelope'
+
 import { CitedSourceUrlSchema } from './https-url'
 import { EquitySymbolSchema } from './instrument'
 import { IsoDateSchema } from './iso-date'
@@ -20,25 +22,25 @@ const BRIEF_DIRECTIONS = ['bullish', 'bearish', 'neutral'] as const
  * A thesis is untrusted model markdown rendered in full on the brief card, so this is its
  * rendering envelope: room for an argued page, not an essay the card was never laid out for.
  */
-export const MAX_THESIS_LENGTH = 4_096
+export const MAX_THESIS_LENGTH = BRIEF_ENVELOPE.thesis
 /** A trade line is one short line: `NVDA 1/16/26: Buy 150c Sell 170c` is the long case. */
-const MAX_TRADE_LABEL_LENGTH = 80
+const MAX_TRADE_LABEL_LENGTH = BRIEF_ENVELOPE.trade
 /** A morning's hot page yields a few dozen links at most; more than this is a sweep, not a reading list. */
-const MAX_BRIEF_LINKS = 50
+const MAX_BRIEF_LINKS = BRIEF_ENVELOPE.links
 /**
  * A headline is the link's text on the brief: one line on a desktop and at most a few wrapped
  * lines at phone width. Longer than this is a page's body, not its headline.
  */
-export const MAX_BRIEF_LINK_TITLE_LENGTH = 200
+export const MAX_BRIEF_LINK_TITLE_LENGTH = BRIEF_ENVELOPE.linkTitle
 /**
  * A snippet is the short paragraph under a headline that says why it moved: a few sentences, a
  * handful of lines at phone width. Longer is an excerpt of the article rather than its summary.
  */
-export const MAX_BRIEF_LINK_SNIPPET_LENGTH = 500
+export const MAX_BRIEF_LINK_SNIPPET_LENGTH = BRIEF_ENVELOPE.linkSnippet
 /** High conviction only: a brief that argues more names than this is a screener dump. */
-const MAX_BRIEF_RECOMMENDATIONS = 10
+const MAX_BRIEF_RECOMMENDATIONS = BRIEF_ENVELOPE.recommendations
 /** A model id as its runtime names it, one line on the cover beside the date. */
-const MAX_BRIEF_MODEL_LENGTH = 80
+const MAX_BRIEF_MODEL_LENGTH = BRIEF_ENVELOPE.model
 
 export const BriefRecommendationSchema = z.strictObject({
   symbol: EquitySymbolSchema,
