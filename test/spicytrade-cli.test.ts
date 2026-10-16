@@ -101,16 +101,16 @@ type Machine = {
   config: string
   home: string
   state: string
-  trading: string
+  workspace: string
 }
 
 /**
  * A machine: the fake tools, a home directory, and the state the fakes keep. `clients` names which
  * agent CLIs are installed, each with the entries it already holds, by name to target -- a URL, or
  * a command line -- which is also how a test sets up a pre-rename `spicy-trade` entry. A Claude
- * Code entry's name carries its scope, `local:` for the trading folder's or `user:` for every
- * folder's; the fake answers a local entry only from inside the trading folder, and prefers it
- * there the way Claude Code does.
+ * Code entry's name carries its scope, `local:` for the workspace's or `user:` for every
+ * folder's; the fake answers a local entry only from inside the workspace, and prefers it there
+ * the way Claude Code does.
  */
 async function fakeMachine(
   keyring: Record<string, string>,
@@ -121,7 +121,7 @@ async function fakeMachine(
   const state = join(bin, 'state')
   const home = join(bin, 'home')
   const config = join(home, '.config')
-  const trading = join(home, 'trading')
+  const workspace = join(home, 'workspace')
   await mkdir(state)
   await mkdir(config, { recursive: true })
   await writeFile(join(bin, 'xdg-open'), `#!/usr/bin/env bash\necho "$1" > '${state}/opened'\n`)
@@ -129,13 +129,13 @@ async function fakeMachine(
   for (const [client, entries] of Object.entries(clients)) {
     for (const [name, target] of Object.entries(entries)) {
       await writeFile(join(state, `${client}-${name.replace(':', '-')}-target`), target)
-      if (name.startsWith('local:')) await mkdir(trading, { recursive: true })
+      if (name.startsWith('local:')) await mkdir(workspace, { recursive: true })
     }
     await writeFile(join(bin, client), client === 'claude' ? `#!/usr/bin/env bash
 state='${state}'
 echo "$*" >> "$state/claude-calls"
-here=$(pwd -P); trading=$(cd '${trading}' 2>/dev/null && pwd -P)
-[[ $here == "$trading" ]] && scopes='local user' || scopes='user'
+here=$(pwd -P); workspace=$(cd '${workspace}' 2>/dev/null && pwd -P)
+[[ $here == "$workspace" ]] && scopes='local user' || scopes='user'
 if [[ $2 == get ]]; then
   for scope in $scopes; do
     entry="$state/claude-$scope-$3-target"
@@ -150,7 +150,7 @@ if [[ $2 == get ]]; then
   done
   exit 1
 elif [[ $2 == add ]]; then
-  [[ $4 == local && $here != "$trading" ]] && exit 1
+  [[ $4 == local && $here != "$workspace" ]] && exit 1
   scope=$4 name=$5
   shift 6
   echo "$*" > "$state/claude-$scope-$name-target"
@@ -180,22 +180,36 @@ fi
 `)
   }
   for (const tool of ['xdg-open', 'systemctl', ...Object.keys(clients)]) await chmod(join(bin, tool), 0o755)
-  return { bin, config, home, state, trading }
+  return { bin, config, home, state, workspace }
 }
 
-function run(machine: Machine, workerPort: number, args: string[]) {
+/**
+ * Runs the CLI on `machine`. The tests' own environment is passed on without CLAUDECODE, which is
+ * set when they run inside Claude Code and would change what `connect` checks. `env` adds to it,
+ * an undefined value removing that variable; `cwd` is the folder the CLI is run from.
+ */
+function run(
+  machine: Machine,
+  workerPort: number,
+  args: string[],
+  { cwd, env = {} }: { cwd?: string; env?: Record<string, string | undefined> } = {},
+) {
   let stdout = ''
   let stderr = ''
-  const child = spawn(process.execPath, [CLI, ...args], {
-    env: {
-      ...process.env,
-      CODEX_HOME: join(machine.home, '.codex'),
-      HOME: machine.home,
-      PATH: TEST_PATH(machine.bin),
-      SPICYTRADE_MCP_URL: `http://127.0.0.1:${workerPort}/mcp`,
-      SPICYTRADE_TRADING_DIR: machine.trading,
-      XDG_CONFIG_HOME: machine.config,
-    },
+  const { CLAUDECODE: _inherited, ...inherited } = process.env
+  const environment = {
+    ...inherited,
+    CODEX_HOME: join(machine.home, '.codex'),
+    HOME: machine.home,
+    PATH: TEST_PATH(machine.bin),
+    SPICYTRADE_MCP_URL: `http://127.0.0.1:${workerPort}/mcp`,
+    SPICYTRADE_WORKSPACE: machine.workspace,
+    XDG_CONFIG_HOME: machine.config,
+    ...env,
+  }
+  const child = spawn(process.execPath, [resolve(CLI), ...args], {
+    cwd,
+    env: Object.fromEntries(Object.entries(environment).filter(([, value]) => value !== undefined)),
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   children.push(child)
@@ -381,9 +395,9 @@ describe('spicytrade doctor', () => {
     // is reported once, not again as a failure of each.
     expect(stdout).not.toContain('tastytrade:')
     expect(stdout).not.toContain('MCP server')
-    expect(stdout).toContain('✗ Claude Code has a different server named "spicytrade"\n'
-      + `    Replace it: cd ${machine.trading} && claude mcp remove spicytrade --scope local && mkdir -p ${machine.trading} && `
-      + `cd ${machine.trading} && claude mcp add --scope local spicytrade -- ${MCP_TARGET}`)
+    expect(stdout).toContain('✗ Claude Code has a different server named "spicytrade" in ~/workspace\n'
+      + `    Replace it: cd ${machine.workspace} && claude mcp remove spicytrade --scope local && mkdir -p ${machine.workspace} && `
+      + `cd ${machine.workspace} && claude mcp add --scope local spicytrade -- ${MCP_TARGET}`)
     expect(stdout).toMatch(/✗ Codex has no spicytrade server\n {4}Add it with: \S+ setup/)
     expect(stdout).not.toContain('a-credential-in-a-url')
     expect(stdout).toContain('3 problems found.')
@@ -404,11 +418,48 @@ describe('spicytrade doctor', () => {
     expect(stdout).toContain('✓ signed in to spicytrade')
     expect(stdout).toMatch(/✗ the sign-in is still under its old keyring entry\n {4}Move it with: \S+ setup/)
     expect(stdout).toMatch(/✗ the old background proxy is still installed \(spicytrade-proxy\.service\)\n {4}Remove it with: \S+ setup/)
-    expect(stdout).toMatch(/✗ Claude Code starts spicytrade from an older install\n {4}Update it with: \S+ setup/)
+    // The entry is per folder, so the fix names this folder rather than a setup run from anywhere.
+    expect(stdout).toContain('✗ Claude Code starts spicytrade from an older install in ~/workspace\n'
+      + `    Replace it: cd ${machine.workspace} && claude mcp remove spicytrade --scope local && mkdir -p ${machine.workspace} && `
+      + `cd ${machine.workspace} && claude mcp add --scope local spicytrade -- ${MCP_TARGET}`)
     // Under either name, an entry in every folder loads trading tools in this code's own checkout.
-    expect(stdout).toMatch(/✗ Claude Code loads spicytrade in every folder, not only the trading folder\n {4}Move it with: \S+ setup/)
-    expect(stdout).toMatch(/✗ Claude Code loads spicy-trade in every folder, not only the trading folder\n {4}Move it with: \S+ setup/)
+    expect(stdout).toMatch(/✗ Claude Code loads spicytrade in every folder, not only ~\/workspace\n {4}Move it with: \S+ setup/)
+    expect(stdout).toMatch(/✗ Claude Code loads spicy-trade in every folder, not only ~\/workspace\n {4}Move it with: \S+ setup/)
     expect(stdout).toContain('5 problems found.')
+  }, 30_000)
+})
+
+describe('the workspace an agent loads spicytrade in', () => {
+  it('is the folder doctor and setup run from, named in what they report and in the fix', async () => {
+    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN }, { claude: {} })
+    await mkdir(machine.workspace, { recursive: true })
+    const worker = await fakeWorker([OLD_TOKEN])
+    // No override: the folder the command runs in is the workspace, as from an agent's own shell.
+    const here = { cwd: machine.workspace, env: { SPICYTRADE_WORKSPACE: undefined } }
+
+    const before = run(machine, worker.port, ['doctor'], here)
+    expect(await before.exited).toBe(1)
+    // Missing only from this folder, so the fix adds it here rather than running setup from anywhere.
+    expect(before.output().stdout).toContain('✗ Claude Code has no spicytrade server in ~/workspace\n'
+      + `    Add it with: mkdir -p ${machine.workspace} && cd ${machine.workspace} && claude mcp add --scope local spicytrade -- ${MCP_TARGET}\n`)
+
+    const setup = run(machine, worker.port, ['setup'], here)
+    expect(await setup.exited).toBe(0)
+    expect(setup.output().stdout).toContain('✓ Claude Code: added spicytrade in ~/workspace\n')
+
+    const after = run(machine, worker.port, ['doctor'], here)
+    expect(await after.exited).toBe(0)
+    expect(after.output().stdout).toContain('✓ Claude Code starts spicytrade in ~/workspace\n')
+  }, 60_000)
+
+  it('quotes a workspace whose path a shell would split', async () => {
+    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN }, { claude: {} })
+    const spaced = join(machine.home, 'My Trades')
+    await mkdir(spaced)
+    const worker = await fakeWorker([OLD_TOKEN])
+    const cli = run(machine, worker.port, ['doctor'], { cwd: spaced, env: { SPICYTRADE_WORKSPACE: undefined } })
+    expect(await cli.exited).toBe(1)
+    expect(cli.output().stdout).toContain(`Add it with: mkdir -p '${spaced}' && cd '${spaced}' && claude mcp add`)
   }, 30_000)
 })
 
@@ -423,8 +474,8 @@ describe('spicytrade setup', () => {
     expect(firstOut).toContain('✓ already signed in; skipped')
     // No terminal to ask on, so trading authority is not granted; the member is told how.
     expect(firstOut).toMatch(/· not connected: there is no terminal to ask on\n/)
-    // Only the trading folder loads the server; no other folder does.
-    expect(firstOut).toContain('✓ Claude Code: added spicytrade\n')
+    // Only the workspace setup ran for loads the server, and the line says which folder that is.
+    expect(firstOut).toContain('✓ Claude Code: added spicytrade in ~/workspace\n')
     // Agents come before tastytrade, so walking away from tastytrade still leaves a working agent.
     expect(firstOut.indexOf('== Agents')).toBeLessThan(firstOut.indexOf('== tastytrade'))
     // The closing check repeats none of what the steps just said; it adds the one thing they
@@ -494,7 +545,7 @@ describe('spicytrade setup', () => {
     expect(await readFile(join(machine.state, 'codex-spicytrade-target'), 'utf8')).toBe('https://someone-elses.example/mcp')
   }, 60_000)
 
-  it('moves an entry in every folder into the trading folder, and leaves one that is not spicytrade', async () => {
+  it('moves an entry in every folder into the workspace, and leaves one that is not spicytrade', async () => {
     const machine = await fakeMachine(
       { 'spicytrade/mcp-token': OLD_TOKEN },
       { claude: { 'user:spicytrade': LEGACY_PROXY_URL, 'user:spicy-trade': 'https://someone-elses.example/mcp' } },
@@ -504,8 +555,8 @@ describe('spicytrade setup', () => {
     const cli = run(machine, worker.port, ['setup'])
     expect(await cli.exited).toBe(0)
     const { stdout } = cli.output()
-    // The every-folder entry answers from the trading folder too, but does not count as its entry.
-    expect(stdout).toContain('✓ Claude Code: added spicytrade\n')
+    // The every-folder entry answers from the workspace too, but does not count as its entry.
+    expect(stdout).toContain('✓ Claude Code: added spicytrade in ~/workspace\n')
     expect(stdout).toContain('✓ Claude Code (every folder): removed an old spicytrade entry')
     expect(await readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).toBe(`${MCP_TARGET}\n`)
     await expect(readFile(join(machine.state, 'claude-user-spicytrade-target'), 'utf8')).rejects.toThrow()
@@ -765,6 +816,25 @@ describe('opening a trading session', () => {
 })
 
 
+/**
+ * A Worker for an already signed-in, already connected computer: it mints the tastytrade token and
+ * answers the MCP calls `connect` makes to verify a live snapshot. Resolves its port.
+ */
+function snapshotWorker() {
+  return serve((request, body) => {
+    if (request.headers.authorization !== `Bearer ${OLD_TOKEN}`) return { body: { error: 'invalid_token' }, status: 401 }
+    if (request.url === '/api/brokers/tastytrade/token') return { body: { accessToken: 'minted', expiresIn: 900 }, status: 200 }
+    const { id, method } = JSON.parse(body)
+    if (id === undefined) return { status: 202 }
+    const result = method === 'initialize'
+      ? { protocolVersion: '2025-06-18' }
+      : method === 'tools/call'
+        ? { content: [{ type: 'text', text: JSON.stringify({ asOf: new Date().toISOString(), source: 'tastytrade', balances: { netLiquidatingValue: 1234 } }) }] }
+        : { tools: [] }
+    return { body: { id, jsonrpc: '2.0', result }, status: 200 }
+  })
+}
+
 describe('connecting from the current agent without a terminal', () => {
   it('completes browser sign-in and broker approval without launching or configuring a harness', async () => {
     const machine = await fakeMachine({})
@@ -812,6 +882,30 @@ describe('connecting from the current agent without a terminal', () => {
     expect(cli.output().stdout).not.toContain('Account connected and live snapshot verified')
     expect(cli.output().stderr).toContain('could not be verified')
   })
+
+  it('says from Claude Code when the workspace it runs in has no server, without adding one', async () => {
+    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN }, { claude: {} })
+    const cli = run(machine, await snapshotWorker(), ['connect'], { env: { CLAUDECODE: '1' } })
+    expect(await cli.exited).toBe(0)
+    const { stdout } = cli.output()
+    expect(stdout).toContain('Account connected and live snapshot verified. But Claude Code has no spicytrade server in ~/workspace,'
+      + ' so this conversation cannot use it yet.\n'
+      + `Add it with: mkdir -p ${machine.workspace} && cd ${machine.workspace} && claude mcp add --scope local spicytrade -- ${MCP_TARGET}\n`)
+    expect(stdout).not.toContain('Continue in your existing agent conversation')
+    // It asked Claude Code, and only asked: registration is the agent's own step.
+    expect(await readFile(join(machine.state, 'claude-calls'), 'utf8')).not.toContain('mcp add')
+  }, 30_000)
+
+  it('tells Claude Code to continue once its workspace starts the server', async () => {
+    const machine = await fakeMachine(
+      { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN },
+      { claude: { 'local:spicytrade': MCP_TARGET } },
+    )
+    const cli = run(machine, await snapshotWorker(), ['connect'], { env: { CLAUDECODE: '1' } })
+    expect(await cli.exited).toBe(0)
+    expect(cli.output().stdout).toContain('Account connected and live snapshot verified. Claude Code starts spicytrade in ~/workspace.'
+      + ' Continue in your existing agent conversation;')
+  }, 30_000)
 
   it('prints only a credential-free stdio manifest without inspecting or launching clients', async () => {
     const machine = await fakeMachine({})

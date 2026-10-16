@@ -207,6 +207,8 @@ export async function doctor(out = process.stdout, { quiet = false, settled = ne
     const configured = skip.has(client.name) ? { state: 'failed' } : client.configured()
     if (configured.state === 'uninstalled') continue
     agentsFound += 1
+    // A per-folder entry is reported with its folder, or "has none" reads as "has none anywhere".
+    const inWhere = client.where ? ` in ${client.where}` : ''
     // Run from setup, which has just tried to fix these itself, the fix given is the manual one;
     // run alone, it is setup, which would fix them.
     if (configured.state === 'failed') {
@@ -214,15 +216,21 @@ export async function doctor(out = process.stdout, { quiet = false, settled = ne
       // Every lookup below would wait out the same timeout.
       continue
     } else if (configured.state === 'missing') {
-      checks.fail(`${client.name} has no ${MCP_SERVER_NAME} server`, quiet ? `Add it yourself with: ${client.addCommand}${client.afterAdd ?? ''}` : `Add it with: ${setup}`)
+      // A per-folder entry is missing only from the folder checked, and `setup` registers whatever
+      // folder it is run from, so the fix is the command for this folder rather than `setup`.
+      checks.fail(`${client.name} has no ${MCP_SERVER_NAME} server${inWhere}`, quiet || client.where
+        ? `Add it${quiet ? ' yourself' : ''} with: ${client.addCommand}${client.afterAdd ?? ''}`
+        : `Add it with: ${setup}`)
     } else if (configured.target !== EXPECTED_TARGET) {
       // The configured target is not printed: a client entry may carry a credential in a URL.
       checks.fail(namesSpicytrade(configured.target)
-        ? `${client.name} starts spicytrade from an older install`
-        : `${client.name} has a different server named "${MCP_SERVER_NAME}"`,
-      namesSpicytrade(configured.target) && !quiet ? `Update it with: ${setup}` : `Replace it: ${client.removeCommand()} && ${client.addCommand}${client.afterAdd ?? ''}`)
+        ? `${client.name} starts spicytrade from an older install${inWhere}`
+        : `${client.name} has a different server named "${MCP_SERVER_NAME}"${inWhere}`,
+      namesSpicytrade(configured.target) && !quiet && !client.where
+        ? `Update it with: ${setup}`
+        : `Replace it: ${client.removeCommand()} && ${client.addCommand}${client.afterAdd ?? ''}`)
     } else {
-      checks.pass(`${client.name} starts spicytrade`)
+      checks.pass(`${client.name} starts spicytrade${inWhere}`)
     }
     const legacy = client.configured(LEGACY_MCP_SERVER_NAME)
     if (legacy.state === 'configured' && namesSpicytrade(legacy.target)) {
@@ -231,7 +239,7 @@ export async function doctor(out = process.stdout, { quiet = false, settled = ne
     for (const entry of [MCP_SERVER_NAME, LEGACY_MCP_SERVER_NAME]) {
       const wide = client.everywhere?.configured(entry)
       if (wide?.state === 'configured' && namesSpicytrade(wide.target)) {
-        checks.fail(`${client.name} loads ${entry} in every folder, not only the trading folder`, `Move it with: ${setup}`)
+        checks.fail(`${client.name} loads ${entry} in every folder, not only ${client.where ?? 'your workspace'}`, `Move it with: ${setup}`)
       }
     }
   }

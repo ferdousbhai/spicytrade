@@ -31,7 +31,13 @@ ${MCP_ENDPOINT} instead. Do not claim a cloud shell is the user's local computer
 
    Claude Code: in the current workspace, use
    claude mcp add --scope local spicytrade -- <command from integration> mcp
-   Use /mcp to reconnect the server if needed; continue this conversation.
+   Confirm it from the same workspace: claude mcp get spicytrade must show a Local scope and
+   that command. A server added during a conversation may load only when Claude Code restarts in
+   this workspace; claude --continue resumes the conversation. Use /mcp to reconnect a server
+   that was already loaded.
+
+   Check from the workspace: ~/.local/bin/spicytrade doctor checks the folder it runs in, so run
+   it there, never from another directory, before reporting the harness configured.
 
    Codex: merge into this trusted workspace's .codex/config.toml:
    [mcp_servers.spicytrade]
@@ -53,7 +59,9 @@ ${MCP_ENDPOINT} instead. Do not claim a cloud shell is the user's local computer
    If newly registered tools cannot load in this running conversation, the current agent can
    run ~/.local/bin/spicytrade connect in its own shell. This explicit account-connection command
    works without a TTY, opens browser approval, and verifies a live snapshot. Keep the process
-   running while the user approves. It never launches or configures an agent. On SSH, follow
+   running while the user approves. It never launches or configures an agent; run from Claude
+   Code, its closing line says whether this workspace has the server, and if not, the command
+   that adds it. Act on that line before telling the user to continue. On SSH, follow
    its port-forward instructions; remote browser approval needs a route back to that machine.
 
 4. On success, call setup_required if available to reload saved credentials, then call

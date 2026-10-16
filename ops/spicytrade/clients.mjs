@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 
-import { CODEX_START, LEGACY_PROXY_URL, MCP_COMMAND, MCP_SERVER_NAME, ORIGIN, TRADING_DIR } from './config.mjs'
+import { CODEX_START, homeRelative, LEGACY_PROXY_URL, MCP_COMMAND, MCP_SERVER_NAME, ORIGIN, WORKSPACE_DIR } from './config.mjs'
 
 /**
  * The agent clients `setup` registers `spicytrade mcp` with, through each client's own CLI rather
@@ -12,10 +12,10 @@ import { CODEX_START, LEGACY_PROXY_URL, MCP_COMMAND, MCP_SERVER_NAME, ORIGIN, TR
  *
  * Trading tools are something to turn on when wanted, not a default in every session, so no
  * client loads the server everywhere. Claude Code cannot add a server switched off, so it gets the
- * server only in the trading folder, at local scope; Codex has no local scope, so it gets the
- * server at user scope switched off. Every command runs from a fixed directory -- the trading
- * folder, or home -- never from wherever `setup` was run: a project's own `.mcp.json` or local
- * entry would otherwise answer for the server's name.
+ * server only in the member's workspace (`WORKSPACE_DIR`), at local scope; Codex has no local
+ * scope, so it gets the server at user scope switched off. A Claude Code local entry is read and
+ * written from that workspace, where it is keyed; every other command runs from home, so a
+ * project's own `.mcp.json` cannot answer for the server's name.
  *
  * An entry is compared as its target: the command line a client launches, joined by spaces, or
  * the URL an older entry names. Nothing here carries a credential; the command line is the whole
@@ -32,6 +32,8 @@ const CLIENT_COMMAND_TIMEOUT_MS = 120_000
 export const EXPECTED_TARGET = MCP_COMMAND.join(' ')
 const shellWord = (word) => (/^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`)
 const MCP_COMMAND_LINE = MCP_COMMAND.map(shellWord).join(' ')
+/** The workspace as a pasted command names it: any folder the member chose, spaces and all. */
+const WORKSPACE_WORD = shellWord(WORKSPACE_DIR)
 
 const CodexServerSchema = z.object({
   transport: z.object({ args: z.array(z.string()).optional(), command: z.string().optional(), url: z.string().optional() }),
@@ -72,16 +74,16 @@ function claudeTarget(stdout) {
 /**
  * `claude mcp get` resolves a name across scopes and prints the `Scope:` that answered, so an entry
  * counts only at the scope asked about. A local entry is keyed by the directory the command runs
- * in, so it is read from the trading folder; a user entry is read from home. A trading folder that
- * does not exist yet holds no entry, but whether the CLI is there still has to be asked.
+ * in, so it is read from the workspace; a user entry is read from home. A workspace that does not
+ * exist yet holds no entry, but whether the CLI is there still has to be asked.
  */
 function claudeEntry(entry, scope) {
   let got
-  if (scope === 'local' && !existsSync(TRADING_DIR)) {
+  if (scope === 'local' && !existsSync(WORKSPACE_DIR)) {
     const probe = run('claude', ['--version'])
     got = probe.absent || probe.failed ? probe : { ok: false }
   } else {
-    got = run('claude', ['mcp', 'get', entry], scope === 'local' ? TRADING_DIR : homedir())
+    got = run('claude', ['mcp', 'get', entry], scope === 'local' ? WORKSPACE_DIR : homedir())
   }
   const found = lookup(got, claudeTarget)
   if (found.state !== 'configured') return found
@@ -90,11 +92,11 @@ function claudeEntry(entry, scope) {
 
 function addClaudeEntry() {
   try {
-    mkdirSync(TRADING_DIR, { recursive: true })
+    mkdirSync(WORKSPACE_DIR, { recursive: true })
   } catch {
     return { ok: false }
   }
-  return run('claude', ['mcp', 'add', '--scope', 'local', MCP_SERVER_NAME, '--', ...MCP_COMMAND], TRADING_DIR)
+  return run('claude', ['mcp', 'add', '--scope', 'local', MCP_SERVER_NAME, '--', ...MCP_COMMAND], WORKSPACE_DIR)
 }
 
 /**
@@ -135,19 +137,21 @@ export function namesSpicytrade(target) {
  *
  * `everywhere` is the entry a client loads in every directory where that is not where the server
  * belongs: Claude Code's user scope, which earlier installs wrote. `setup` removes it once the
- * trading folder's entry is in place.
+ * workspace's entry is in place. `where` names the folder a client's entry belongs to, for a
+ * client whose entry is per folder: a report that leaves it out reads as "not set up anywhere".
  */
 export const CLIENTS = [
   {
     add: addClaudeEntry,
     bin: 'claude',
     id: 'claude',
-    addCommand: `mkdir -p ${TRADING_DIR} && cd ${TRADING_DIR} && claude mcp add --scope local ${MCP_SERVER_NAME} -- ${MCP_COMMAND_LINE}`,
+    addCommand: `mkdir -p ${WORKSPACE_WORD} && cd ${WORKSPACE_WORD} && claude mcp add --scope local ${MCP_SERVER_NAME} -- ${MCP_COMMAND_LINE}`,
     name: 'Claude Code',
-    start: `cd ${TRADING_DIR} && claude`,
+    where: homeRelative(WORKSPACE_DIR),
+    start: `cd ${WORKSPACE_WORD} && claude`,
     configured: (entry = MCP_SERVER_NAME) => claudeEntry(entry, 'local'),
-    remove: (entry) => run('claude', ['mcp', 'remove', entry, '--scope', 'local'], TRADING_DIR),
-    removeCommand: (entry = MCP_SERVER_NAME) => `cd ${TRADING_DIR} && claude mcp remove ${entry} --scope local`,
+    remove: (entry) => run('claude', ['mcp', 'remove', entry, '--scope', 'local'], WORKSPACE_DIR),
+    removeCommand: (entry = MCP_SERVER_NAME) => `cd ${WORKSPACE_WORD} && claude mcp remove ${entry} --scope local`,
     everywhere: {
       configured: (entry) => claudeEntry(entry, 'user'),
       remove: (entry) => run('claude', ['mcp', 'remove', entry, '--scope', 'user']),

@@ -69,13 +69,15 @@ export function reconnectHow(clients = Object.keys(RECONNECT_STEPS)) {
 }
 
 /**
- * The one folder where Claude Code loads the server. Trading tools act on the member's own
- * account, so they belong to sessions started for trading, not to every session in every
- * directory -- least of all a checkout of this code, where an agent edits the server it would be
- * trading through. Claude Code cannot add a server switched off everywhere, so the server is
- * registered here at local scope instead.
+ * The folder whose Claude Code sessions load the server: the one this CLI runs in, which is the
+ * agent's own workspace when the agent runs it, as the connect guide has it do. Trading tools act
+ * on the member's own account, so they belong to the workspace the member chose for trading, not
+ * to every session in every directory; Claude Code cannot add a server switched off everywhere,
+ * so it is registered here at local scope. `setup`, `doctor`, `connect` and `start` must all mean
+ * this one folder: a fixed folder of our own reported the member's actual workspace as missing,
+ * and its "fix" registered the server somewhere the member never starts an agent.
  */
-export const TRADING_DIR = process.env.SPICYTRADE_TRADING_DIR ?? join(homedir(), 'trading')
+export const WORKSPACE_DIR = process.env.SPICYTRADE_WORKSPACE ?? process.cwd()
 
 /**
  * This CLI. In a checkout it is the sibling entry script; in the single-file build that
@@ -93,7 +95,7 @@ export const CLI_PATH = fileURLToPath(new URL('./spicytrade.mjs', import.meta.ur
  */
 export const MCP_COMMAND = [CLI_PATH, 'mcp']
 
-function homeRelative(path) {
+export function homeRelative(path) {
   const home = homedir()
   return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path
 }

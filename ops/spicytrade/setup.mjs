@@ -115,7 +115,7 @@ function register(out, client, configured) {
   // How to start each agent is said once, in the closing Ready block.
   out.write(added.off === false
     ? `! ${client.name}: added ${MCP_SERVER_NAME}, but ${client.offFailedNote}\n`
-    : `✓ ${client.name}: added ${MCP_SERVER_NAME}${client.offNote ?? ''}\n`)
+    : `✓ ${client.name}: added ${MCP_SERVER_NAME}${client.where ? ` in ${client.where}` : ''}${client.offNote ?? ''}\n`)
   return true
 }
 

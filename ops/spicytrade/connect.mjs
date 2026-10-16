@@ -3,7 +3,8 @@ import { createInterface } from 'node:readline'
 import { z } from 'zod'
 
 import { grantMinter, grantRefused, TastytradeAuthError } from './broker-grants.mjs'
-import { CLI_PATH, cliCommand } from './config.mjs'
+import { CLIENTS, EXPECTED_TARGET, namesSpicytrade } from './clients.mjs'
+import { CLI_PATH, cliCommand, MCP_SERVER_NAME } from './config.mjs'
 import { agentToken, keyringWritable, secretToolInstalled, tastytradeCredentialKind } from './keyring.mjs'
 import { login } from './login.mjs'
 import { CliFailure } from './loopback.mjs'
@@ -62,6 +63,43 @@ export async function verifyAccount() {
   }
 }
 
+/**
+ * The agent whose shell `connect` runs in, when it says so: Claude Code sets CLAUDECODE=1 for the
+ * commands it runs. No other client is guessed at from its environment; for them, the closing
+ * line stays the general one and the connect guide's own steps cover registration.
+ */
+function callingClient() {
+  return process.env.CLAUDECODE === '1' ? CLIENTS.find((client) => client.id === 'claude') : undefined
+}
+
+/**
+ * The closing line. "Continue in your conversation" is true only if the agent that ran this has the
+ * server in its workspace: an account connected to no agent's server looks finished and is not, so
+ * that case says what is still missing and how to add it. It is read only -- `connect` never
+ * registers an agent; the agent does that through its own mechanism, as the connect guide has it.
+ */
+function closingLine() {
+  const verified = 'Account connected and live snapshot verified.'
+  const client = callingClient()
+  if (!client) return `${verified} Continue in your existing agent conversation.\n`
+  const configured = client.configured()
+  if (configured.state === 'configured' && configured.target === EXPECTED_TARGET) {
+    return `${verified} ${client.name} starts ${MCP_SERVER_NAME} in ${client.where}. Continue in your existing agent conversation;`
+      + ' if its tools are not loaded yet, run /mcp and reconnect it, or restart Claude Code with claude --continue.\n'
+  }
+  if (configured.state === 'failed') {
+    return `${verified} ${client.name} did not answer when asked for its ${MCP_SERVER_NAME} server; check it with: ${cliCommand('doctor')}\n`
+  }
+  const problem = configured.state !== 'configured'
+    ? `${client.name} has no ${MCP_SERVER_NAME} server in ${client.where}`
+    : namesSpicytrade(configured.target)
+      ? `${client.name} starts ${MCP_SERVER_NAME} from an older install in ${client.where}`
+      : `${client.name} has a different server named "${MCP_SERVER_NAME}" in ${client.where}`
+  const fix = configured.state === 'configured' ? `${client.removeCommand()} && ${client.addCommand}` : client.addCommand
+  return `${verified} But ${problem}, so this conversation cannot use it yet.\n`
+    + `Add it with: ${fix}\nThen restart Claude Code in that folder; claude --continue resumes this conversation.\n`
+}
+
 /** Explicit account connection, callable from an existing agent's shell without a terminal questionnaire. */
 export async function connect(out = process.stdout) {
   if (process.platform !== 'linux') throw new CliFailure('Local account access currently needs Linux. Use https://spicy.trade/mcp for research on other platforms.')
@@ -94,5 +132,5 @@ export async function connect(out = process.stdout) {
   if (needsConnection) await connectTastytrade(out)
   out.write('Verifying live account access…\n')
   await verifyAccount()
-  out.write('Account connected and live snapshot verified. Continue in your existing agent conversation.\n')
+  out.write(closingLine())
 }

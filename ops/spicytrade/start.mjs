@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { createInterface } from 'node:readline/promises'
 
 import { CLIENTS, EXPECTED_TARGET } from './clients.mjs'
-import { TRADING_DIR, cliCommand } from './config.mjs'
+import { WORKSPACE_DIR, cliCommand } from './config.mjs'
 import { commandInstalled } from './keyring.mjs'
 import { CliFailure } from './loopback.mjs'
 
@@ -41,12 +41,12 @@ export async function start() {
   }
   const configured = client.configured()
   if (configured.state !== 'configured' || configured.target !== EXPECTED_TARGET) throw new CliFailure(`Connect ${client.name} first: ${cliCommand('setup')}`)
-  await mkdir(TRADING_DIR, { recursive: true })
+  await mkdir(WORKSPACE_DIR, { recursive: true })
   await mkdir(preferenceDir, { recursive: true })
   await writeFile(preferencePath, `${JSON.stringify(client.id)}\n`)
   // argv, never a shell: the client inherits the terminal without interpreting paths as code.
   const args = client.id === 'codex' ? ['-c', 'mcp_servers.spicytrade.enabled=true'] : []
-  const child = spawn(client.bin, args, { cwd: TRADING_DIR, stdio: 'inherit' })
+  const child = spawn(client.bin, args, { cwd: WORKSPACE_DIR, stdio: 'inherit' })
   const code = await new Promise((resolve, reject) => {
     child.once('error', reject)
     child.once('exit', (status) => resolve(status ?? 1))
