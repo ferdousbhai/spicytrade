@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { type IvTermStructure, MarketStateSchema, type MarketSnapshot } from '../domain/market'
+import { chunked } from '../domain/chunked'
 import { errorName, toError } from '../domain/failure'
 import { type AppEnv } from './env'
 import { d1InListChunks, d1RowPlaceholders, rowsPerD1Statement } from './d1-limits'
@@ -56,8 +57,7 @@ export async function persistTastytradeMarketSnapshot(
   if (!records.metrics.length && !records.quotes.length) return
   const timestamp = observedAt.toISOString()
   const statements: D1PreparedStatement[] = []
-  for (let start = 0; start < records.metrics.length; start += METRIC_ROWS_PER_STATEMENT) {
-    const chunk = records.metrics.slice(start, start + METRIC_ROWS_PER_STATEMENT)
+  for (const chunk of chunked(records.metrics, METRIC_ROWS_PER_STATEMENT)) {
     statements.push(env.DB.prepare(
         `INSERT INTO tastytrade_market_metrics (
           symbol, iv_index_percent, iv_rank_percent, iv_percentile_percent,
@@ -93,8 +93,7 @@ export async function persistTastytradeMarketSnapshot(
         metric.providerUpdatedAt ?? null, timestamp]
       })))
   }
-  for (let start = 0; start < records.quotes.length; start += QUOTE_ROWS_PER_STATEMENT) {
-    const chunk = records.quotes.slice(start, start + QUOTE_ROWS_PER_STATEMENT)
+  for (const chunk of chunked(records.quotes, QUOTE_ROWS_PER_STATEMENT)) {
     statements.push(env.DB.prepare(
         `INSERT INTO tastytrade_market_quotes (
           symbol, price, previous_close, volume, year_low, year_high,
@@ -149,10 +148,6 @@ const StoredQuoteRowSchema = z.object({
   observed_at: z.string(),
 })
 
-function optional(value: number | null): number | undefined {
-  return value === null ? undefined : value
-}
-
 function storedMetricRecord(row: z.infer<typeof StoredMetricRowSchema>): TastytradeMarketMetricRecord {
   const term = row.front_expiration !== null && row.front_iv_percent !== null
     && row.back_expiration !== null && row.back_iv_percent !== null
@@ -165,15 +160,15 @@ function storedMetricRecord(row: z.infer<typeof StoredMetricRowSchema>): Tastytr
     : undefined
   return {
     earningsDate: row.earnings_date,
-    historicalVolatility30Day: optional(row.historical_volatility_30_day_percent),
-    ivHistoricalVolatility30DayDifference: optional(row.iv_hv_30_day_difference_points),
-    ivIndex: optional(row.iv_index_percent),
-    ivIndex5DayChange: optional(row.iv_index_5_day_change_points),
-    ivPercentile: optional(row.iv_percentile_percent),
-    ivRank: optional(row.iv_rank_percent),
+    historicalVolatility30Day: row.historical_volatility_30_day_percent ?? undefined,
+    ivHistoricalVolatility30DayDifference: row.iv_hv_30_day_difference_points ?? undefined,
+    ivIndex: row.iv_index_percent ?? undefined,
+    ivIndex5DayChange: row.iv_index_5_day_change_points ?? undefined,
+    ivPercentile: row.iv_percentile_percent ?? undefined,
+    ivRank: row.iv_rank_percent ?? undefined,
     ivTermStructure: term,
-    liquidity: optional(row.liquidity_rating),
-    marketCap: optional(row.market_cap),
+    liquidity: row.liquidity_rating ?? undefined,
+    marketCap: row.market_cap ?? undefined,
     providerUpdatedAt: row.provider_updated_at ?? undefined,
     symbol: row.symbol,
   }
@@ -212,11 +207,11 @@ export async function readStoredMarketRecords(
     if (latestObservedAt === undefined || value > latestObservedAt) latestObservedAt = value
   }
   for (const chunk of d1InListChunks(symbols)) {
-    const placeholders = chunk.map(() => '?').join(', ')
+    const placeholders = d1RowPlaceholders(chunk.length)
     const [metricResult, quoteResult] = await Promise.all([
-      env.DB.prepare(`SELECT * FROM tastytrade_market_metrics WHERE symbol IN (${placeholders})`)
+      env.DB.prepare(`SELECT * FROM tastytrade_market_metrics WHERE symbol IN ${placeholders}`)
         .bind(...chunk).all(),
-      env.DB.prepare(`SELECT * FROM tastytrade_market_quotes WHERE symbol IN (${placeholders})`)
+      env.DB.prepare(`SELECT * FROM tastytrade_market_quotes WHERE symbol IN ${placeholders}`)
         .bind(...chunk).all(),
     ])
     for (const result of metricResult.results) {
@@ -239,9 +234,9 @@ export async function readStoredMarketRecords(
         price: row.data.price,
         providerUpdatedAt: row.data.provider_updated_at,
         symbol: row.data.symbol,
-        volume: optional(row.data.volume),
-        yearHigh: optional(row.data.year_high),
-        yearLow: optional(row.data.year_low),
+        volume: row.data.volume ?? undefined,
+        yearHigh: row.data.year_high ?? undefined,
+        yearLow: row.data.year_low ?? undefined,
       })
       observe(row.data.observed_at)
     }

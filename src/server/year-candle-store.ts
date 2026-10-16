@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import { CandlePointSchema, MAX_YEAR_CANDLES, type CandlePoint } from '../domain/candle'
 import { EquitySymbolSchema } from '../domain/instrument'
-import { d1InListChunks } from './d1-limits'
+import { d1InListChunks, d1RowPlaceholders } from './d1-limits'
 
 const StoredClosesSchema = z.array(CandlePointSchema).max(MAX_YEAR_CANDLES)
 
@@ -37,10 +37,9 @@ export async function readYearAgoCloses(
   let skipped = 0
   // One bound parameter per symbol, so a long watchlist is read in statement-sized chunks.
   for (const chunk of d1InListChunks(symbols)) {
-    const placeholders = chunk.map(() => '?').join(', ')
     const { results } = await db.prepare(
       `SELECT symbol, year_ago_close FROM year_candles
-        WHERE symbol IN (${placeholders}) AND year_ago_close IS NOT NULL`,
+        WHERE symbol IN ${d1RowPlaceholders(chunk.length)} AND year_ago_close IS NOT NULL`,
     ).bind(...chunk).all()
     for (const result of results) {
       const row = StoredYearAnchorRowSchema.safeParse(result)

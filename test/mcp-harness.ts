@@ -1,12 +1,16 @@
+import { expect } from 'vitest'
+import { z } from 'zod'
+
 import { type JsonValue } from '../src/domain/json-payload'
 import { OWNER_EMAIL } from '../src/server/auth'
-import { type McpExecutionContext } from '../src/server/mcp'
+import { type AppEnv } from '../src/server/env'
+import { handleMcpRequest, type McpExecutionContext } from '../src/server/mcp'
 import { issueMcpToken } from '../src/server/mcp-tokens'
 import { migrationStore, seedMember } from './sqlite-d1'
 
 export const executionContext: McpExecutionContext = { props: undefined, waitUntil: () => undefined }
 
-export type JsonRpcFrame = { id: number; jsonrpc: '2.0'; method: string; params?: Record<string, JsonValue> }
+type JsonRpcFrame = { id: number; jsonrpc: '2.0'; method: string; params?: Record<string, JsonValue> }
 
 export const TOOLS_LIST: JsonRpcFrame = { id: 1, jsonrpc: '2.0', method: 'tools/list', params: {} }
 
@@ -28,6 +32,21 @@ export function mcpRequest(body: JsonRpcFrame | Record<string, never>, token?: s
 export async function mcpPayload(response: Response) {
   const body = await response.text()
   return JSON.parse(body.slice(body.indexOf('{')))
+}
+
+// Loose so every field a tool advertises survives the parse: budget and schema checks read them whole.
+const ToolsListSchema = z.object({ result: z.object({ tools: z.array(z.looseObject({ name: z.string() })) }) })
+
+/** The tools `tools/list` advertises to `token`'s caller, or to an anonymous one without it. */
+export async function listTools(env: AppEnv, token?: string) {
+  const response = await handleMcpRequest(mcpRequest(TOOLS_LIST, token), env, executionContext)
+  expect(response.status).toBe(200)
+  return ToolsListSchema.parse(await mcpPayload(response)).result.tools
+}
+
+/** The names of the tools `listTools` returns. */
+export async function listToolNames(env: AppEnv, token?: string): Promise<string[]> {
+  return (await listTools(env, token)).map((tool) => tool.name)
 }
 
 /**

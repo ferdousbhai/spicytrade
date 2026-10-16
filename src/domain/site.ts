@@ -15,8 +15,9 @@ export const SITE_DESCRIPTION = 'Public options intelligence and market research
 /** Where the MCP surface is served, on this origin and no other. */
 export const MCP_PATH = '/mcp'
 export const MCP_ENDPOINT = `${SITE_ORIGIN}${MCP_PATH}`
-/** The local agent's installer, served from `public/install.sh`. */
+/** The guide an agent follows to connect itself, served by `src/routes/connect.guide.ts`. */
 export const CONNECT_GUIDE_URL = `${SITE_ORIGIN}/connect/guide`
+/** The local agent's installer, served from `public/install.sh`. */
 export const INSTALL_SCRIPT_URL = `${SITE_ORIGIN}/install.sh`
 
 /** Where readers write: support, privacy requests, and legal notices, all on the site's own domain. */

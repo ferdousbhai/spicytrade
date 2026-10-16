@@ -6,8 +6,14 @@ import { type JsonObject } from '../src/domain/json-payload'
 import { CallerVisibleError } from '../src/server/caller-visible-error'
 
 import {
+  DEFAULT_BOLLINGER_DEVIATIONS,
+  DEFAULT_MACD_FAST_PERIOD,
+  DEFAULT_MACD_SIGNAL_PERIOD,
+  DEFAULT_MACD_SLOW_PERIOD,
+  DEFAULT_STUDY_PERIOD,
   MAX_PRICE_HISTORY_RETURNED_ROWS,
   MAX_PRICE_HISTORY_SPAN_DAYS,
+  MIN_STUDY_PERIOD,
   type PriceHistoryProvider,
   PriceHistoryReadParameters,
   type PriceHistoryReadResult,
@@ -17,6 +23,7 @@ import {
   createYahooPriceHistoryProvider,
   readPriceHistory,
 } from '../src/server/market-research-tools'
+import { normalizeStudies } from '../src/server/technical-studies'
 
 const now = new Date('2026-08-14T12:00:00.000Z')
 
@@ -404,25 +411,23 @@ describe('market research tools', () => {
 })
 
 describe('price study defaults', () => {
-  it('applies the defaults the tool description states, from one definition', async () => {
-    const { normalizeStudies } = await import('../src/server/technical-studies')
-    const contracts = await import('../src/server/market-research-contracts')
+  it('applies the defaults the tool description states, from one definition', () => {
     expect(normalizeStudies([{ kind: 'RSI' }, { kind: 'BBANDS' }, { kind: 'MACD' }])).toEqual([
-      { kind: 'RSI', period: contracts.DEFAULT_STUDY_PERIOD },
-      { kind: 'BBANDS', period: contracts.DEFAULT_STUDY_PERIOD, standardDeviations: contracts.DEFAULT_BOLLINGER_DEVIATIONS },
+      { kind: 'RSI', period: DEFAULT_STUDY_PERIOD },
+      { kind: 'BBANDS', period: DEFAULT_STUDY_PERIOD, standardDeviations: DEFAULT_BOLLINGER_DEVIATIONS },
       {
-        fastPeriod: contracts.DEFAULT_MACD_FAST_PERIOD,
+        fastPeriod: DEFAULT_MACD_FAST_PERIOD,
         kind: 'MACD',
-        signalPeriod: contracts.DEFAULT_MACD_SIGNAL_PERIOD,
-        slowPeriod: contracts.DEFAULT_MACD_SLOW_PERIOD,
+        signalPeriod: DEFAULT_MACD_SIGNAL_PERIOD,
+        slowPeriod: DEFAULT_MACD_SLOW_PERIOD,
       },
     ])
-    const description = JSON.stringify(contracts.PriceHistoryReadParameters.properties.studies)
-    expect(description).toContain(`period ${contracts.DEFAULT_STUDY_PERIOD}`)
+    const description = JSON.stringify(PriceHistoryReadParameters.properties.studies)
+    expect(description).toContain(`period ${DEFAULT_STUDY_PERIOD}`)
     expect(description).toContain(
-      `MACD ${contracts.DEFAULT_MACD_FAST_PERIOD}/${contracts.DEFAULT_MACD_SLOW_PERIOD}/${contracts.DEFAULT_MACD_SIGNAL_PERIOD}`,
+      `MACD ${DEFAULT_MACD_FAST_PERIOD}/${DEFAULT_MACD_SLOW_PERIOD}/${DEFAULT_MACD_SIGNAL_PERIOD}`,
     )
-    expect(description).toContain(`deviations ${contracts.DEFAULT_BOLLINGER_DEVIATIONS}`)
-    expect(() => normalizeStudies([{ kind: 'SMA', period: contracts.MIN_STUDY_PERIOD - 1 }])).toThrow()
+    expect(description).toContain(`deviations ${DEFAULT_BOLLINGER_DEVIATIONS}`)
+    expect(() => normalizeStudies([{ kind: 'SMA', period: MIN_STUDY_PERIOD - 1 }])).toThrow()
   })
 })

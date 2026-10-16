@@ -11,7 +11,7 @@ import { build } from 'esbuild'
  * like any other static file; the output is ignored by git, since the source is its record.
  * Unminified, so a member who reads what they are about to run can.
  */
-export const OUTFILE = 'public/spicytrade.mjs'
+const OUTFILE = 'public/spicytrade.mjs'
 
 await build({
   bundle: true,

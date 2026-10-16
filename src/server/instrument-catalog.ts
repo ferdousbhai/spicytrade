@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { chunked } from '../domain/chunked'
 import {
   EquitySymbolSchema,
   InstrumentCatalogItemSchema,
@@ -231,8 +232,7 @@ function catalogUpserts(
   conflictClause: string,
 ): D1PreparedStatement[] {
   const statements: D1PreparedStatement[] = []
-  for (let start = 0; start < items.length; start += CATALOG_ROWS_PER_STATEMENT) {
-    const chunk = items.slice(start, start + CATALOG_ROWS_PER_STATEMENT)
+  for (const chunk of chunked(items, CATALOG_ROWS_PER_STATEMENT)) {
     const row = d1RowPlaceholders(CATALOG_BOUND_PARAMETERS_PER_ROW)
     statements.push(db.prepare(
       `INSERT INTO instrument_catalog (
@@ -326,9 +326,8 @@ export async function readInstrumentCatalog(
   if (!symbols.length) return new Map()
   const catalogRows: z.infer<typeof StoredCatalogRowSchema>[] = []
   for (const chunk of d1InListChunks(symbols)) {
-    const placeholders = chunk.map(() => '?').join(', ')
     const catalog = await env.DB.prepare(
-      `SELECT * FROM instrument_catalog WHERE symbol IN (${placeholders})`,
+      `SELECT * FROM instrument_catalog WHERE symbol IN ${d1RowPlaceholders(chunk.length)}`,
     ).bind(...chunk).all()
     catalogRows.push(...z.array(StoredCatalogRowSchema).parse(catalog.results))
   }
@@ -366,8 +365,7 @@ export async function loadInstrumentCatalog(
   if (!Number.isSafeInteger(symbolsPerRequest) || symbolsPerRequest < 1) {
     throw new CallerVisibleError('InstrumentCatalog:invalid-request-size')
   }
-  for (let start = 0; start < symbols.length; start += symbolsPerRequest) {
-    const chunk = symbols.slice(start, start + symbolsPerRequest)
+  for (const chunk of chunked(symbols, symbolsPerRequest)) {
     received.push(...instrumentCatalogFromPayload(await load(chunk), chunk, now))
   }
   const receivedSymbols = new Set(received.map((item) => item.symbol))
@@ -400,7 +398,7 @@ export async function missingInstrumentCatalogSymbols(
   for (const chunk of d1InListChunks(normalized, 1)) {
     const result = await env.DB.prepare(
       `SELECT symbol FROM instrument_catalog
-        WHERE symbol IN (${chunk.map(() => '?').join(', ')})
+        WHERE symbol IN ${d1RowPlaceholders(chunk.length)}
           AND (resolution_status = 'resolved' OR status_refreshed_at > ?)`,
     ).bind(...chunk, cutoff).all()
     for (const row of z.array(z.object({ symbol: EquitySymbolSchema })).parse(result.results)) {

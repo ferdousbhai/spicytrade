@@ -57,8 +57,3 @@ export type SymbolEvidence = z.infer<typeof SymbolEvidenceSchema>
 export const SymbolEvidenceResponseSchema = z.strictObject({
   evidence: z.array(SymbolEvidenceSchema).max(MAX_SYMBOL_EVIDENCE_CARDS),
 })
-
-/** What a reader can open: the host, the way a catalyst row cites its own source. */
-export function evidenceSourceHost(evidence: SymbolEvidence): string {
-  return new URL(evidence.sourceUrl).hostname.replace(/^www\./, '')
-}

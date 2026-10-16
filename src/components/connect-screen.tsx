@@ -19,19 +19,18 @@ import { CONNECT_PROMPT } from '../server/connect-guide'
 
 /** The name every client's config knows the server by; `spicytrade setup` adds it under this too. */
 const MCP_SERVER_NAME = 'spicytrade'
-const addCommands = (url: string) => ({
-  claude: `claude mcp add --transport http ${MCP_SERVER_NAME} ${url}`,
-  codex: `codex mcp add ${MCP_SERVER_NAME} --url ${url}`,
-  grok: `grok mcp add --transport http ${MCP_SERVER_NAME} ${url}`,
+const ADD_COMMANDS = {
+  claude: `claude mcp add --transport http ${MCP_SERVER_NAME} ${MCP_ENDPOINT}`,
+  codex: `codex mcp add ${MCP_SERVER_NAME} --url ${MCP_ENDPOINT}`,
+  grok: `grok mcp add --transport http ${MCP_SERVER_NAME} ${MCP_ENDPOINT}`,
   other: undefined,
-}) satisfies Record<AgentClient, string | undefined>
+} satisfies Record<AgentClient, string | undefined>
 /**
  * The whole path for an agent on the member's own computer: it installs the CLI from this site and
  * runs `spicytrade setup`, which signs in through the browser, offers tastytrade, and adds the
  * server to the agents it finds. Running it again updates it.
  */
 const INSTALL_COMMAND = `curl -fsSL ${INSTALL_SCRIPT_URL} | bash`
-
 
 /**
  * The clients the page has exact commands for, and "Other" for everything that speaks
@@ -213,7 +212,7 @@ export function ConnectScreen({ authError, owner, signedIn }: { authError?: stri
   // No header. Claude Code skips the OAuth flow entirely when a static `Authorization` is
   // configured, so handing one out as the default would ship the browser sign-in and guarantee
   // nobody ever reaches it.
-  const publicCommand = addCommands(MCP_ENDPOINT)[client]
+  const publicCommand = ADD_COMMANDS[client]
 
   return (
     <section className="connect-screen">
@@ -328,81 +327,80 @@ function HeadlessTokens() {
 
   return (
     <>
-        {/* What a member opens this section for most -- signing a computer out -- comes first; the
-            token form for a machine without a browser follows. Each failure is reported beside the
-            control that caused it, not at the top of a long page. */}
-        {listError && (
-          <Alert variant="destructive">
-            <AlertTitle>Signed-in computers could not be loaded</AlertTitle>
-            <AlertDescription>{listError}</AlertDescription>
-          </Alert>
-        )}
+      {/* What a member opens this section for most -- signing a computer out -- comes first; the
+          token form for a machine without a browser follows. Each failure is reported beside the
+          control that caused it, not at the top of a long page. */}
+      {listError && (
+        <Alert variant="destructive">
+          <AlertTitle>Signed-in computers could not be loaded</AlertTitle>
+          <AlertDescription>{listError}</AlertDescription>
+        </Alert>
+      )}
 
-        {/* Only while the first read is in flight: once it has failed, the alert above the list is the
-            answer, and a spinner beside it would claim a read that is no longer happening. */}
-        {loading && <Spinner />}
-        {tokens?.length === 0 && <p className="connect-empty">No computers or tokens yet.</p>}
-        {tokens && tokens.length > 0 && (
-          <ul className="connect-tokens">
-            {tokens.map((token) => (
-              <li key={token.tokenId}>
-                <div>
-                  <strong>{token.label}</strong>
-                  <span>
-                    {token.lastUsedAt
-                      ? `last used ${new Date(token.lastUsedAt).toLocaleDateString()}`
-                      : 'never used'}
-                  </span>
-                </div>
-                <Button disabled={busy} onClick={() => void revoke(token.tokenId)} size="sm" variant="ghost">
-                  {pending?.kind === 'revoke' && pending.tokenId === token.tokenId
-                    ? <Spinner data-icon="inline-start" />
-                    : null}
-                  Revoke
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
+      {/* Only while the first read is in flight: once it has failed, the alert above the list is the
+          answer, and a spinner beside it would claim a read that is no longer happening. */}
+      {loading && <Spinner />}
+      {tokens?.length === 0 && <p className="connect-empty">No computers or tokens yet.</p>}
+      {tokens && tokens.length > 0 && (
+        <ul className="connect-tokens">
+          {tokens.map((token) => (
+            <li key={token.tokenId}>
+              <div>
+                <strong>{token.label}</strong>
+                <span>
+                  {token.lastUsedAt
+                    ? `last used ${new Date(token.lastUsedAt).toLocaleDateString()}`
+                    : 'never used'}
+                </span>
+              </div>
+              <Button disabled={busy} onClick={() => void revoke(token.tokenId)} size="sm" variant="ghost">
+                {pending?.kind === 'revoke' && pending.tokenId === token.tokenId
+                  ? <Spinner data-icon="inline-start" />
+                  : null}
+                Revoke
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
 
+      <p>
+        For a job that runs with no one signed in — a scheduled script — create a token. It gets market
+        and research tools only, never your account. A computer you SSH into can use the install above
+        if your desktop session is logged in there; setup tells you how to finish signing in from your
+        own computer.
+      </p>
+      <form
+        className="connect-issue"
+        onSubmit={(event) => {
+          event.preventDefault()
+          const trimmed = label.trim()
+          // Not before the first read answers: a list that lands after the create would not
+          // carry the new token, and would replace the list that did.
+          if (!trimmed || busy || loading) return
+          void issue(trimmed).then((created) => { if (created) setLabel('') })
+        }}
+      >
+        <Input
+          aria-label="Token name"
+          maxLength={MAX_MCP_TOKEN_LABEL_LENGTH}
+          onChange={(event) => setLabel(event.target.value)}
+          placeholder="Nightly job"
+          value={label}
+        />
+        <Button disabled={busy || loading || !label.trim()} type="submit">
+          {pending?.kind === 'issue' ? <Spinner /> : 'Create token'}
+        </Button>
+      </form>
 
-        <p>
-          For a job that runs with no one signed in — a scheduled script — create a token. It gets market
-          and research tools only, never your account. A computer you SSH into can use the install above
-          if your desktop session is logged in there; setup tells you how to finish signing in from your
-          own computer.
-        </p>
-        <form
-          className="connect-issue"
-          onSubmit={(event) => {
-            event.preventDefault()
-            const trimmed = label.trim()
-            // Not before the first read answers: a list that lands after the create would not
-            // carry the new token, and would replace the list that did.
-            if (!trimmed || busy || loading) return
-            void issue(trimmed).then((created) => { if (created) setLabel('') })
-          }}
-        >
-          <Input
-            aria-label="Token name"
-            maxLength={MAX_MCP_TOKEN_LABEL_LENGTH}
-            onChange={(event) => setLabel(event.target.value)}
-            placeholder="Nightly job"
-            value={label}
-          />
-          <Button disabled={busy || loading || !label.trim()} type="submit">
-            {pending?.kind === 'issue' ? <Spinner /> : 'Create token'}
-          </Button>
-        </form>
+      {actionError && (
+        <Alert variant="destructive">
+          <AlertTitle>Signed-in computers</AlertTitle>
+          <AlertDescription>{actionError}</AlertDescription>
+        </Alert>
+      )}
 
-        {actionError && (
-          <Alert variant="destructive">
-            <AlertTitle>Signed-in computers</AlertTitle>
-            <AlertDescription>{actionError}</AlertDescription>
-          </Alert>
-        )}
-
-        {issued && <IssuedToken token={issued.token} />}
+      {issued && <IssuedToken token={issued.token} />}
     </>
   )
 }
@@ -417,7 +415,7 @@ function IssuedToken({ token }: { token: string }) {
   const mcpConfig = JSON.stringify({
     mcpServers: { [MCP_SERVER_NAME]: { headers: { Authorization: `Bearer ${token}` }, type: 'http', url: MCP_ENDPOINT } },
   }, null, 2)
-  const headlessCommand = `${addCommands(MCP_ENDPOINT).claude} --header "Authorization: Bearer ${token}"`
+  const headlessCommand = `${ADD_COMMANDS.claude} --header "Authorization: Bearer ${token}"`
   return (
     <>
       <Alert>

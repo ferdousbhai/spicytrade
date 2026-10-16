@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import { EquitySymbolSchema } from './instrument'
-import { CitedSourceUrlSchema, HttpsSourceUrlSchema } from './https-url'
+import { CitedSourceUrlSchema, HttpsSourceUrlSchema, sourceHost } from './https-url'
 import { addDays, IsoDateSchema } from './iso-date'
 
 /**
@@ -289,8 +289,7 @@ const KIND_NAMES = {
  */
 export function catalystSourceLink(catalyst: Catalyst): { host: string; url: string } | undefined {
   if (!catalyst.sourceUrl || isBrokerCatalyst(catalyst)) return undefined
-  const url = new URL(catalyst.sourceUrl)
-  return { host: url.hostname.replace(/^www\./, ''), url: catalyst.sourceUrl }
+  return { host: sourceHost(catalyst.sourceUrl), url: catalyst.sourceUrl }
 }
 
 export function catalystKindName(kind: Catalyst['kind']): string {

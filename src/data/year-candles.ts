@@ -15,7 +15,6 @@ import { useRetryOnFocus } from './retry-on-focus'
 type YearCandlesRead = {
   failed: boolean
   loadedDay?: string
-  asOf?: string
   series: ReadonlyMap<string, readonly number[]>
 }
 
@@ -32,7 +31,6 @@ function loadYearCandles(day: string): Promise<YearCandlesRead> {
       .then((parsed): YearCandlesRead => ({
         failed: false,
         loadedDay: day,
-        asOf: parsed.asOf,
         series: new Map(parsed.series.map((entry) => [entry.symbol, entry.closes])),
       }))
       .catch((): YearCandlesRead => {

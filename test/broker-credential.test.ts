@@ -5,7 +5,7 @@ import {
 } from '../src/server/broker-credential'
 import { handleMcpRequest } from '../src/server/mcp'
 import { stubBrokerGate } from './broker-stub'
-import { executionContext, mcpPayload, mcpRequest, ownerHarness, TOOLS_LIST } from './mcp-harness'
+import { executionContext, listToolNames, mcpPayload, mcpRequest, ownerHarness } from './mcp-harness'
 
 afterEach(() => {
   vi.resetModules()
@@ -163,12 +163,7 @@ describe('request-scoped broker credential', () => {
     // Every caller is a real token row now; there is no shared secret to stand in for one.
     const { env, store, token } = await ownerHarness()
 
-    const listed = await mcpPayload(await handleMcpRequest(
-      mcpRequest(TOOLS_LIST, token),
-      env,
-      executionContext,
-    ))
-    const names = listed.result.tools.map((tool: { name: string }) => tool.name)
+    const names = await listToolNames(env, token)
     expect(names).toContain('read_account_history')
     expect(names).toContain('read_account_snapshot')
     expect(names).toContain('place_brokerage_order')

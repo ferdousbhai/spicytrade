@@ -12,12 +12,6 @@ import { type AppEnv } from './env'
 
 // The edge copy is shared by every reader, so it may hold twice what one browser keeps.
 export const PUBLIC_RESPONSE_CACHE_CONTROL = `public, max-age=${PUBLIC_RESPONSE_MAX_AGE_SECONDS}, s-maxage=${2 * PUBLIC_RESPONSE_MAX_AGE_SECONDS}`
-/**
- * An archived page is keyed by a market date and answered with the brief for the latest date
- * before it, which changes only when that date is republished or a missing date in between is
- * first published late, so it may be kept for an hour by a browser and a day at the edge.
- */
-export const ARCHIVE_RESPONSE_CACHE_CONTROL = 'public, max-age=3600, s-maxage=86400'
 
 export function jsonNoStore(value: JsonValue, init: ResponseInit = {}): Response {
   return jsonPublic(value, init, 'no-store')

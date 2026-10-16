@@ -9,7 +9,7 @@ import { type JsonValue } from '../domain/json-payload'
 import { resolveStoredOrderFingerprint } from './order-intent'
 import { brokerAdapterFor, type BrokerAdapter } from './brokers'
 import { brokerApi, TASTYTRADE_REQUEST_TIMEOUT_MS } from './tastytrade'
-import { d1InListChunks } from './d1-limits'
+import { d1InListChunks, d1RowPlaceholders } from './d1-limits'
 import { textResult } from './agent-tool-result'
 import { BrokerCredentialMissingError, type BrokerCredential } from './broker-credential'
 import { PortfolioRiskError } from './portfolio-risk'
@@ -245,7 +245,7 @@ async function unclaimedOrders(
   for (const chunk of d1InListChunks(ids, 2)) {
     const result = await db.prepare(
       `SELECT provider_order_id FROM broker_submissions
-        WHERE broker_id = ? AND account_number = ? AND provider_order_id IN (${chunk.map(() => '?').join(', ')})`,
+        WHERE broker_id = ? AND account_number = ? AND provider_order_id IN ${d1RowPlaceholders(chunk.length)}`,
     ).bind(broker, accountNumber, ...chunk).all<{ provider_order_id: string }>()
     for (const row of result.results ?? []) owned.add(row.provider_order_id)
   }

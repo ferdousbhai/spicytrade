@@ -1,3 +1,4 @@
+import { chunked } from '../domain/chunked'
 import { errorName, toError } from '../domain/failure'
 import {
   MarketSnapshotSchema,
@@ -287,8 +288,7 @@ async function loadMarketRows(
 ): Promise<{ metrics: JsonObject[]; quotes: JsonObject[] }> {
   const metrics: JsonObject[] = []
   const quotes: JsonObject[] = []
-  for (let start = 0; start < symbols.length; start += BROKER_SYMBOL_CHUNK_SIZE) {
-    const chunk = symbols.slice(start, start + BROKER_SYMBOL_CHUNK_SIZE)
+  for (const chunk of chunked(symbols, BROKER_SYMBOL_CHUNK_SIZE)) {
     const metricQuery = chunk.map(encodeURIComponent).join(',')
     const marketDataQuery = chunk.map((symbol) => `equity=${encodeURIComponent(symbol)}`).join('&')
     const [metricsPayload, marketDataPayload] = await Promise.all([

@@ -10,6 +10,7 @@ import {
   RecordedCatalystSchema,
   type Catalyst,
 } from '../domain/catalyst'
+import { sourceHost } from '../domain/https-url'
 import { EquitySymbolSchema } from '../domain/instrument'
 import { addDays, IsoDateSchema, textMentionsDateWithinHorizon } from '../domain/iso-date'
 import { type CatalystProvider } from './catalysts'
@@ -113,7 +114,7 @@ export function bindCatalystCandidates(
       ...publicFields,
       confidence: 'estimated',
       id,
-      source: `${BOUND_CATALYST_LABELS[provider]} · ${new URL(sourceUrl).hostname.replace(/^www\./, '')}`,
+      source: `${BOUND_CATALYST_LABELS[provider]} · ${sourceHost(sourceUrl)}`,
       sourceUrl,
       updatedAt: now.toISOString(),
     }))

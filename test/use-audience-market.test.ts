@@ -50,7 +50,7 @@ describe('audience market projection', () => {
 describe('snapshot sync while a tab stays open', () => {
   it('refetches a visible tab on the public cache lifetime without a focus event', async () => {
     vi.useFakeTimers()
-    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
     const queryFn = vi.fn(async () => ({ ok: true }))
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const observer = new QueryObserver(queryClient, {
@@ -69,7 +69,6 @@ describe('snapshot sync while a tab stays open', () => {
       unsubscribe()
       observer.destroy()
       queryClient.clear()
-      visibility.mockRestore()
       vi.useRealTimers()
     }
   })

@@ -7,7 +7,6 @@ afterEach(() => {
 
 describe('tastytrade OAuth boundary', () => {
   it('acquires, renews, and releases the durable mutation lease around a broker sequence', async () => {
-    vi.resetModules()
     const { withBrokerMutationLease } = await import('../src/server/tastytrade')
     const brokerGate = stubBrokerGate()
     const operation = vi.fn(async (lease: { renew(): Promise<void> }) => {
@@ -24,7 +23,6 @@ describe('tastytrade OAuth boundary', () => {
   })
 
   it('releases the durable mutation lease when the broker sequence fails', async () => {
-    vi.resetModules()
     const { withBrokerMutationLease } = await import('../src/server/tastytrade')
     const brokerGate = stubBrokerGate()
 
@@ -36,7 +34,6 @@ describe('tastytrade OAuth boundary', () => {
   })
 
   it('does not share pending token-refresh I/O across Worker request contexts', async () => {
-    vi.resetModules()
     let releaseToken!: () => void
     const tokenGate = new Promise<void>((resolve) => { releaseToken = resolve })
     let tokenNumber = 0
@@ -86,7 +83,6 @@ describe('tastytrade OAuth boundary', () => {
   })
 
   it('fails closed before reading credentials when the request coordinator is unavailable', async () => {
-    vi.resetModules()
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
     const { tastyRequest } = await import('../src/server/tastytrade')
@@ -102,7 +98,6 @@ describe('tastytrade OAuth boundary', () => {
   })
 
   it('rejects an OAuth response without a positive token lifetime', async () => {
-    vi.resetModules()
     const fetchMock = vi.fn(async () => Response.json({ access_token: 'token-without-lifetime' }))
     vi.stubGlobal('fetch', fetchMock)
     const { tastyRequest } = await import('../src/server/tastytrade')
@@ -121,7 +116,6 @@ describe('tastytrade OAuth boundary', () => {
   })
 
   it('redacts account identifiers from API errors', async () => {
-    vi.resetModules()
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).endsWith('/oauth/token')
       ? Response.json({ access_token: 'token', expires_in: 900 })
       : new Response('', { status: 404 })))
@@ -144,7 +138,6 @@ describe('tastytrade OAuth boundary', () => {
     ['a 503 keeps its status', () => new Response('', { status: 503 }), 'TastytradeApi:503:/accounts/[redacted]/orders'],
     ['an unreadable 2xx body', () => new Response('{"data":', { status: 201 }), 'TastytradeApi:unreadable-response:/accounts/[redacted]/orders'],
   ])('names an order submission the broker may have accepted ambiguous: %s', async (_, answer, message) => {
-    vi.resetModules()
     vi.stubGlobal('fetch', vi.fn(async () => answer()))
     const { tastyRequest } = await import('../src/server/tastytrade')
     const brokerGate = stubBrokerGate()

@@ -40,6 +40,11 @@ export function isCitablePageAddress(value: string): boolean {
   }
 }
 
+/** The host a reader is shown for a cited page, without a leading `www.`. */
+export function sourceHost(url: string): string {
+  return new URL(url).hostname.replace(/^www\./, '')
+}
+
 /** A cited page address as every surface admits it: citable, and inside the envelope. */
 export const CitedSourceUrlSchema = HttpsSourceUrlSchema.pipe(z.string().max(MAX_CITED_SOURCE_URL_LENGTH))
   .refine(isCitablePageAddress, 'Cite a page by host name over default-port https, without credentials')

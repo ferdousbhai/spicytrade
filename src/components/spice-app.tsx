@@ -84,7 +84,6 @@ export function SpiceApp() {
   const fallbackSymbol = mostActiveSymbol(tickers, activeWatchlist?.symbols)
   const selected = tickers.find((ticker) => ticker.symbol === preference?.selectedSymbol)
     ?? tickers.find((ticker) => ticker.symbol === fallbackSymbol)
-  const loadedSymbols = new Set(tickers.map((ticker) => ticker.symbol))
   // Favorites stream in the table's default order (volume, busiest first), so when there are more
   // of them than one socket carries, the ones that stream are the ones on top of the list.
   const volumeOf = new Map(tickers.map((ticker) => [ticker.symbol, ticker.volume ?? 0]))
@@ -94,7 +93,7 @@ export function SpiceApp() {
     selected?.symbol,
     pinnedByVolume,
     activeWatchlist?.symbols ?? [],
-    loadedSymbols,
+    tickers.map((ticker) => ticker.symbol),
   )
   useLiveMarket(streamSymbols, snapshotReady ? audience : undefined)
   const collectionFailed = market.collectionFailed || favorites.collectionFailed
@@ -276,7 +275,7 @@ export function RecommendationsView() {
     <>
       <SnapshotPending view="brief" />
       {snapshotReady && (
-        <Suspense fallback={<MarketState loading message="Loading…" />}>
+        <Suspense fallback={<ViewLoading />}>
           <BriefScreen
             // The screen holds the issue history it has walked; a newly published brief
             // starts that history over rather than leaving the open view on the old issue.
@@ -294,7 +293,7 @@ export function ConnectView() {
   const { authError, owner, viewer } = useWorkspace()
   return (
     <>
-      <Suspense fallback={<MarketState loading message="Loading…" />}>
+      <Suspense fallback={<ViewLoading />}>
         <ConnectScreen authError={authError} owner={owner} signedIn={Boolean(viewer)} />
       </Suspense>
       {/* The top bar has no room for these on a phone, so the view about the reader's own
@@ -367,18 +366,20 @@ function SnapshotUnavailable() {
   )
 }
 
-function MarketState({ loading = false, message }: { loading?: boolean; message: string }) {
-  if (loading) {
-    return (
-      <section aria-busy="true" aria-live="polite" className="market-state">
-        <div className="market-state-loading" role="status">
-          <Skeleton />
-          <Skeleton />
-          <p>{message}</p>
-        </div>
-      </section>
-    )
-  }
+/** What a lazily loaded view shows while its code arrives. */
+function ViewLoading() {
+  return (
+    <section aria-busy="true" aria-live="polite" className="market-state">
+      <div className="market-state-loading" role="status">
+        <Skeleton />
+        <Skeleton />
+        <p>Loading…</p>
+      </div>
+    </section>
+  )
+}
+
+function MarketState({ message }: { message: string }) {
   return (
     <section aria-live="polite" className="market-state">
       <Empty><EmptyHeader><EmptyDescription>{message}</EmptyDescription></EmptyHeader></Empty>

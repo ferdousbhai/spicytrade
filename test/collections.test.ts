@@ -317,15 +317,11 @@ describe('live market subscriptions', () => {
     // audience carries exactly one list, so there is no list choice to rewrite, and the
     // preference is left exactly as the reader stored it.
     const rewrite = vi.spyOn(preferenceCollection, 'update')
-    try {
-      await hydrateCollections({
-        ...snapshot,
-        watchlists: [{ id: 'public-options-watch', kind: 'public', name: 'Options Watch', symbols: snapshot.watchlists[0]!.symbols }],
-      }, 'public')
-      expect(rewrite).not.toHaveBeenCalled()
-    } finally {
-      rewrite.mockRestore()
-    }
+    await hydrateCollections({
+      ...snapshot,
+      watchlists: [{ id: 'public-options-watch', kind: 'public', name: 'Options Watch', symbols: snapshot.watchlists[0]!.symbols }],
+    }, 'public')
+    expect(rewrite).not.toHaveBeenCalled()
 
     expect(preferenceCollection.get('primary')).toMatchObject({
       selectedByUser: true,

@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { getAuthRuntime } from '../server/auth'
+import { jsonNoStore } from '../server/http'
 import { appEnv } from '../server/worker-env'
 import { errorName, toError } from '../domain/failure'
 
@@ -12,10 +13,7 @@ async function handleAuth(request: Request) {
     return await auth.handler(request)
   } catch (error) {
     console.error('AuthUnavailable', errorName(toError(error)))
-    return Response.json({ error: 'Authentication is temporarily unavailable' }, {
-      status: 503,
-      headers: { 'Cache-Control': 'no-store' },
-    })
+    return jsonNoStore({ error: 'Authentication is temporarily unavailable' }, { status: 503 })
   }
 }
 

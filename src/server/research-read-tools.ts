@@ -14,6 +14,7 @@ import { CATALYST_PROVIDER, CATALYST_RUN_BUDGET_MS } from './catalyst-refresh'
 import { CALENDAR_EVENT_RANK, CATALYST_COLUMNS, CURRENT_CATALYSTS } from './catalysts'
 import { readLatestDailyBrief } from './daily-brief-store'
 import { CallerVisibleError } from './caller-visible-error'
+import { d1RowPlaceholders } from './d1-limits'
 
 // A catalyst call shares the normal market-read batch budget. The row ceiling is a model-context
 // budget and is observable through `truncated`; it counts events, each one row once folded. The
@@ -144,7 +145,7 @@ export async function readCatalysts(
        SELECT ${CATALYST_COLUMNS},
            ${CALENDAR_EVENT_RANK} AS nearest
          FROM ${CURRENT_CATALYSTS}
-         WHERE symbol IN (${symbols.map(() => '?').join(', ')})
+         WHERE symbol IN ${d1RowPlaceholders(symbols.length)}
            AND event_date BETWEEN ? AND ?
      )
      WHERE nearest <= ?
@@ -160,7 +161,7 @@ export async function readCatalysts(
   const runs = await env.DB.prepare(
     `SELECT symbol, status AS state, ran_at AS "ranAt"
      FROM catalyst_runs
-     WHERE source_provider = ? AND symbol IN (${symbols.map(() => '?').join(', ')})`,
+     WHERE source_provider = ? AND symbol IN ${d1RowPlaceholders(symbols.length)}`,
   ).bind(CATALYST_PROVIDER, ...symbols).all()
   if (!Array.isArray(runs.results)) throw new CallerVisibleError('Catalyst data returned an invalid response.')
   const receipts = new Map(CatalystRunRowSchema.array().parse(runs.results).map((run) => [run.symbol, run]))

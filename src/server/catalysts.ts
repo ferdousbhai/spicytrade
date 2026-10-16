@@ -8,6 +8,7 @@ import {
   RecordedCatalystSchema,
   type Catalyst,
 } from '../domain/catalyst'
+import { chunked } from '../domain/chunked'
 import { EquitySymbolSchema } from '../domain/instrument'
 import { isValidIsoDate } from '../domain/iso-date'
 import { type AppEnv } from './env'
@@ -48,8 +49,7 @@ export function catalystUpsertStatements(
   // the same run writing again and still applies.
   const rows = catalysts.map((catalyst) => RecordedCatalystSchema.parse(catalyst))
   const statements: D1PreparedStatement[] = []
-  for (let start = 0; start < rows.length; start += CATALYST_ROWS_PER_STATEMENT) {
-    const chunk = rows.slice(start, start + CATALYST_ROWS_PER_STATEMENT)
+  for (const chunk of chunked(rows, CATALYST_ROWS_PER_STATEMENT)) {
     statements.push(db.prepare(
       `INSERT INTO catalysts
         (id, source_provider, symbol, kind, title, description, event_date, timing, confidence, source_label, source_url, updated_at, last_seen_at)
@@ -279,7 +279,7 @@ export async function persistAndLoadCatalysts(
   for (const chunk of d1InListChunks(answered)) {
     statements.push(env.DB.prepare(
       `DELETE FROM catalysts
-       WHERE source_provider = 'tastytrade' AND symbol IN (${chunk.map(() => '?').join(', ')})`,
+       WHERE source_provider = 'tastytrade' AND symbol IN ${d1RowPlaceholders(chunk.length)}`,
     ).bind(...chunk))
   }
   statements.push(...catalystUpsertStatements(env.DB, 'tastytrade', observed, now.toISOString()))

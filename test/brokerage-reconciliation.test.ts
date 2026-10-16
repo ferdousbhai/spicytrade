@@ -560,7 +560,6 @@ describe('brokerage submission reconciliation', () => {
       answer(accepted)
       await expect(placement).resolves.toEqual({ detail: 'Order #123 accepted by tastytrade.', orderId: '123' })
       expect(logged).not.toHaveBeenCalledWith('BrokerageSubmissionSettleFailed')
-      logged.mockRestore()
     })
   })
 })

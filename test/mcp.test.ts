@@ -1,17 +1,24 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
+import { toolErrorResult } from '../src/server/agent-tool-result'
+import { BrokerRefusalError, CallerVisibleError } from '../src/server/caller-visible-error'
 import { SPICE_GUIDE } from '../src/server/doctrine'
 import {
   handleMcpRequest,
   McpCallerLookupError,
   resolveMcpCaller,
 } from '../src/server/mcp'
+import { ANNOTATED_TOOL_NAMES, toolAnnotations } from '../src/server/mcp-annotations'
 import { mcpEndpointRedirect } from '../src/server/mcp-endpoint-redirect'
+import { listMcpTokens, revokeMcpToken } from '../src/server/mcp-tokens'
 import { resetBrokerApi, setBrokerApi } from '../src/server/tastytrade'
 import { stubBroker } from './broker-stub'
 import { unsupportedDatabase } from './fake-d1'
-import { executionContext, harness, mcpPayload, mcpRequest, ownerHarness } from './mcp-harness'
+import {
+  executionContext, harness, listToolNames, listTools, mcpPayload, mcpRequest, ownerHarness, TOOLS_LIST,
+} from './mcp-harness'
+import { migrationStore } from './sqlite-d1'
 
 describe('MCP bearer authentication', () => {
   it('admits exactly the issued token and identifies who presented it', async () => {
@@ -43,7 +50,7 @@ describe('MCP bearer authentication', () => {
     const { store, token } = await ownerHarness()
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
-      const response = await handleMcpRequest(mcpRequest({ id: 1, jsonrpc: '2.0', method: 'tools/list' }, token), {}, executionContext)
+      const response = await handleMcpRequest(mcpRequest(TOOLS_LIST, token), {}, executionContext)
       expect(response.status).toBe(401)
       const challenge = response.headers.get('WWW-Authenticate') ?? ''
       expect(challenge).toContain('invalid_token')
@@ -51,7 +58,6 @@ describe('MCP bearer authentication', () => {
       expect(challenge).not.toContain('Issue a new one')
       expect(logged.mock.calls).toEqual([['McpCallerLookupFailed', 'McpCallerLookupError']])
     } finally {
-      logged.mockRestore()
       store.close()
     }
   })
@@ -74,7 +80,7 @@ describe('MCP bearer authentication', () => {
           },
         }
         const response = await handleMcpRequest(
-          mcpRequest({ id: 1, jsonrpc: '2.0', method: 'tools/list' }, token),
+          mcpRequest(TOOLS_LIST, token),
           { DB: broken },
           executionContext,
         )
@@ -83,7 +89,6 @@ describe('MCP bearer authentication', () => {
       }
       expect(logged.mock.calls).toEqual([['McpCallerLookupFailed', 'D1Error'], ['McpCallerLookupFailed', 'D1Error']])
     } finally {
-      logged.mockRestore()
       store.close()
     }
   })
@@ -91,13 +96,7 @@ describe('MCP bearer authentication', () => {
   it('serves a caller who presented nothing, from the public tier', async () => {
     const { env, store } = await ownerHarness()
     try {
-      const response = await handleMcpRequest(mcpRequest({
-        id: 1, jsonrpc: '2.0', method: 'tools/list', params: {},
-      }), env, executionContext)
-      expect(response.status).toBe(200)
-      const names = z.object({ result: z.object({ tools: z.array(z.object({ name: z.string() })) }) })
-        .parse(await mcpPayload(response))
-        .result.tools.map((tool) => tool.name)
+      const names = await listToolNames(env)
 
       // The reads that cost nothing per call, plus quotes from the website's cached snapshot.
       for (const offered of ['read_instrument_quotes', 'read_price_history', 'read_catalysts', 'read_watchlist']) {
@@ -127,7 +126,7 @@ describe('MCP bearer authentication', () => {
     // to be anybody cannot, which is why only this case is refused. The challenge must also say
     // how to authenticate, or a stale token is indistinguishable from a broken endpoint.
     const response = await handleMcpRequest(
-      mcpRequest({ id: 1, jsonrpc: '2.0', method: 'tools/list' }, 'spice_0000000000000000_notarealsecret'),
+      mcpRequest(TOOLS_LIST, 'spice_0000000000000000_notarealsecret'),
       {},
       executionContext,
     )
@@ -158,12 +157,7 @@ describe('MCP tool surface', () => {
       }, token), env, executionContext)
       expect(initialize.status).toBe(200)
 
-      const listed = await handleMcpRequest(mcpRequest({
-        id: 2, jsonrpc: '2.0', method: 'tools/list', params: {},
-      }, token), env, executionContext)
-      expect(listed.status).toBe(200)
-      const payload = await mcpPayload(listed)
-      const names = payload.result.tools.map((tool: { name: string }) => tool.name)
+      const names = await listToolNames(env, token)
 
       // The market reads are enumerated by hand here and in `mcp.ts`, and twice now a factory
       // has been added to the research run's bundle and forgotten on this surface -- most
@@ -201,11 +195,7 @@ describe('MCP tool tiers', () => {
   async function toolNames(token: string, database: D1Database): Promise<string[]> {
     setBrokerApi(stubBroker())
     try {
-      const listed = await handleMcpRequest(mcpRequest({
-        id: 3, jsonrpc: '2.0', method: 'tools/list', params: {},
-      }, token), { DB: database }, executionContext)
-      const payload = await mcpPayload(listed)
-      return payload.result.tools.map((tool: { name: string }) => tool.name)
+      return await listToolNames({ DB: database }, token)
     } finally {
       resetBrokerApi()
     }
@@ -243,12 +233,11 @@ describe('MCP tool tiers', () => {
   })
 
   it('refuses a revoked token', async () => {
-    const { listMcpTokens, revokeMcpToken } = await import('../src/server/mcp-tokens')
     const { env, store, token } = await harness('member@example.com')
     const listed = await listMcpTokens(store.database, 'member-1')
     await revokeMcpToken(store.database, 'member-1', listed[0]!.tokenId)
     const response = await handleMcpRequest(
-      mcpRequest({ id: 4, jsonrpc: '2.0', method: 'tools/list' }, token),
+      mcpRequest(TOOLS_LIST, token),
       env,
       executionContext,
     )
@@ -259,12 +248,7 @@ describe('MCP tool tiers', () => {
 
 describe('watchlist provenance', () => {
   async function readWatchlistSchema(token: string | undefined, env: { DB: D1Database }) {
-    const listed = await handleMcpRequest(mcpRequest({
-      id: 40, jsonrpc: '2.0', method: 'tools/list', params: {},
-    }, token), env, executionContext)
-    const tools = z.object({
-      result: z.object({ tools: z.array(z.object({ inputSchema: z.unknown(), name: z.string() })) }),
-    }).parse(await mcpPayload(listed)).result.tools
+    const tools = await listTools(env, token)
     return tools.find((tool) => tool.name === 'read_watchlist')?.inputSchema
   }
 
@@ -363,13 +347,9 @@ describe('MCP guidance surface', () => {
 
 describe('MCP tool annotations', () => {
   it('declares what every advertised tool does to the world', async () => {
-    const { ANNOTATED_TOOL_NAMES } = await import('../src/server/mcp-annotations')
     const { env, store, token } = await ownerHarness()
     setBrokerApi(stubBroker())
     try {
-      const listed = await handleMcpRequest(mcpRequest({
-        id: 7, jsonrpc: '2.0', method: 'tools/list', params: {},
-      }, token), env, executionContext)
       const AnnotatedToolSchema = z.object({
         annotations: z.object({
           destructiveHint: z.boolean().optional(),
@@ -380,8 +360,7 @@ describe('MCP tool annotations', () => {
         }).optional(),
         name: z.string(),
       })
-      const tools = z.array(AnnotatedToolSchema)
-        .parse((await mcpPayload(listed)).result.tools)
+      const tools = z.array(AnnotatedToolSchema).parse(await listTools(env, token))
 
       // Every tool on the wire carries annotations, and the table has no entry for a tool
       // that no longer exists — the two drift apart silently otherwise.
@@ -431,7 +410,6 @@ describe('MCP tool annotations', () => {
   })
 
   it('refuses to register a tool nobody has described', async () => {
-    const { toolAnnotations } = await import('../src/server/mcp-annotations')
     expect(() => toolAnnotations('a_tool_that_was_never_declared')).toThrow('undeclared-tool')
   })
 })
@@ -458,13 +436,8 @@ describe('the guide resource', () => {
 
       // An index that names something gone is worse than no index: it sends an agent looking for
       // a tool that will never answer. Every backticked name in the guide must be real.
-      const toolsResponse = await handleMcpRequest(mcpRequest({
-        id: 22, jsonrpc: '2.0', method: 'tools/list', params: {},
-      }, token), env, executionContext)
-      const tools = z.object({ result: z.object({ tools: z.array(z.object({ name: z.string() })) }) })
-        .parse(await mcpPayload(toolsResponse))
       const known = new Set([
-        ...tools.result.tools.map((tool) => tool.name),
+        ...await listToolNames(env, token),
         'portfolio_review',
         'evaluate_trade_idea',
       ])
@@ -565,10 +538,7 @@ describe('MCP surface budget', () => {
       const instructions: string = (await mcpPayload(initialized)).result.instructions
       expect(instructions.length).toBeLessThanOrEqual(INSTRUCTIONS_CHAR_BUDGET)
 
-      const listed = await handleMcpRequest(mcpRequest({
-        id: 9, jsonrpc: '2.0', method: 'tools/list', params: {},
-      }, token), env, executionContext)
-      const tools = (await mcpPayload(listed)).result.tools
+      const tools = await listTools(env, token)
       expect(JSON.stringify(tools).length).toBeLessThanOrEqual(TOOLS_LIST_CHAR_BUDGET)
     } finally {
       resetBrokerApi()
@@ -580,12 +550,7 @@ describe('MCP surface budget', () => {
     const { env, store, token } = await ownerHarness()
     setBrokerApi(stubBroker())
     try {
-      const listed = await handleMcpRequest(mcpRequest({
-        id: 10, jsonrpc: '2.0', method: 'tools/list', params: {},
-      }, token), env, executionContext)
-      const tools = z.object({
-        result: z.object({ tools: z.array(z.object({ inputSchema: z.unknown(), name: z.string() })) }),
-      }).parse(await mcpPayload(listed)).result.tools
+      const tools = await listTools(env, token)
       const schemas = JSON.stringify(tools)
 
       // A bound that equals JavaScript's own safe-integer range says nothing about the contract,
@@ -614,7 +579,6 @@ describe('MCP surface budget', () => {
 describe('tool error redaction boundary', () => {
   it('answers an error this repository did not write with its name alone, and logs nothing more', async () => {
     const secret = 'tt_live_secret_should_never_leak'
-    const { migrationStore } = await import('./sqlite-d1')
     const store = await migrationStore()
     vi.spyOn(store.database, 'prepare').mockImplementation(() => { throw new TypeError(`D1 said: ${secret}`) })
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -630,15 +594,11 @@ describe('tool error redaction boundary', () => {
       expect(logged.mock.calls).toEqual([['McpToolFailed', 'read_daily_brief', 'TypeError']])
       expect(JSON.stringify(logged.mock.calls)).not.toContain(secret)
     } finally {
-      logged.mockRestore()
       store.close()
     }
   })
 
   it('passes a caller-visible message and renders a broker refusal in its labelled shape', async () => {
-    const { toolErrorResult } = await import('../src/server/agent-tool-result')
-    const { BrokerRefusalError, CallerVisibleError } = await import('../src/server/caller-visible-error')
-
     expect(toolErrorResult('read_account_snapshot', new CallerVisibleError('The account snapshot could not be loaded.')))
       .toEqual({ content: [{ text: 'The account snapshot could not be loaded.', type: 'text' }], isError: true })
 
@@ -664,15 +624,10 @@ describe('tool error redaction boundary', () => {
   })
 
   it('never relays an error name that is not an identifier', async () => {
-    const { toolErrorResult } = await import('../src/server/agent-tool-result')
     const odd = new Error('detail')
     odd.name = 'Name with <payload>'
-    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    try {
-      expect(toolErrorResult('read_catalysts', odd).content[0]!.text).toBe('spicytrade could not complete read_catalysts: UnknownError')
-      expect(toolErrorResult('read_catalysts', undefined).content[0]!.text).toBe('spicytrade could not complete read_catalysts: UnknownError')
-    } finally {
-      logged.mockRestore()
-    }
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    expect(toolErrorResult('read_catalysts', odd).content[0]!.text).toBe('spicytrade could not complete read_catalysts: UnknownError')
+    expect(toolErrorResult('read_catalysts', undefined).content[0]!.text).toBe('spicytrade could not complete read_catalysts: UnknownError')
   })
 })

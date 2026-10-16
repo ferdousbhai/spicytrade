@@ -45,7 +45,8 @@ import {
   type VolatilityVerdict,
   type Watchlist,
 } from '../domain/market'
-import { evidenceSourceHost, type SymbolEvidence } from '../domain/symbol-evidence'
+import { sourceHost } from '../domain/https-url'
+import { type SymbolEvidence } from '../domain/symbol-evidence'
 import { useCatalystSearch } from '../data/catalyst-refresh'
 import { usePublicCatalysts } from '../data/public-catalysts'
 import { loadSymbolEvidence } from '../data/symbol-evidence'
@@ -520,7 +521,7 @@ function EvidenceCards({ symbol }: { symbol: string }) {
             <p className="evidence-meta">
               {card.byline && <span>{card.byline}</span>}
               <a href={card.sourceUrl} rel="noreferrer" target="_blank">
-                {evidenceSourceHost(card)}<ArrowUpRight aria-hidden="true" />
+                {sourceHost(card.sourceUrl)}<ArrowUpRight aria-hidden="true" />
               </a>
               <time dateTime={card.recordedAt}>{nyDate.format(new Date(card.recordedAt))}</time>
             </p>
@@ -872,13 +873,14 @@ export function MarketScreen({
     return [...merged.values()]
   }, [catalysts, catalystSearch.catalysts, focusedRead.catalysts, looked])
   const nextCatalysts = nextCatalystsBySymbol(visibleCatalysts, now)
-  const toggleSort = (column: SortColumn) => {
-    const { key } = column
+  // Choosing a sort, from a header or the phone's control, leaves search relevance behind.
+  const applySort = (next: Sort) => {
+    setSort(next)
     setSearchSort(true)
-    setSort((current) => current.key === key
-      ? { direction: current.direction === 'asc' ? 'desc' : 'asc', key: key }
-      : { direction: column.defaultDirection, key: key })
   }
+  const toggleSort = (column: SortColumn) => applySort(sort.key === column.key
+    ? { direction: sort.direction === 'asc' ? 'desc' : 'asc', key: column.key }
+    : { direction: column.defaultDirection, key: column.key })
   const pinnedTickers = tickers.filter((ticker) => pinned.has(ticker.symbol))
   const selectedVerdict = volatilityVerdict(selected)
   const selectedCopy = verdictCopy[selectedVerdict]
@@ -1044,10 +1046,7 @@ export function MarketScreen({
               value={query}
             />
           </div>
-          {narrow && <SortControl onChange={(next) => {
-            setSort(next)
-            setSearchSort(true)
-          }} sort={sort} relevance={relevance} />}
+          {narrow && <SortControl onChange={applySort} sort={sort} relevance={relevance} />}
         </header>
         {watchTickers.length > 0 && search.status === 'failed' && (
           <p className="watch-status" role="status">{SYMBOL_SEARCH_FAILED}</p>

@@ -1,3 +1,4 @@
+import { chunked } from '../domain/chunked'
 import { type AgentTool } from '../domain/agent-tool'
 import { BROKER_SYMBOL_MAX_LENGTH } from '../domain/broker'
 import { EQUITY_SYMBOL_REGEX, MAX_EQUITY_SYMBOL_LENGTH } from '../domain/instrument'
@@ -438,8 +439,7 @@ async function readOptionActivity(
 ): Promise<Map<string, OptionActivity>> {
   const activity = new Map<string, OptionActivity>()
   const label = 'Tastytrade option activity'
-  for (let start = 0; start < symbols.length; start += BROKER_SYMBOL_CHUNK_SIZE) {
-    const chunk = symbols.slice(start, start + BROKER_SYMBOL_CHUNK_SIZE)
+  for (const chunk of chunked(symbols, BROKER_SYMBOL_CHUNK_SIZE)) {
     const query = chunk.map((symbol) => `equity-option=${encodeURIComponent(symbol)}`).join('&')
     const envelope = itemEnvelope(
       await brokerApi().tastyRequest(env, `/market-data/by-type?${query}`),
