@@ -59,10 +59,6 @@ export async function keyringSecret(service, key) {
   }
 }
 
-/**
- * The keyring could not be read or written: no keyring service running (a minimal desktop, a
- * headless machine), or one that is locked. One message wherever it happens, with what to do.
- */
 /** How long the write check runs before saying why; an unlocked keyring answers well within it. */
 const KEYRING_HINT_MS = 2_000
 /** How long a member is given to answer an unlock prompt: a named budget, the owner's judgment. */
@@ -106,6 +102,10 @@ function keyringFailure(error) {
   return /locked collection|collection is locked|keyring is locked/i.test(String(error?.stderr ?? '')) ? 'locked' : 'unknown'
 }
 
+/**
+ * The keyring could not be read or written: no keyring service running (a minimal desktop, a
+ * headless machine), or one that is locked. One message wherever it happens, with what to do.
+ */
 export class KeyringUnavailable extends CliFailure {
   constructor(reason = 'unknown') {
     const recovery = reason === 'locked'

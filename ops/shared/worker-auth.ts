@@ -1,5 +1,6 @@
 import { failureCode, toError } from '../../src/domain/failure'
 import { type AppEnv } from '../../src/server/env'
+import { presentedBearer } from '../../src/server/mcp-tokens'
 
 type CloudflareSubtleCrypto = SubtleCrypto & {
   timingSafeEqual(left: ArrayBuffer | ArrayBufferView, right: ArrayBuffer | ArrayBufferView): boolean
@@ -8,7 +9,7 @@ type CloudflareSubtleCrypto = SubtleCrypto & {
 export type OpsEnv = AppEnv & { OPS_AUTH_TOKEN?: string }
 
 async function authorizedOpsRequest(request: Request, expected: string | undefined): Promise<boolean> {
-  const provided = request.headers.get('Authorization')?.match(/^Bearer (\S+)$/)?.[1]
+  const provided = presentedBearer(request)
   if (!expected || !provided) return false
   const encoder = new TextEncoder()
   const [providedHash, expectedHash] = await Promise.all([

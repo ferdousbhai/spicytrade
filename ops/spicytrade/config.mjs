@@ -24,7 +24,7 @@ export const TASTYTRADE_API_BASE = process.env.TASTYTRADE_API_BASE ?? 'https://a
 /**
  * The Worker answers a fault on its own side while checking a computer's token with the same 401
  * as a revoked token -- deliberately, so a fault can never read as access -- and tells them apart
- * only in the challenge's description (`callerLookupFailed` in `src/server/mcp.ts`). A 401 carrying
+ * only in the challenge's description (`SERVER_FAULT_DESCRIPTION` in `src/server/mcp.ts`). A 401 carrying
  * this is spicytrade's trouble, to be waited out, not a sign-out. Change them together.
  */
 const WORKER_FAULT_CHALLENGE = 'spicytrade could not verify this request.'

@@ -134,8 +134,9 @@ async function checkServer() {
   }
 }
 
-/** Runs every check, writing one line each to `out`; resolves true when none failed. */
 /**
+ * Runs every check, writing one line each to `out`; resolves true when none failed.
+ *
  * `skip` names clients `setup` already found not answering, so they are reported without waiting
  * out their timeout again; `settled`, clients whose entries `setup` has just put in place and
  * reported on itself, so their lookups -- each one starting the server -- are not made twice.
