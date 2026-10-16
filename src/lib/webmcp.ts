@@ -1,3 +1,4 @@
+import { errorName, toError } from '../domain/failure'
 import { type JsonObject, type JsonValue } from '../domain/json-payload'
 
 /**
@@ -58,7 +59,7 @@ export function registerWebMcpTools(tools: readonly WebMcpTool[], signal: AbortS
         }
       }, { once: true })
     } catch (error) {
-      console.warn('WebMcpToolRegistrationFailed', tool.name, error instanceof Error ? error.name : 'Error')
+      console.warn('WebMcpToolRegistrationFailed', tool.name, errorName(toError(error)))
     }
   }
   return true

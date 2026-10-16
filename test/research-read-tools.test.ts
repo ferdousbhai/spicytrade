@@ -2,11 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { CATALYST_HORIZON_DAYS } from '../src/domain/catalyst'
 import { addDays } from '../src/domain/iso-date'
-import { readUpcomingCatalysts } from '../src/server/catalysts'
-import {
-  readCatalysts,
-} from '../src/server/research-read-tools'
-import { persistResearchCatalysts } from '../src/server/catalysts'
+import { persistResearchCatalysts, readUpcomingCatalysts } from '../src/server/catalysts'
+import { readCatalysts } from '../src/server/research-read-tools'
 import { unsupportedDatabase, unsupportedStatement } from './fake-d1'
 import { migrationStore } from './sqlite-d1'
 

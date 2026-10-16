@@ -26,13 +26,13 @@ const CitedSource = Type.Object({
 /*
  * The gap this fills: catalyst coverage is bought by reader attention, one search per symbol per
  * window. A member's agent that has just spent a session on a name knows dates that search will
- * not find, and until now had nowhere to put them.
+ * not find, and has no other place to put them.
  *
  * It is a citation contract, deliberately not a shortcut around one: what arrives is untrusted
- * model output, so the Worker re-reads every cited page
- * through its own browser and `bindCatalystCandidates` refuses any date it cannot find in that
- * text. Rows land under their own producer id, which is what keeps them traceable to the surface
- * that wrote them and retractable as a set.
+ * model output, so the Worker re-reads every cited page through its own browser and
+ * `bindCatalystCandidates` refuses any date it cannot find in that text. Rows land under their own
+ * producer id, which is what keeps them traceable to the surface that wrote them and retractable
+ * as a set.
  *
  * All-or-nothing, for the same reason publishing is: writing whatever survived would leave the
  * agent looking at an apparent success while some of what it recorded silently vanished.

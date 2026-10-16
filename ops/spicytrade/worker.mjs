@@ -1,3 +1,4 @@
+import { transportCode } from './broker-grants.mjs'
 import { UPSTREAM, workerFault } from './config.mjs'
 import { UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
 
@@ -27,10 +28,7 @@ export async function checkAgentToken(token) {
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     })
   } catch (error) {
-    const cause = error instanceof Error && error.cause instanceof Error && 'code' in error.cause
-      ? String(error.cause.code)
-      : error instanceof Error ? error.name : 'UnknownError'
-    return { status: 'unreachable', transport: /^[A-Za-z0-9_]+$/.test(cause) ? cause : 'UnknownError' }
+    return { status: 'unreachable', transport: transportCode(error) ?? 'UnknownError' }
   }
   await response.body?.cancel()
   if (workerFault(response)) return { httpStatus: response.status, status: 'unanswered' }

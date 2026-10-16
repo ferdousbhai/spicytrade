@@ -1,4 +1,4 @@
-import { PublicMarketSnapshotSchema, type MarketState, type PublicMarketSnapshot } from '../domain/market'
+import { formatMarketPrice, PublicMarketSnapshotSchema, type MarketState, type PublicMarketSnapshot } from '../domain/market'
 import { PUBLIC_SNAPSHOT_URL } from '../deployment'
 import { WATCH_SUMMARY_ID } from '../domain/site'
 
@@ -29,7 +29,6 @@ const escapeHtml = (value: string) => value
   .replaceAll('"', '&quot;')
   .replaceAll("'", '&#39;')
 
-const price = (value: number) => `$${value.toFixed(2)}`
 const percent = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
 const rank = (value: number | undefined) => (value === undefined ? '—' : value.toFixed(1))
 
@@ -48,7 +47,7 @@ function marketStateLine(snapshot: PublicMarketSnapshot): string {
 }
 
 export function renderWatchSummary(snapshot: PublicMarketSnapshot): string {
-  const rows = snapshot.tickers.map((ticker) => `<tr><th scope="row">${escapeHtml(ticker.symbol)}</th><td>${escapeHtml(ticker.name)}</td><td>${price(ticker.price)}</td><td>${percent(ticker.changePercent)}</td><td>${rank(ticker.ivRank)}</td></tr>`).join('')
+  const rows = snapshot.tickers.map((ticker) => `<tr><th scope="row">${escapeHtml(ticker.symbol)}</th><td>${escapeHtml(ticker.name)}</td><td>${formatMarketPrice(ticker.price)}</td><td>${percent(ticker.changePercent)}</td><td>${rank(ticker.ivRank)}</td></tr>`).join('')
   return `<section class="watch-summary" aria-label="Market snapshot"><h1>Options Watch</h1><p>${marketStateLine(snapshot)}</p><table><thead><tr><th scope="col">Symbol</th><th scope="col">Name</th><th scope="col">Price</th><th scope="col">Change</th><th scope="col">IV rank</th></tr></thead><tbody>${rows}</tbody></table><p>Showing ${snapshot.tickers.length} of ${snapshot.tickers.length} symbols. Data may be delayed. Not investment advice: see <a href="/disclosures">risk disclosures</a>.</p></section>`
 }
 
