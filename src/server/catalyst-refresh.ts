@@ -1,9 +1,10 @@
 import { z } from 'zod'
 
 import { EquitySymbolSchema, isTradeableInstrument } from '../domain/instrument'
-import { type CatalystRefresh } from '../domain/catalyst'
+import { EARNINGS_SAME_REPORT_DAYS, marketDate, type CatalystRefresh } from '../domain/catalyst'
 import { errorName, toError } from '../domain/failure'
-import { type CatalystProvider, persistResearchCatalysts } from './catalysts'
+import { addDays } from '../domain/iso-date'
+import { type CatalystProvider, CURRENT_CATALYSTS, persistResearchCatalysts } from './catalysts'
 import { EXA_REQUEST_TIMEOUT_MS, runExaCatalystSearch } from './catalyst-research-exa'
 import { PAGE_NAVIGATION_TIMEOUT_MS } from './research-page-retention'
 import { type AppEnv } from './env'
@@ -30,8 +31,25 @@ import { CallerVisibleError } from './caller-visible-error'
  * bound working, not a fault.
  * The owner's forced run is unaffected -- it is deliberate rather than incidental, and already
  * costs an owner credential.
+ *
+ * How long a complete search holds its symbol depends on what the calendar says (`holdAfterComplete`),
+ * and each span is a cost policy:
+ * - `CATALYST_REFRESH_INTERVAL_DAYS`: a week. Companies confirm and move dates on that cadence --
+ *   an earnings date is usually confirmed two to four weeks out -- and a month-long hold covered
+ *   that whole run-up, leaving a stale estimate standing until its own date passed. The worst
+ *   case is one search per tracked symbol per week, `MAX_WATCHLIST_SYMBOLS` a week.
+ * - `CATALYST_NEAR_EVENT_REFRESH_DAYS` inside `CATALYST_NEAR_EVENT_DAYS` of a scheduled event: the
+ *   two weeks before an event are when its date and the events around it are announced, and when
+ *   a reader is trading against them. That adds at most seven searches per symbol per event.
+ * - `CATALYST_CONTRADICTED_REFRESH_MS` once a confirmed earnings date contradicts this producer's
+ *   latest estimate after its last search: what the search reported is known to be wrong. The
+ *   floor of a day is there because the broker restamps its row without the date moving, and the
+ *   web can still carry the old date, so without it every look could buy another search.
  */
-export const CATALYST_REFRESH_INTERVAL_DAYS = 30
+export const CATALYST_REFRESH_INTERVAL_DAYS = 7
+export const CATALYST_NEAR_EVENT_DAYS = 14
+export const CATALYST_NEAR_EVENT_REFRESH_DAYS = 2
+export const CATALYST_CONTRADICTED_REFRESH_MS = 86_400_000
 export const CATALYST_PROVIDER: CatalystProvider = 'exa'
 /** The `catalyst_runs.detail` CHECK in migration 0024 admits at most this many characters. */
 const MAX_RUN_DETAIL_LENGTH = 500
@@ -42,14 +60,14 @@ const MAX_RUN_DETAIL_LENGTH = 500
  * write after it. None of those carries its own timeout, so this is a stated allowance rather than
  * a derived one -- as long again as the search itself, far more than a handful of D1 statements
  * take, and still short enough that a dead run frees its symbol within minutes rather than the
- * month.
+ * refresh window.
  */
 const RUN_OVERHEAD_ALLOWANCE_MS = EXA_REQUEST_TIMEOUT_MS
 /**
  * How long a `running` receipt can be a live run. Past this it is a run that died mid-flight -- a
  * reader who disconnected from the public refresh, or attention work cut off with its invocation
  * -- and it holds nothing back. Were a run somehow still alive past it, the cost is one extra
- * search, against a symbol left unsearched for a month. Its late persist cannot undo the newer
+ * search, against a symbol left unsearched for the refresh window. Its late persist cannot undo the newer
  * run: a row write never moves a sighting backwards (`catalystUpsertStatements`), and its receipt
  * lands nowhere (`recordRun`). What it adds is rows the newer run did not report, stamped with its
  * older instant: a row of a kind the newer run also reported reads as superseded, and a kind it
@@ -69,13 +87,58 @@ export const CATALYST_RUN_BUDGET_MS = EXA_REQUEST_TIMEOUT_MS + PAGE_NAVIGATION_T
 export const CATALYST_FAILED_RETRY_MS = 15 * 60_000
 
 const HeldRunSchema = z.object({ status: z.enum(['running', 'complete', 'failed']) })
+const HoldContextSchema = z.object({ contradicted: z.number(), near: z.number() })
+
+/**
+ * How long this symbol's last complete search holds it, from what the calendar holds now (see
+ * the policy at `CATALYST_REFRESH_INTERVAL_DAYS`). Read before the claim rather than inside it:
+ * two concurrent callers read the same calendar and so the same span, and the claim statement
+ * still lets only one of them buy the search.
+ *
+ * "Contradicted" compares this producer's latest earnings sighting with any confirmed earnings
+ * date of the same report (`EARNINGS_SAME_REPORT_DAYS`) that the provider stamped after the
+ * search ran -- a confirmation the search could not have seen. Read from the view rather than
+ * `CURRENT_CATALYSTS`, which already hides that estimate.
+ */
+async function holdAfterComplete(db: D1Database, symbol: string, now: Date): Promise<number> {
+  const today = marketDate(now)
+  const context = HoldContextSchema.parse(await db.prepare(
+    `SELECT
+       EXISTS (
+         SELECT 1 FROM ${CURRENT_CATALYSTS} upcoming
+          WHERE upcoming.symbol = ? AND upcoming.event_date BETWEEN ? AND ?
+       ) AS near,
+       EXISTS (
+         SELECT 1 FROM catalyst_runs r
+           JOIN upcoming_catalysts estimate
+             ON estimate.symbol = r.symbol AND estimate.source_provider = r.source_provider
+           JOIN upcoming_catalysts confirmed ON confirmed.symbol = r.symbol
+          WHERE r.symbol = ? AND r.source_provider = ? AND r.status = 'complete'
+            AND estimate.kind = 'earnings' AND estimate.confidence = 'estimated' AND estimate.event_date >= ?
+            AND estimate.last_seen_at = (
+              SELECT max(latest.last_seen_at) FROM upcoming_catalysts latest
+               WHERE latest.symbol = r.symbol AND latest.source_provider = r.source_provider
+                 AND latest.kind = 'earnings'
+            )
+            AND confirmed.kind = 'earnings' AND confirmed.confidence = 'confirmed'
+            AND confirmed.event_date <> estimate.event_date
+            AND abs(julianday(confirmed.event_date) - julianday(estimate.event_date)) <= ?
+            AND confirmed.updated_at > r.ran_at
+       ) AS contradicted`,
+  ).bind(
+    symbol, today, addDays(today, CATALYST_NEAR_EVENT_DAYS),
+    symbol, CATALYST_PROVIDER, today, EARNINGS_SAME_REPORT_DAYS,
+  ).first())
+  if (context.contradicted) return CATALYST_CONTRADICTED_REFRESH_MS
+  return (context.near ? CATALYST_NEAR_EVENT_REFRESH_DAYS : CATALYST_REFRESH_INTERVAL_DAYS) * 86_400_000
+}
 
 /**
  * Claim the run before making it. A concurrent favorite of the same symbol then sees a
  * fresh receipt and does not buy a second search.
  *
- * Three receipts hold a symbol back, each for its own span: a `complete` one inside the refresh
- * window; a `running` one inside the run budget, because that search may yet answer; and a
+ * Three receipts hold a symbol back, each for its own span: a `complete` one for `completeHoldMs`,
+ * which `holdAfterComplete` reads from the calendar; a `running` one inside the run budget, because that search may yet answer; and a
  * `failed` one inside the retry backoff. A `running` receipt past the budget is a run that died
  * mid-flight, so it ages out within minutes rather than standing in for a search that never
  * finished for the whole window. A held `failed` receipt answers `failed`, never `fresh`: the
@@ -94,6 +157,7 @@ async function claimRun(
   symbol: string,
   now: Date,
   forced: boolean,
+  completeHoldMs: number,
 ): Promise<'claimed' | 'fresh' | 'failed'> {
   const cutoff = (ms: number) => new Date(now.getTime() - ms).toISOString()
   const claim = await db.prepare(
@@ -111,7 +175,7 @@ async function claimRun(
     CATALYST_PROVIDER,
     now.toISOString(),
     forced ? 1 : 0,
-    cutoff(CATALYST_REFRESH_INTERVAL_DAYS * 86_400_000),
+    cutoff(completeHoldMs),
     cutoff(CATALYST_RUN_BUDGET_MS),
     cutoff(CATALYST_FAILED_RETRY_MS),
   ).run()
@@ -175,7 +239,7 @@ type CatalystRefreshAttempt = { claimed: boolean; refresh: CatalystRefresh }
  *
  * `forced` spends a search the window would have refused. Incidental attention must stay
  * bounded, but an owner asking on purpose is a different signal, and without it a symbol
- * searched once reads as empty for a month with no way to ask again. The receipt is still
+ * searched once reads as empty for the whole hold with no way to ask again. The receipt is still
  * written, so a forced run resets the window for everyone rather than escaping it.
  *
  * A search that throws answers `ran: false, reason: 'failed'`: it bound nothing, and a reader
@@ -210,7 +274,7 @@ export async function attemptCatalystRefresh(
   if (!forced && !await isTracked(db, symbol)) {
     return { claimed: false, refresh: { catalysts: [], ran: false, reason: 'untracked' } }
   }
-  const claim = await claimRun(db, symbol, now, forced)
+  const claim = await claimRun(db, symbol, now, forced, await holdAfterComplete(db, symbol, now))
   if (claim !== 'claimed') return { claimed: false, refresh: { catalysts: [], ran: false, reason: claim } }
 
   try {

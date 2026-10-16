@@ -414,10 +414,79 @@ describe('one event that several producers saw', () => {
     expect(upcomingCatalystsForSymbol('INTC', [stale, searched], NOW)).toEqual([searched])
   })
 
-  it('keeps two producers that disagree on the date as the two claims they are', () => {
+  it('keeps two estimates that disagree on the date as the two claims they are', () => {
     const moved: Catalyst = { ...searched, date: '2026-10-23', id: 'exa:INTC:earnings:2026-10-23' }
-    expect(upcomingCatalystsForSymbol('INTC', [moved, broker], NOW).map((row) => row.date))
+    const unconfirmed: Catalyst = { ...broker, confidence: 'estimated' }
+    expect(upcomingCatalystsForSymbol('INTC', [moved, unconfirmed], NOW).map((row) => row.date))
       .toEqual(['2026-10-22', '2026-10-23'])
+  })
+})
+
+describe('an earnings estimate a confirmed date replaced', () => {
+  // The pair the live surface showed next: a search on Sep 21 bound Oct 22 from a page that
+  // projected it, and tastytrade later confirmed the report for Oct 29. One report, drawn twice.
+  const NOW = new Date('2026-10-15T18:00:00.000Z')
+  const estimate: Catalyst = {
+    confidence: 'estimated',
+    date: '2026-10-22',
+    description: 'First print after the co-packaged-optics reports.',
+    id: 'exa:INTC:earnings:2026-10-22',
+    kind: 'earnings',
+    source: 'Exa search · marketbeat.com',
+    sourceUrl: 'https://www.marketbeat.com/earnings/reports/intc',
+    symbol: 'INTC',
+    timing: 'after-hours',
+    title: 'Intel Q3 2026 earnings',
+    updatedAt: '2026-09-21T17:54:02.486Z',
+  }
+  const confirmed: Catalyst = {
+    confidence: 'confirmed',
+    date: '2026-10-29',
+    id: 'tastytrade:INTC:earnings',
+    kind: 'earnings',
+    source: 'tastytrade market metrics',
+    sourceUrl: 'https://developer.tastytrade.com/open-api-spec/market-metrics/',
+    symbol: 'INTC',
+    timing: 'unknown',
+    title: 'INTC earnings',
+    updatedAt: '2026-10-07T12:00:00.000Z',
+  }
+
+  it('draws the report once, on the confirmed date, and names it next in the list too', () => {
+    expect(upcomingCatalystsForSymbol('INTC', [estimate, confirmed], NOW)).toEqual([confirmed])
+    expect(nextCatalystsBySymbol([estimate, confirmed], NOW).get('INTC')).toEqual(confirmed)
+  })
+
+  it('leaves an estimate of the next report, and every other kind of event, standing', () => {
+    const nextQuarter: Catalyst = { ...estimate, date: '2027-01-28', id: 'exa:INTC:earnings:2027-01-28' }
+    const conference: Catalyst = { ...estimate, date: '2026-10-22', id: 'exa:INTC:conference:2026-10-22', kind: 'conference' }
+    const otherSymbol: Catalyst = { ...estimate, id: 'exa:AMD:earnings:2026-10-22', symbol: 'AMD' }
+    expect(upcomingCatalystsForSymbol('INTC', [estimate, confirmed, nextQuarter, conference, otherSymbol], NOW).map((row) => row.id))
+      .toEqual(['exa:INTC:conference:2026-10-22', 'tastytrade:INTC:earnings', 'exa:INTC:earnings:2027-01-28'])
+    expect(upcomingCatalystsForSymbol('AMD', [estimate, confirmed, otherSymbol], NOW)).toEqual([otherSymbol])
+  })
+
+  it('does not count the broker date alone as a searched calendar', () => {
+    // The broker reports earnings for every symbol whether or not anyone searched, so INTC with
+    // only that row still asks; the replaced estimate no longer answers for it.
+    expect(hasNearTermCatalyst('INTC', [estimate, confirmed], NOW)).toBe(false)
+    const conference: Catalyst = { ...estimate, id: 'exa:INTC:conference:2026-10-22', kind: 'conference' }
+    expect(hasNearTermCatalyst('INTC', [estimate, confirmed, conference], NOW)).toBe(true)
+  })
+
+  it('is hidden from every server read, and kept in the store', async () => {
+    const store = await migrationStore()
+    try {
+      const env = { DB: store.database }
+      await persistResearchCatalysts(env, 'exa', [estimate], new Date('2026-09-21T17:54:02.486Z'))
+      await persistResearchCatalysts(env, 'member-research', [{ ...estimate, id: 'member-research:INTC:earnings:2026-10-22' }], NOW)
+      await persistAndLoadCatalysts(env, [confirmed], { answered: ['INTC'], requested: ['INTC'] }, NOW)
+
+      expect((await readUpcomingCatalystsForSymbol(env, 'INTC', NOW)).map((row) => row.id)).toEqual(['tastytrade:INTC:earnings'])
+      expect(store.sqlite.prepare("SELECT COUNT(*) AS rows FROM catalysts WHERE symbol = 'INTC'").get()).toEqual({ rows: 3 })
+    } finally {
+      store.close()
+    }
   })
 })
 

@@ -449,12 +449,12 @@ function CatalystRunway({
               </ol>
               {searching && (
                 <p className="runway-searching" aria-live="polite">
-                  <span aria-hidden="true" /> Searching for nearer {CATALYST_SCOPE} dates…
+                  <span aria-hidden="true" /> Searching for more {CATALYST_SCOPE} dates…
                 </p>
               )}
               {failed && !searching && (
                 <p className="runway-searching" aria-live="polite">
-                  The search for nearer {CATALYST_SCOPE} dates didn’t finish.
+                  The search for more {CATALYST_SCOPE} dates didn’t finish.
                 </p>
               )}
               {readFailed && (
@@ -473,7 +473,7 @@ function CatalystRunway({
               symbol={symbol}
             />
           )}
-      {/* A search runs at most once a month for any symbol, so coverage can read thin long
+      {/* A search runs at most once a week for any symbol, so coverage can read thin long
           after the web has something to say. Spending another costs money per call, which is
           why only the owner may. What it finds is stored, so every reader gets it. */}
       {onRefresh && thin && !searching && (

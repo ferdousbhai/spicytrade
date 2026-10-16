@@ -140,7 +140,7 @@ describe('owner catalyst refresh', () => {
     // Dated past the near-term window, so the runway renders a row and a search still runs.
     renderMarket('QQQ', [catalyst('QQQ', 70)], true)
 
-    expect(await screen.findByText(/Searching for nearer/)).toBeTruthy()
+    expect(await screen.findByText(/Searching for more/)).toBeTruthy()
     // The control that would spend a second search is not offered while one is running.
     expect(screen.queryByRole('button', { name: 'Search again' })).toBeNull()
   })

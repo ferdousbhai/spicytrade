@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import {
   CatalystSchema,
+  EARNINGS_SAME_REPORT_DAYS,
   marketDate,
   MAX_CATALYSTS_PER_SYMBOL,
   RecordedCatalystSchema,
@@ -170,6 +171,12 @@ export function earningsDateFromMetric(metric: JsonObject | undefined, now = new
  *
  * Retired from the read and never deleted: the row stays answerable to the producer that wrote
  * it, and a producer that reports that date again refreshes it back into view.
+ *
+ * One rule crosses producers: an estimated earnings date is retired once any producer holds a
+ * confirmed earnings date for the same symbol within `EARNINGS_SAME_REPORT_DAYS` -- the same
+ * report, now confirmed (`withoutSupersededEstimates` says why). Here rather than only in the
+ * browser, so the agent's calendar, the public read and the per-symbol cap all see one event
+ * rather than spending a place on a date nobody holds.
  */
 export const CURRENT_CATALYSTS =
   `(SELECT c.id, c.source_provider, c.symbol, c.kind, c.title, c.description, c.event_date,
@@ -178,11 +185,17 @@ export const CURRENT_CATALYSTS =
         SELECT *, max(last_seen_at) OVER (PARTITION BY source_provider, symbol, kind) AS latest_sighting
           FROM upcoming_catalysts
       ) c
-     WHERE c.last_seen_at = c.latest_sighting
+     WHERE (c.last_seen_at = c.latest_sighting
         OR NOT EXISTS (
           SELECT 1 FROM catalyst_runs r
            WHERE r.source_provider = c.source_provider AND r.symbol = c.symbol
-        ))`
+        ))
+       AND NOT (c.kind = 'earnings' AND c.confidence = 'estimated' AND EXISTS (
+          SELECT 1 FROM upcoming_catalysts confirmed
+           WHERE confirmed.symbol = c.symbol AND confirmed.kind = 'earnings'
+             AND confirmed.confidence = 'confirmed'
+             AND abs(julianday(confirmed.event_date) - julianday(c.event_date)) <= ${EARNINGS_SAME_REPORT_DAYS}
+        )))`
 
 /*
  * Every producer's upcoming rows, nearest first, for at most `MAX_CATALYSTS_PER_SYMBOL` events

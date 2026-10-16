@@ -348,7 +348,9 @@ test('mobile market, recommendations, search, sorting, and connect flows remain 
   const catalystRefreshes: string[] = []
   await page.route('**/api/public-catalyst-refresh', async (route) => {
     catalystRefreshes.push(String(route.request().postDataJSON().symbol))
-    await route.fulfill({ json: { ran: true, catalystCount: 0 } })
+    // The route's real answer. One it cannot parse reads as a failed search, which is asked
+    // again on the next look -- a different flow from the one this test follows.
+    await route.fulfill({ json: { catalysts: [], ran: true } })
   })
   const ownerFavorites = new Set<string>()
   await page.route('**/api/favorites', async (route) => {

@@ -144,12 +144,44 @@ function compareCatalystOrder(left: Catalyst, right: Catalyst): number {
 }
 
 /**
+ * How far apart two earnings dates of one symbol can be and still be the same report. A company
+ * reports once a quarter, so two dates closer than half a quarter cannot be two reports: they
+ * are one report's estimate and its confirmation, or an estimate the company has since moved.
+ * `CURRENT_CATALYSTS` applies the same window in SQL.
+ */
+const QUARTER_DAYS = 91
+export const EARNINGS_SAME_REPORT_DAYS = Math.floor(QUARTER_DAYS / 2)
+
+/**
+ * Drops each estimated earnings date that a confirmed one has replaced: the same symbol's
+ * confirmed earnings within `EARNINGS_SAME_REPORT_DAYS`. A confirmed date is the company's answer
+ * for that report, so an estimate of it on another date is a date nobody holds any more, and
+ * beside the confirmation it reads as two earnings a week apart. Exact-date identity cannot fold
+ * them, because the dates differ. The estimate drops whole and only from display; it stays
+ * stored, answerable to its producer. `CURRENT_CATALYSTS` already hides it from every server read;
+ * this keeps a calendar the browser merges from several reads -- a fresh search's answer among
+ * them -- in agreement.
+ */
+export function withoutSupersededEstimates(catalysts: readonly Catalyst[]): Catalyst[] {
+  const confirmedDays = new Map<string, number[]>()
+  for (const catalyst of catalysts) {
+    if (catalyst.kind !== 'earnings' || catalyst.confidence !== 'confirmed') continue
+    confirmedDays.set(catalyst.symbol, [...confirmedDays.get(catalyst.symbol) ?? [], epochDay(catalyst.date)])
+  }
+  return catalysts.filter((catalyst) => catalyst.kind !== 'earnings'
+    || catalyst.confidence !== 'estimated'
+    || !(confirmedDays.get(catalyst.symbol) ?? [])
+      .some((day) => Math.abs(day - epochDay(catalyst.date)) <= EARNINGS_SAME_REPORT_DAYS))
+}
+
+/**
  * Two producers that saw one event wrote two rows, and both are kept: each is answerable for
  * what it observed, and a search going quiet is not proof an event moved. A reader is looking
  * at a calendar rather than at our producers, so a display shows one row per event and lets
  * `compareCatalystStanding` say which, nearest first. Symbol, kind and date are that event's
  * identity here because they already are one to every research producer, each of which
- * refuses its own second sighting of them.
+ * refuses its own second sighting of them. An earnings estimate a confirmed date replaced on
+ * another date is the one exception, dropped first by `withoutSupersededEstimates`.
  *
  * Never a merge of the group: a timing or a link shown beside another producer's confidence
  * would be a claim no producer made, under a citation that does not support it. A row drops
@@ -157,7 +189,7 @@ function compareCatalystOrder(left: Catalyst, right: Catalyst): number {
  */
 export function distinctCatalysts(catalysts: readonly Catalyst[]): Catalyst[] {
   const seen = new Set<string>()
-  return [...catalysts].sort(compareCatalystOrder).filter((catalyst) => {
+  return withoutSupersededEstimates(catalysts).sort(compareCatalystOrder).filter((catalyst) => {
     const event = `${catalyst.symbol}:${catalyst.kind}:${catalyst.date}`
     if (seen.has(event)) return false
     seen.add(event)
@@ -172,7 +204,9 @@ export function nextCatalystsBySymbol(
 ): ReadonlyMap<string, Catalyst> {
   const today = marketDate(now)
   const next = new Map<string, Catalyst>()
-  for (const catalyst of catalysts) {
+  // The list names the same next event the runway opens with, so a replaced estimate is no
+  // candidate here either.
+  for (const catalyst of withoutSupersededEstimates(catalysts)) {
     if (catalyst.date < today) continue
     const current = next.get(catalyst.symbol)
     if (!current || compareCatalystOrder(catalyst, current) < 0) next.set(catalyst.symbol, catalyst)
@@ -202,13 +236,28 @@ export function upcomingCatalystsForSymbol(
  */
 const CATALYST_NEAR_TERM_DAYS = 30
 
+/** A row from the broker's earnings feed, which reports earnings and nothing else. */
+export function isBrokerCatalyst(catalyst: Catalyst): boolean {
+  return catalyst.id.startsWith('tastytrade:')
+}
+
+/**
+ * Whether a symbol's next month is covered well enough that looking at it need not ask for a
+ * search. Only a researched row counts. The broker's earnings date arrives for every symbol
+ * whether or not anyone searched, and it can say nothing about any other kind of event, so a
+ * calendar holding only that has not been looked at. Counting it also hid the case a search is
+ * for: a stale estimate beside a newly confirmed date kept a symbol "covered" until the
+ * estimate's own date passed. Asking is cheap; the server's receipt decides whether a search is
+ * bought.
+ */
 export function hasNearTermCatalyst(
   symbol: string,
   catalysts: readonly Catalyst[],
   now: Date,
 ): boolean {
   const horizon = addDays(marketDate(now), CATALYST_NEAR_TERM_DAYS)
-  return upcomingCatalystsForSymbol(symbol, catalysts, now).some((catalyst) => catalyst.date <= horizon)
+  return upcomingCatalystsForSymbol(symbol, catalysts, now)
+    .some((catalyst) => catalyst.date <= horizon && !isBrokerCatalyst(catalyst))
 }
 
 export function catalystLabel(catalyst: Catalyst, now: Date): string {
@@ -239,7 +288,7 @@ const KIND_NAMES = {
  * something a reader is looking at when they check where a date came from.
  */
 export function catalystSourceLink(catalyst: Catalyst): { host: string; url: string } | undefined {
-  if (!catalyst.sourceUrl || catalyst.id.startsWith('tastytrade:')) return undefined
+  if (!catalyst.sourceUrl || isBrokerCatalyst(catalyst)) return undefined
   const url = new URL(catalyst.sourceUrl)
   return { host: url.hostname.replace(/^www\./, ''), url: catalyst.sourceUrl }
 }

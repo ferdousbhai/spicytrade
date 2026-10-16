@@ -6,12 +6,17 @@ import {
   unresolvedInstrumentCatalogItem,
 } from '../src/server/instrument-catalog'
 import {
+  CATALYST_CONTRADICTED_REFRESH_MS,
+  CATALYST_NEAR_EVENT_DAYS,
+  CATALYST_NEAR_EVENT_REFRESH_DAYS,
   CATALYST_REFRESH_INTERVAL_DAYS,
   CATALYST_FAILED_RETRY_MS,
   CATALYST_RUN_BUDGET_MS,
   attemptCatalystRefresh,
   refreshCatalystsForSymbol,
 } from '../src/server/catalyst-refresh'
+import { persistResearchCatalysts } from '../src/server/catalysts'
+import { addDays } from '../src/domain/iso-date'
 import { markdownBrowser } from './fake-browser'
 import { migrationStore, type SqliteD1Store } from './sqlite-d1'
 
@@ -138,6 +143,73 @@ describe('catalyst coverage seeded by favorites', () => {
     store.close()
   })
 
+  it('searches again sooner once an event is near', async () => {
+    const store = await storeWithCatalog()
+    const fetchMock = stubExa()
+    // The search binds BE's investor day on Oct 14; from Oct 2 that is inside the near window.
+    const searchedAt = new Date('2026-10-02T13:00:00.000Z')
+    expect(addDays('2026-10-02', CATALYST_NEAR_EVENT_DAYS) >= '2026-10-14').toBe(true)
+    await refreshCatalystsForSymbol(env(store), 'BE', searchedAt)
+
+    const day = (days: number) => new Date(searchedAt.getTime() + days * 86_400_000)
+    await expect(refreshCatalystsForSymbol(env(store), 'BE', day(CATALYST_NEAR_EVENT_REFRESH_DAYS - 1)))
+      .resolves.toMatchObject({ ran: false, reason: 'fresh' })
+    // Still inside the week a quiet calendar is held for, but the event is close.
+    expect(CATALYST_NEAR_EVENT_REFRESH_DAYS + 1).toBeLessThan(CATALYST_REFRESH_INTERVAL_DAYS)
+    await expect(refreshCatalystsForSymbol(env(store), 'BE', day(CATALYST_NEAR_EVENT_REFRESH_DAYS + 1)))
+      .resolves.toMatchObject({ ran: true })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    store.close()
+  })
+
+  it('searches again once a confirmed earnings date contradicts the estimate it found', async () => {
+    const estimate = {
+      confidence: 'estimated' as const,
+      date: '2026-11-05',
+      id: 'exa:BE:earnings:2026-11-05',
+      kind: 'earnings' as const,
+      source: 'Exa search · example.com',
+      sourceUrl: 'https://example.com/be',
+      symbol: 'BE',
+      timing: 'unknown' as const,
+      title: 'Bloom Energy Q3 earnings',
+      updatedAt: NOW.toISOString(),
+    }
+    const confirmedAt = async (updatedAt: string) => {
+      const store = await storeWithCatalog()
+      await refreshCatalystsForSymbol(env(store), 'BE', NOW)
+      // What the search at NOW reported for earnings, and the broker's confirmation of the
+      // same report a week later, stamped by the provider at `updatedAt`.
+      await persistResearchCatalysts({ DB: store.database }, 'exa', [estimate], NOW)
+      await persistResearchCatalysts({ DB: store.database }, 'tastytrade', [{
+        ...estimate,
+        confidence: 'confirmed',
+        date: '2026-11-12',
+        id: 'tastytrade:BE:earnings',
+        source: 'tastytrade market metrics',
+        sourceUrl: 'https://developer.tastytrade.com/open-api-spec/market-metrics/',
+        updatedAt,
+      }], NOW)
+      return store
+    }
+    // Past the day's floor, inside the week, and no event near: only the contradiction says go.
+    const later = new Date(NOW.getTime() + (CATALYST_CONTRADICTED_REFRESH_MS + 86_400_000))
+    expect(later.getTime() - NOW.getTime()).toBeLessThan(CATALYST_REFRESH_INTERVAL_DAYS * 86_400_000)
+
+    const fetchMock = stubExa()
+    const confirmedAfter = await confirmedAt(new Date(NOW.getTime() + 3_600_000).toISOString())
+    await expect(refreshCatalystsForSymbol(env(confirmedAfter), 'BE', new Date(NOW.getTime() + 3_600_000 * 2)))
+      .resolves.toMatchObject({ ran: false, reason: 'fresh' })
+    await expect(refreshCatalystsForSymbol(env(confirmedAfter), 'BE', later)).resolves.toMatchObject({ ran: true })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    confirmedAfter.close()
+
+    // A confirmation the search could already have seen is not news to it.
+    const confirmedBefore = await confirmedAt(new Date(NOW.getTime() - 3_600_000).toISOString())
+    await expect(refreshCatalystsForSymbol(env(confirmedBefore), 'BE', later)).resolves.toMatchObject({ ran: false, reason: 'fresh' })
+    confirmedBefore.close()
+  })
+
   it('will not let incidental attention spend a search on a name the site does not track', async () => {
     // The window bounds how often one symbol is searched; it says nothing about how many symbols
     // are reachable. Without this the reachable set was the whole instrument catalog -- thousands
@@ -167,7 +239,7 @@ describe('catalyst coverage seeded by favorites', () => {
 
     const withinWindow = new Date(NOW.getTime() + 86_400_000)
     // An owner asking on purpose is a different signal from a reader happening to look, and
-    // without it a symbol searched once reads as empty for a month with no way to ask again.
+    // without it a symbol searched once reads as empty for the whole hold with no way to ask again.
     await expect(refreshCatalystsForSymbol(env(store), 'BE', withinWindow, true))
       .resolves.toMatchObject({ ran: true })
     expect(fetchMock).toHaveBeenCalledTimes(2)
@@ -240,7 +312,7 @@ describe('catalyst coverage seeded by favorites', () => {
       .resolves.toEqual({ catalysts: [], ran: false, reason: 'failed' })
     expect(retryFetch).not.toHaveBeenCalled()
 
-    // Past it the failure holds nothing back, so the calendar is not left unknown for a month.
+    // Past it the failure holds nothing back, so the calendar is not left unknown for the whole hold.
     const pastBackoff = new Date(NOW.getTime() + CATALYST_FAILED_RETRY_MS)
     await expect(refreshCatalystsForSymbol(env(store), 'BE', pastBackoff))
       .resolves.toMatchObject({ ran: true, catalysts: [{ id: 'exa:BE:investor-event:2026-10-14' }] })
