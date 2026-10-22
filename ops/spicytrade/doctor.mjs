@@ -33,9 +33,11 @@ import { checkAgentToken, describeTokenCheck } from './worker.mjs'
 const SERVER_CHECK_TIMEOUT_MS = UPSTREAM_TIMEOUT_MS + TOKEN_REQUEST_TIMEOUT_MS
 
 const ReplySchema = z.object({
+  id: z.literal(1),
+  jsonrpc: z.literal('2.0'),
   error: z.object({ message: z.string() }).optional(),
-  result: z.object({ instructions: z.string().optional() }).optional(),
-})
+  result: z.object({ protocolVersion: z.string().min(1), instructions: z.string().optional() }).optional(),
+}).refine((reply) => (reply.error !== undefined) !== (reply.result !== undefined))
 
 /**
  * `quiet` is for `setup`, which has just reported each step itself: only failures, and the one

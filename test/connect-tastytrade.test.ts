@@ -103,6 +103,7 @@ describe('connect-tastytrade', () => {
     // A rebound page and a return that is not this run's are both refused, and the run goes on.
     expect((await visit(listener, `/callback?code=${CODE}&state=${STATE}`, { host: `attacker.example:${listener}` })).status).toBe(403)
     expect((await visit(listener, `/callback?code=${CODE}&state=${STATE}`, { origin: 'http://attacker.example' })).status).toBe(403)
+    expect((await visit(listener, 'http://[')).status).toBe(400)
     expect((await visit(listener, `/callback?code=${CODE}&state=${'T'.repeat(43)}`)).status).toBe(400)
     const returned = await visit(listener, `/callback?code=${CODE}&state=${STATE}`)
     expect(returned.status).toBe(200)

@@ -343,11 +343,18 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
   const readOnlyTools = new Set()
   /** A failed mint this session still answers with instead of minting again, and until when. */
   let mintHeld
+  let mintPending
   const brokerAccessToken = async () => {
     if (cachedAccess && Date.now() < cachedAccess.expiresAt) return cachedAccess.token
-    const { lifetimeSeconds, token } = await mint()
-    cachedAccess = { expiresAt: tokenRetiresAt(Date.now(), lifetimeSeconds * 1_000), token }
-    return token
+    // Concurrent tool calls share the token exchange, never the tool request itself. Besides
+    // avoiding throttling, this keeps providers that rotate grants from racing two exchanges.
+    mintPending ??= (async () => {
+      const issuedAt = Date.now()
+      const { lifetimeSeconds, token } = await mint()
+      cachedAccess = { expiresAt: tokenRetiresAt(issuedAt, lifetimeSeconds * 1_000), token }
+      return token
+    })().finally(() => { mintPending = undefined })
+    return mintPending
   }
 
   // Streamable HTTP's per-session state, learned from the Worker's answer to `initialize`. A

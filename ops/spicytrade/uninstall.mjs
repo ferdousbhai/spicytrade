@@ -89,22 +89,22 @@ export async function uninstall(out = process.stdout) {
     [TASTYTRADE, APP_REFRESH_TOKEN_KEY], [TASTYTRADE, CLIENT_SECRET_KEY], [TASTYTRADE, REFRESH_TOKEN_KEY],
     [AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY], [LEGACY_AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY],
   ]
-  // With no secret-tool there is nothing saved to clear. A keyring that will not clear -- locked --
-  // does not stop the rest: the commands that finish it are named, since they need no spicytrade.
-  if (await secretToolInstalled()) {
-    // Name only what was there: a member who never connected tastytrade is not told it was removed.
-    // A keyring that cannot be read says nothing either way, so both are named.
-    const tastytradeSaved = await tastytradeCredentialKind().then(({ kind }) => kind !== 'none', () => true)
-    const saved = tastytradeSaved ? 'spicytrade sign-in and tastytrade connection' : 'spicytrade sign-in'
-    const left = []
-    for (const [service, key] of entries) {
-      if (!await keyringClear(service, key)) left.push(`secret-tool clear service ${service} key ${key}`)
-    }
-    out.write(left.length
-      ? `✗ the keyring is locked, so this computer's ${saved} ${tastytradeSaved ? 'are' : 'is'} still saved in it.\n`
-        + `    Unlock it, then run:\n${left.map((command) => `      ${command}\n`).join('')}`
-      : `✓ removed this computer's ${saved} from the keyring\n`)
+  // A missing helper says nothing about whether credentials are still stored. Removal failures
+  // do not stop the rest: these commands finish cleanup even after the CLI itself is removed.
+  const helperInstalled = await secretToolInstalled()
+  // Name only what was there: a member who never connected tastytrade is not told it was removed.
+  // A keyring that cannot be read says nothing either way, so both are named.
+  const tastytradeSaved = !helperInstalled || await tastytradeCredentialKind().then(({ kind }) => kind !== 'none', () => true)
+  const saved = tastytradeSaved ? 'spicytrade sign-in and tastytrade connection' : 'spicytrade sign-in'
+  const left = []
+  for (const [service, key] of entries) {
+    if (!helperInstalled || !await keyringClear(service, key)) left.push(`secret-tool clear service ${service} key ${key}`)
   }
+  out.write(left.length
+    ? `✗ could not remove this computer's ${saved} from password storage.\n`
+      + (helperInstalled ? '    Restore access to your keyring, then run:\n' : '    Install secret-tool (libsecret-tools on Debian/Ubuntu; libsecret on Arch/Fedora), then run:\n')
+      + left.map((command) => `      ${command}\n`).join('')
+    : `✓ removed this computer's ${saved} from the keyring\n`)
 
   if (await removeProgram()) out.write('✓ removed the spicytrade program\n')
   out.write(signedOut

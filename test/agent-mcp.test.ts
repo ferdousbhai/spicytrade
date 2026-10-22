@@ -4,7 +4,7 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
 import { tokenRetiresAt, UPSTREAM_TIMEOUT_MS } from '../ops/spicytrade/token-refresh.mjs'
@@ -172,6 +172,33 @@ const ToolErrorReplySchema = z.object({ result: ToolCallSchema })
 const request = (id: number | string, method = 'tools/call'): JsonRpcMessage => ({ id, jsonrpc: '2.0', method })
 
 describe('spicytrade mcp', () => {
+  it('shares a broker token exchange across simultaneous tool calls', async () => {
+    let mints = 0
+    let finishMint: (() => void) | undefined
+    const { captured, port } = await accountWorker((_, response) => {
+      mints += 1
+      finishMint = () => {
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ accessToken: MINTED, expiresIn: 900 }))
+      }
+    })
+    const server = startServer(await fakeKeyring({
+      'spicytrade/mcp-token': AGENT_TOKEN,
+      'tastytrade/app-refresh-token': REFRESH_TOKEN,
+    }), port)
+    server.send(request(1))
+    server.send(request(2))
+    // A ping proves both earlier messages were dispatched while the mint is still pending.
+    server.send(request(3, 'ping'))
+    expect(await server.reply(0)).toEqual({ id: 3, jsonrpc: '2.0', result: { ok: true } })
+    await vi.waitFor(() => expect(finishMint).toBeDefined())
+    expect(mints).toBe(1)
+    finishMint!()
+    await server.reply(2)
+    expect(captured.filter((call) => JSON.parse(call.body).method === 'tools/call')).toHaveLength(2)
+    expect(mints).toBe(1)
+  }, 30_000)
+
   it('attaches a freshly minted broker token and never forwards the long-lived credential', async () => {
     let tokenRequests = 0
     const { captured, port } = await worker((incoming, body, response) => {
@@ -495,6 +522,22 @@ esac
     const server = startServer(directory, port)
     const failure = await notReady(server)
     expect(failure.error.message).toMatch(/^Your password storage is locked\..* Use connect_spicytrade with action=start.*run \S*spicytrade(\.mjs)? connect\. Then call setup_required to reload the connection\.$/)
+    expect(captured).toHaveLength(0)
+  }, 30_000)
+
+  it('distinguishes an unreachable desktop session from a locked keyring', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'spicytrade-keyring-'))
+    keyrings.push(directory)
+    await writeFile(join(directory, 'secret-tool'), `#!/usr/bin/env bash
+echo 'Cannot autolaunch D-Bus without X11 $DISPLAY' >&2
+exit 1
+`)
+    await chmod(join(directory, 'secret-tool'), 0o755)
+    const { captured, port } = await worker()
+    const server = startServer(directory, port)
+    const failure = await notReady(server)
+    expect(failure.error.message).toContain('Your desktop session bus could not be reached.')
+    expect(failure.error.message).not.toContain('Your password storage is locked.')
     expect(captured).toHaveLength(0)
   }, 30_000)
 

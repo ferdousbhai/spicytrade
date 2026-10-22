@@ -89,7 +89,15 @@ export async function loopbackListener(program, pages) {
       page(response, 403, pages.forbidden)
       return
     }
-    const url = new URL(request.url ?? '/', `http://${LISTEN_HOST}:${port}`)
+    let url
+    try {
+      url = new URL(request.url ?? '/', `http://${LISTEN_HOST}:${port}`)
+    } catch {
+      // A malformed local HTTP request must not terminate a pending browser authorization.
+      request.resume()
+      page(response, 400, 'Invalid request URL.')
+      return
+    }
     if (request.method !== 'GET' || url.pathname !== CALLBACK_PATH || !expectedState) {
       page(response, 404, 'Not found.')
       return

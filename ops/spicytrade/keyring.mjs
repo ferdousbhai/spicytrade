@@ -1,10 +1,12 @@
 import { execFile, spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { access, constants } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 import { promisify } from 'node:util'
 
 import { AGENT_TOKEN_SERVICE, cliCommand, LEGACY_AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY } from './config.mjs'
 import { CliFailure } from './loopback.mjs'
+import { keyringEnvironment } from './keyring-environment.mjs'
 
 /**
  * Keyring access for the local tools, shared so every one of them (`mcp`, setup, doctor, login
@@ -48,7 +50,7 @@ export const secretToolInstalled = () => commandInstalled('secret-tool')
 export async function keyringSecret(service, key) {
   try {
     const { stdout } = await execFileAsync('secret-tool', ['lookup', 'service', service, 'key', key], {
-      timeout: KEYRING_UNLOCK_WAIT_MS, env: { ...process.env, LC_ALL: 'C' },
+      timeout: KEYRING_UNLOCK_WAIT_MS, env: await keyringEnvironment(),
     })
     const value = stdout.trim()
     return value || undefined
@@ -72,12 +74,15 @@ const KEYRING_UNLOCK_WAIT_MS = 60_000
  * the issued token signed in with nowhere to keep it.
  */
 export async function keyringWritable(out = process.stdout) {
+  // Setup may run in several agent sessions at once. Each check owns its disposable entry.
+  const key = `write-check-${randomUUID()}`
+  let cleared = false
   // A locked keyring answers with an unlock prompt on the desktop -- on the remote screen, over
   // SSH -- so a check that has not answered soon says why the terminal is waiting, and one that
   // has not answered within the budget is reported as a keyring that cannot save.
   const hint = setTimeout(() => out.write('Checking the system keyring. If a password prompt appears, unlock it.\n'), KEYRING_HINT_MS)
   try {
-    if (!await keyringStore(AGENT_TOKEN_SERVICE, 'write-check', 'spicytrade keyring check', '1', { timeoutMs: KEYRING_UNLOCK_WAIT_MS })) {
+    if (!await keyringStore(AGENT_TOKEN_SERVICE, key, 'spicytrade keyring check', '1', { timeoutMs: KEYRING_UNLOCK_WAIT_MS })) {
       return false
     }
   } catch (error) {
@@ -86,9 +91,10 @@ export async function keyringWritable(out = process.stdout) {
     throw error
   } finally {
     clearTimeout(hint)
+    // A failed read-back may still have stored the probe. Clean it up on every exit path.
+    cleared = await keyringClear(AGENT_TOKEN_SERVICE, key)
   }
-  await keyringClear(AGENT_TOKEN_SERVICE, 'write-check')
-  return true
+  return cleared
 }
 
 /** What to do about a keyring that cannot be opened, shared with what the agent is told. */
@@ -99,6 +105,7 @@ export const KEYRING_FIX = 'If you have one, unlock it. If not, install one (Deb
 function keyringFailure(error) {
   if (error?.code === 'ENOENT') return 'missing-tool'
   if (error?.killed) return 'timeout'
+  if (/Cannot autolaunch D-Bus|Unable to autolaunch a dbus-daemon|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR/i.test(String(error?.stderr ?? ''))) return 'session-unavailable'
   return /locked collection|collection is locked|keyring is locked/i.test(String(error?.stderr ?? '')) ? 'locked' : 'unknown'
 }
 
@@ -114,7 +121,9 @@ export class KeyringUnavailable extends CliFailure {
         ? 'Password storage did not answer. Run setup in a desktop terminal and watch for a password dialog'
         : reason === 'missing-tool'
           ? 'The password-storage helper secret-tool is missing. Install libsecret-tools (Debian/Ubuntu), libsecret (Arch), or libsecret (Fedora)'
-          : `Your system keyring could not be opened. ${KEYRING_FIX}`
+          : reason === 'session-unavailable'
+            ? 'Your desktop session bus could not be reached. Run from a signed-in desktop session; unlocking the keyring alone does not restore this connection'
+            : `Your system keyring could not be opened. ${KEYRING_FIX}`
     super(`${recovery}. Run: ${cliCommand('setup')}`)
     this.name = 'KeyringUnavailable'
     this.reason = reason
@@ -129,11 +138,12 @@ export class KeyringUnavailable extends CliFailure {
  * finds.
  */
 export async function keyringStore(service, key, label, value, { timeoutMs } = {}) {
+  const env = await keyringEnvironment()
   const stored = await new Promise((resolve) => {
     // A store against a locked keyring waits on an unlock prompt; `timeoutMs` bounds that wait.
     const child = spawn('secret-tool', ['store', `--label=${label}`, 'service', service, 'key', key], {
       stdio: ['pipe', 'ignore', 'pipe'],
-      env: { ...process.env, LC_ALL: 'C' },
+      env,
       timeout: timeoutMs ?? KEYRING_UNLOCK_WAIT_MS,
     })
     let stderr = ''
@@ -153,9 +163,10 @@ export async function keyringStore(service, key, label, value, { timeoutMs } = {
  * exits 1 with nothing on stderr when no entry matches, as a lookup does for "not stored" -- and
  * false when the keyring could not be reached, which it reports on stderr.
  */
-export function keyringClear(service, key) {
+export async function keyringClear(service, key) {
+  const env = await keyringEnvironment()
   return new Promise((resolve) => {
-    const child = spawn('secret-tool', ['clear', 'service', service, 'key', key], { stdio: ['ignore', 'ignore', 'pipe'], timeout: KEYRING_UNLOCK_WAIT_MS })
+    const child = spawn('secret-tool', ['clear', 'service', service, 'key', key], { stdio: ['ignore', 'ignore', 'pipe'], timeout: KEYRING_UNLOCK_WAIT_MS, env })
     let stderr = ''
     child.stderr.on('data', (chunk) => { stderr += chunk })
     child.on('error', () => resolve(false))

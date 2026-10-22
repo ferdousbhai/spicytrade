@@ -81,7 +81,9 @@ async function fakeWorker(acceptedTokens: string[], exchange: () => { body: unkn
     const accepted = acceptedTokens.some((token) => request.headers.authorization === `Bearer ${token}`)
     if (!accepted) return { body: { error: 'invalid_token' }, status: 401 }
     if (path === '/api/brokers/tastytrade/token') return { body: { accessToken: 'minted', expiresIn: 900 }, status: 200 }
-    return { body: { id: 1, jsonrpc: '2.0', result: { tools: [] } }, status: 200 }
+    if (path !== '/mcp') return { body: {}, status: 200 }
+    const { id, method } = JSON.parse(body)
+    return { body: { id, jsonrpc: '2.0', result: method === 'initialize' ? { protocolVersion: '2025-06-18' } : { tools: [] } }, status: 200 }
   })
   return { calls, port }
 }
@@ -316,6 +318,15 @@ describe('spicytrade login', () => {
 })
 
 describe('spicytrade doctor', () => {
+  it('does not report a successful handshake for an unrelated MCP result', async () => {
+    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN }, { claude: { 'local:spicytrade': MCP_TARGET } })
+    const port = await serve(() => ({ status: 200, body: { id: 1, jsonrpc: '2.0', result: { tools: [] } } }))
+    const cli = run(machine, port, ['doctor'])
+    expect(await cli.exited).toBe(1)
+    expect(cli.output().stdout).toContain('it answered with something other than MCP.')
+    expect(cli.output().stdout).not.toContain('✓ your agent can reach spicytrade')
+  }, 30_000)
+
   it('passes every check on a machine that is fully connected', async () => {
     const machine = await fakeMachine(
       { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN },
@@ -688,6 +699,20 @@ describe('spicytrade disconnect-tastytrade with a personal grant', () => {
 })
 
 describe('spicytrade uninstall', () => {
+  it('reports credentials left behind when the password-storage helper is missing', async () => {
+    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN })
+    await rm(join(machine.bin, 'secret-tool'))
+    const worker = await fakeWorker([])
+    const cli = run(machine, worker.port, ['uninstall'], { env: { PATH: machine.bin } })
+    expect(await cli.exited).toBe(0)
+    const { stdout } = cli.output()
+    expect(stdout).toContain('could not remove this computer\'s spicytrade sign-in and tastytrade connection from password storage.')
+    expect(stdout).toContain('Install secret-tool')
+    expect(stdout).toContain('secret-tool clear service spicytrade key mcp-token')
+    expect(stdout).not.toContain('✓ removed this computer\'s')
+    expect(await readFile(join(machine.bin, 'store', 'spicytrade_mcp-token'), 'utf8')).toBe(OLD_TOKEN)
+  }, 30_000)
+
   it('removes spicytrade\'s agent entries and credentials, leaving others\' and a checkout alone', async () => {
     const machine = await fakeMachine(
       { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN },
