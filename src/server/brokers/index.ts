@@ -31,7 +31,9 @@ export const resetBrokerAdapters = brokerAdaptersSeam.reset
  */
 export function brokerAdapterFor(credential: BrokerCredential | undefined): BrokerAdapter {
   if (!credential?.broker) throw new BrokerCredentialMissingError()
-  const adapter = brokerAdapters()[credential.broker]
+  const registered = brokerAdapters()
+  // Registry membership is explicit: inherited object properties are never broker adapters.
+  const adapter = Object.hasOwn(registered, credential.broker) ? registered[credential.broker] : undefined
   if (!adapter) throw new UnknownBrokerError(credential.broker)
   return adapter
 }

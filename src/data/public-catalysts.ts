@@ -4,13 +4,13 @@ import { z } from 'zod'
 import { CatalystSchema, type Catalyst } from '../domain/catalyst'
 import { EquitySymbolSchema } from '../domain/instrument'
 import { loadPublicJson } from './public-json'
-import { useRetryOnFocus } from './retry-on-focus'
+import { useCatalystRevalidation, CATALYST_BROWSER_REVALIDATE_MS } from './catalyst-revalidation'
 
 const PublicCatalystsResponseSchema = z.object({ catalysts: z.array(CatalystSchema) })
 
 const NO_CATALYSTS: readonly Catalyst[] = []
 const inflight = new Map<string, Promise<PublicCatalystsRead>>()
-const cache = new Map<string, readonly Catalyst[]>()
+const cache = new Map<string, { catalysts: readonly Catalyst[]; readAt: number }>()
 const listeners = new Set<() => void>()
 /** Moves whenever a symbol's rows are dropped, so a card already on screen goes and asks again. */
 let revision = 0
@@ -22,11 +22,8 @@ function subscribe(listener: () => void): () => void {
 
 /**
  * Drop what this browser holds for a symbol, because a search just changed what the server
- * reports for it. The cache has no expiry -- a symbol's rows are read once per session -- so a
- * date the producer has since moved would otherwise sit on the runway beside the date it moved
- * to for as long as the reader stayed on the page, which is the duplicate a reader clicked the
- * button to resolve. The server decides which sighting is current; this only stops the browser
- * from answering from a copy taken before it did.
+ * reports for it. Invalidation also unregisters an older in-flight read so it cannot restore
+ * rows from before the search when it eventually answers.
  */
 export function forgetPublicCatalysts(symbol: string): void {
   const parsed = EquitySymbolSchema.safeParse(symbol)
@@ -58,7 +55,9 @@ export function loadPublicCatalysts(symbol: string): Promise<PublicCatalystsRead
   // A name that is not a symbol was never asked about, so its calendar is unknown, not empty.
   if (!parsed.success) return Promise.resolve(FAILED_READ)
   const cached = cache.get(parsed.data)
-  if (cached) return Promise.resolve({ catalysts: cached, failed: false })
+  if (cached && Date.now() - cached.readAt < CATALYST_BROWSER_REVALIDATE_MS) {
+    return Promise.resolve({ catalysts: cached.catalysts, failed: false })
+  }
   const pending = inflight.get(parsed.data)
   if (pending) return pending
   // Only the request still registered for the symbol may settle it. `forgetPublicCatalysts`
@@ -71,8 +70,8 @@ export function loadPublicCatalysts(symbol: string): Promise<PublicCatalystsRead
   )
     .then(({ catalysts: body }): PublicCatalystsRead => {
       // Parsed before caching: a malformed response must remain retryable, not become
-      // a successful empty calendar for the rest of this browser session.
-      if (current()) cache.set(parsed.data, body)
+      // a cached successful empty calendar.
+      if (current()) cache.set(parsed.data, { catalysts: body, readAt: Date.now() })
       return { catalysts: body, failed: false }
     })
     // Nothing is cached for a failure, so the next ask -- a new revision, the window regaining
@@ -88,13 +87,12 @@ export function loadPublicCatalysts(symbol: string): Promise<PublicCatalystsRead
 type HeldRead = PublicCatalystsRead & { symbol: string }
 
 /**
- * The focused symbol's rows, and whether the last read of them failed. A failed read is asked
- * again whenever the window regains focus, as well as on the next revision; a mounted view
- * otherwise kept its failure until the reader happened to pick another symbol.
+ * The focused symbol's rows and read status. Visible views revalidate periodically and on
+ * focus, so successful copies expire too and edits made by another reader can reach this tab.
  */
-export function usePublicCatalysts(symbol: string): PublicCatalystsRead {
+export function usePublicCatalysts(symbol: string): PublicCatalystsRead & { symbol?: string } {
   const [held, setHeld] = useState<HeldRead>(() => ({
-    catalysts: cache.get(symbol) ?? NO_CATALYSTS,
+    catalysts: cache.get(symbol)?.catalysts ?? NO_CATALYSTS,
     failed: false,
     symbol,
   }))
@@ -110,9 +108,17 @@ export function usePublicCatalysts(symbol: string): PublicCatalystsRead {
     return () => { cancelled = true }
   }, [attempt, dropped, symbol])
 
-  useRetryOnFocus(failed, () => setAttempt((current) => current + 1))
+  useCatalystRevalidation(() => {
+    const cached = cache.get(symbol)
+    if (inflight.has(symbol) || (cached && Date.now() - cached.readAt < CATALYST_BROWSER_REVALIDATE_MS)) return
+    setAttempt((current) => current + 1)
+  })
 
   // Rows held for the previous symbol are still valid rows -- the runway filters by symbol --
   // but a failure belongs to the symbol it was for.
-  return { catalysts: held.catalysts, failed }
+  // Only a registered successful copy is a complete calendar. Invalidation unregisters it
+  // immediately, so an older read cannot hide a search result while its replacement loads.
+  const completeSymbol = !failed && cache.get(held.symbol)?.catalysts === held.catalysts
+    ? held.symbol : undefined
+  return { catalysts: held.catalysts, failed, symbol: completeSymbol }
 }

@@ -289,10 +289,15 @@ export async function readInstrumentQuotes(
   input: InstrumentQuoteReadInput,
   now = new Date(),
 ): Promise<InstrumentQuoteReadResult> {
-  const symbols = [...new Set((input.symbols ?? []).map((symbol) => symbol.trim().toUpperCase()))]
+  const requestedSymbols = input.symbols === undefined ? [] : input.symbols
+  const requestedContracts = input.contracts === undefined ? [] : input.contracts
+  if (!Array.isArray(requestedSymbols) || !Array.isArray(requestedContracts)) {
+    throw new CallerVisibleError('Quote instruments are invalid.')
+  }
+  const symbols = [...new Set(requestedSymbols.map((symbol) => symbol.trim().toUpperCase()))]
   // Two identical tuples resolve to one OCC symbol and one quote row; counted twice they read
   // as a broker that answered short.
-  const contracts = distinctTuples(input.contracts ?? [])
+  const contracts = distinctTuples(requestedContracts)
   if ((!symbols.length && !contracts.length)
     || symbols.length + contracts.length > MAX_QUOTE_INSTRUMENTS
     || symbols.some((symbol) => !EQUITY_SYMBOL_REGEX.test(symbol))

@@ -69,6 +69,7 @@ import {
 } from './broker-credential'
 import {
   claimMarketRefresh,
+  renewMarketRefresh,
   persistMarketSession,
   readStoredMarketRecords,
   readStoredMarketSession,
@@ -90,8 +91,8 @@ export const BROKER_SYMBOL_CHUNK_SIZE = 100
 /**
  * How long one tastytrade request may take before it is abandoned. A named budget, the owner's
  * judgment rather than a provider figure: long enough for tastytrade's slowest ordinary read, and
- * short enough that one hung request ends well inside the public refresh claim
- * (`REFRESH_LEASE_MS`, 30 s), which assumes a slow provider answers within its lease.
+ * short enough that one hung request fails promptly. A full snapshot needs several batches;
+ * its refresh claim is renewed while that work remains in flight.
  */
 export const TASTYTRADE_REQUEST_TIMEOUT_MS = 20_000
 // This store holds only the Worker's market-data token, as a settled value: the shared client
@@ -746,6 +747,7 @@ const brokerApiSeam = defineSeam(() => ({
   loadMarketSnapshot,
   loadPublicMarketSnapshot,
   claimMarketRefresh,
+  renewMarketRefresh,
   loadStoredMarketSnapshot,
   loadStoredPublicMarketSnapshot,
   lookupPublicMarketSymbol,

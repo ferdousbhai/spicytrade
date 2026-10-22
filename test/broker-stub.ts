@@ -70,6 +70,7 @@ export function stubBroker() {
   return {
     loadMarketSnapshot: vi.fn(),
     loadPublicMarketSnapshot: vi.fn(),
+    renewMarketRefresh: vi.fn<BrokerApi['renewMarketRefresh']>(async () => true),
     lookupPublicMarketSymbol: vi.fn<BrokerApi['lookupPublicMarketSymbol']>(async () => undefined),
     loadQuoteToken: vi.fn(),
     resolveAccountNumber: vi.fn(),

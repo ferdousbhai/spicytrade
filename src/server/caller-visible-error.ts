@@ -22,7 +22,8 @@ export function boundedInteger(
   maximum: number,
   label: string,
 ): number {
-  const result = value ?? fallback
+  // Explicit null is malformed input, not an omitted option.
+  const result = value === undefined ? fallback : value
   if (!Number.isSafeInteger(result) || result < minimum || result > maximum) {
     throw new CallerVisibleError(`${label} is invalid.`)
   }

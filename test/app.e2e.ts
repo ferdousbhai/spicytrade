@@ -339,9 +339,11 @@ test('mobile market, recommendations, search, sorting, and connect flows remain 
       },
     })
   })
-  await page.route('**/api/public-catalysts*', (route) => route.fulfill({
-    json: { catalysts: [] },
-  }))
+  await page.route('**/api/public-catalysts*', (route) => {
+    const symbol = new URL(route.request().url()).searchParams.get('symbol')
+    // A full read is authoritative, so it must agree with the snapshot this scenario serves.
+    return route.fulfill({ json: { catalysts: snapshot.catalysts.filter((row) => row.symbol === symbol) } })
+  })
   await page.route('**/api/public-year-candles', (route) => route.fulfill({
     json: { series: [] },
   }))
@@ -421,8 +423,8 @@ test('mobile market, recommendations, search, sorting, and connect flows remain 
   const searchedRow = page.getByRole('button', { name: /TQQQ, ProShares UltraPro QQQ/ })
   await expect(searchedRow).toBeVisible()
   await page.getByRole('button', { name: 'Pin TQQQ' }).click()
-  // Attention is what asks: the two favorites pinned earlier, then INTC — selected above
-  // with nothing on its calendar, and asked for again after the reload that restored it —
+  // Attention is what asks: the initial selection and favorites, then INTC — selected above
+  // and asked for again after the reload that restored it —
   // and finally the searched symbol as it is favorited. The server's own window decides
   // which of these actually buys a search.
   await expect.poll(() => catalystRefreshes).toEqual(['NVDA', 'TSLA', 'INTC', 'INTC', 'TQQQ'])

@@ -143,7 +143,7 @@ function movingAverageConvergenceDivergence(
 }
 
 export function normalizeStudies(inputs: StudyInput[] | undefined): NormalizedStudy[] {
-  if (!inputs) return []
+  if (inputs === undefined) return []
   if (!Array.isArray(inputs) || inputs.length > MAX_PRICE_STUDIES) throw new CallerVisibleError('Price studies are invalid.')
   const seen = new Set<string>()
   const remember = (key: string) => {
@@ -159,7 +159,8 @@ export function normalizeStudies(inputs: StudyInput[] | undefined): NormalizedSt
     }
     if (input.kind === 'BBANDS') {
       const period = boundedInteger(input.period, DEFAULT_STUDY_PERIOD, MIN_STUDY_PERIOD, MAX_PRICE_STUDY_PERIOD, 'Bollinger period')
-      const standardDeviations = input.standardDeviations ?? DEFAULT_BOLLINGER_DEVIATIONS
+      const standardDeviations = input.standardDeviations === undefined
+        ? DEFAULT_BOLLINGER_DEVIATIONS : input.standardDeviations
       if (!Number.isFinite(standardDeviations) || standardDeviations <= 0) {
         throw new CallerVisibleError('Bollinger deviations are invalid.')
       }

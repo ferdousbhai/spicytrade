@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   instrumentCatalogFromPayload,
@@ -6,21 +6,22 @@ import {
   unresolvedInstrumentCatalogItem,
 } from '../src/server/instrument-catalog'
 import {
-  CATALYST_CONTRADICTED_REFRESH_MS,
-  CATALYST_NEAR_EVENT_DAYS,
-  CATALYST_NEAR_EVENT_REFRESH_DAYS,
   CATALYST_REFRESH_INTERVAL_DAYS,
   CATALYST_FAILED_RETRY_MS,
   CATALYST_RUN_BUDGET_MS,
   attemptCatalystRefresh,
   refreshCatalystsForSymbol,
 } from '../src/server/catalyst-refresh'
-import { persistResearchCatalysts } from '../src/server/catalysts'
-import { addDays } from '../src/domain/iso-date'
 import { markdownBrowser } from './fake-browser'
 import { migrationStore, type SqliteD1Store } from './sqlite-d1'
 
 const NOW = new Date('2026-09-01T13:00:00.000Z')
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(NOW)
+})
+afterEach(() => { vi.useRealTimers() })
 
 async function storeWithCatalog(): Promise<SqliteD1Store> {
   const store = await migrationStore()
@@ -126,83 +127,16 @@ describe('catalyst coverage seeded by favorites', () => {
     const fetchMock = stubExa()
     await refreshCatalystsForSymbol(env(store), 'BE', NOW)
 
-    const withinWindow = new Date(NOW.getTime() + (CATALYST_REFRESH_INTERVAL_DAYS - 1) * 86_400_000)
+    const withinWindow = new Date(NOW.getTime() + CATALYST_REFRESH_INTERVAL_DAYS * 86_400_000 - 1)
     await expect(refreshCatalystsForSymbol(env(store), 'BE', withinWindow))
       .resolves.toEqual({ catalysts: [], ran: false, reason: 'fresh' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
-    const afterWindow = new Date(NOW.getTime() + (CATALYST_REFRESH_INTERVAL_DAYS + 1) * 86_400_000)
+    const afterWindow = new Date(NOW.getTime() + CATALYST_REFRESH_INTERVAL_DAYS * 86_400_000)
     await expect(refreshCatalystsForSymbol(env(store), 'BE', afterWindow))
       .resolves.toMatchObject({ ran: true })
     expect(fetchMock).toHaveBeenCalledTimes(2)
     store.close()
-  })
-
-  it('searches again sooner once an event is near', async () => {
-    const store = await storeWithCatalog()
-    const fetchMock = stubExa()
-    // The search binds BE's investor day on Oct 14; from Oct 2 that is inside the near window.
-    const searchedAt = new Date('2026-10-02T13:00:00.000Z')
-    expect(addDays('2026-10-02', CATALYST_NEAR_EVENT_DAYS) >= '2026-10-14').toBe(true)
-    await refreshCatalystsForSymbol(env(store), 'BE', searchedAt)
-
-    const day = (days: number) => new Date(searchedAt.getTime() + days * 86_400_000)
-    await expect(refreshCatalystsForSymbol(env(store), 'BE', day(CATALYST_NEAR_EVENT_REFRESH_DAYS - 1)))
-      .resolves.toMatchObject({ ran: false, reason: 'fresh' })
-    // Still inside the week a quiet calendar is held for, but the event is close.
-    expect(CATALYST_NEAR_EVENT_REFRESH_DAYS + 1).toBeLessThan(CATALYST_REFRESH_INTERVAL_DAYS)
-    await expect(refreshCatalystsForSymbol(env(store), 'BE', day(CATALYST_NEAR_EVENT_REFRESH_DAYS + 1)))
-      .resolves.toMatchObject({ ran: true })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    store.close()
-  })
-
-  it('searches again once a confirmed earnings date contradicts the estimate it found', async () => {
-    const estimate = {
-      confidence: 'estimated' as const,
-      date: '2026-11-05',
-      id: 'exa:BE:earnings:2026-11-05',
-      kind: 'earnings' as const,
-      source: 'Exa search · example.com',
-      sourceUrl: 'https://example.com/be',
-      symbol: 'BE',
-      timing: 'unknown' as const,
-      title: 'Bloom Energy Q3 earnings',
-      updatedAt: NOW.toISOString(),
-    }
-    const confirmedAt = async (updatedAt: string) => {
-      const store = await storeWithCatalog()
-      await refreshCatalystsForSymbol(env(store), 'BE', NOW)
-      // What the search at NOW reported for earnings, and the broker's confirmation of the
-      // same report a week later, stamped by the provider at `updatedAt`.
-      await persistResearchCatalysts({ DB: store.database }, 'exa', [estimate], NOW)
-      await persistResearchCatalysts({ DB: store.database }, 'tastytrade', [{
-        ...estimate,
-        confidence: 'confirmed',
-        date: '2026-11-12',
-        id: 'tastytrade:BE:earnings',
-        source: 'tastytrade market metrics',
-        sourceUrl: 'https://developer.tastytrade.com/open-api-spec/market-metrics/',
-        updatedAt,
-      }], NOW)
-      return store
-    }
-    // Past the day's floor, inside the week, and no event near: only the contradiction says go.
-    const later = new Date(NOW.getTime() + (CATALYST_CONTRADICTED_REFRESH_MS + 86_400_000))
-    expect(later.getTime() - NOW.getTime()).toBeLessThan(CATALYST_REFRESH_INTERVAL_DAYS * 86_400_000)
-
-    const fetchMock = stubExa()
-    const confirmedAfter = await confirmedAt(new Date(NOW.getTime() + 3_600_000).toISOString())
-    await expect(refreshCatalystsForSymbol(env(confirmedAfter), 'BE', new Date(NOW.getTime() + 3_600_000 * 2)))
-      .resolves.toMatchObject({ ran: false, reason: 'fresh' })
-    await expect(refreshCatalystsForSymbol(env(confirmedAfter), 'BE', later)).resolves.toMatchObject({ ran: true })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    confirmedAfter.close()
-
-    // A confirmation the search could already have seen is not news to it.
-    const confirmedBefore = await confirmedAt(new Date(NOW.getTime() - 3_600_000).toISOString())
-    await expect(refreshCatalystsForSymbol(env(confirmedBefore), 'BE', later)).resolves.toMatchObject({ ran: false, reason: 'fresh' })
-    confirmedBefore.close()
   })
 
   it('will not let incidental attention spend a search on a name the site does not track', async () => {
@@ -281,6 +215,27 @@ describe('catalyst coverage seeded by favorites', () => {
     expect(store.sqlite.prepare('SELECT status FROM catalyst_runs').get()).toEqual({ status: 'complete' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(retryFetch).toHaveBeenCalledTimes(1)
+    store.close()
+  })
+
+  it('holds a slow failure for a full minute after it finishes', async () => {
+    const store = await storeWithCatalog()
+    const failedAt = new Date(NOW.getTime() + CATALYST_RUN_BUDGET_MS - 1)
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      vi.setSystemTime(failedAt)
+      return new Response('', { status: 500 })
+    }))
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    await expect(refreshCatalystsForSymbol(env(store), 'BE', NOW))
+      .resolves.toMatchObject({ reason: 'failed' })
+    expect(store.sqlite.prepare('SELECT ran_at, failed_at FROM catalyst_runs').get())
+      .toEqual({ ran_at: NOW.toISOString(), failed_at: failedAt.toISOString() })
+    const fetchMock = stubExa()
+    await expect(refreshCatalystsForSymbol(env(store), 'BE', new Date(failedAt.getTime() + CATALYST_FAILED_RETRY_MS - 1)))
+      .resolves.toMatchObject({ ran: false, reason: 'failed' })
+    expect(fetchMock).not.toHaveBeenCalled()
+    await expect(refreshCatalystsForSymbol(env(store), 'BE', new Date(failedAt.getTime() + CATALYST_FAILED_RETRY_MS)))
+      .resolves.toMatchObject({ ran: true })
     store.close()
   })
 

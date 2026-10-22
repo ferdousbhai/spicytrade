@@ -848,9 +848,9 @@ export function MarketScreen({
   const toggleResultPinned = useCallback((symbol: string) => {
     onTogglePinned(symbol, lookup?.ticker.symbol === symbol ? lookup : undefined)
   }, [onTogglePinned, lookup])
-  // Looking at a symbol with an empty month asks the server to go and find out. What comes
-  // back joins the calendar on this visit rather than waiting for the next snapshot.
-  const catalystSearch = useCatalystSearch(selected.symbol, catalysts, now)
+  // Looking at a symbol checks whether its research is due, even with events already listed.
+  // What comes back joins the calendar on this visit rather than waiting for the next snapshot.
+  const catalystSearch = useCatalystSearch(selected.symbol)
   const focusedRead = usePublicCatalysts(selected.symbol)
   // The year series is fetched only where something draws it: the table's year column at the
   // wide breakpoint, and every phone row, which has the room the table's middle widths lack.
@@ -865,13 +865,13 @@ export function MarketScreen({
   // found symbol carried rather than the state that carried them, and holds between searches.
   const looked = lookup?.catalysts
   const visibleCatalysts = useMemo(() => {
-    // Later rows win by id, so a row a search just bound replaces the snapshot's copy of it.
-    const merged = new Map(
-      [...catalysts, ...(looked ?? []), ...catalystSearch.catalysts, ...focusedRead.catalysts]
-        .map((catalyst) => [catalyst.id, catalyst]),
-    )
+    // A successful full read replaces that symbol's calendar, including removals and moved
+    // dates whose ids changed. Partial search results and snapshots cannot restore retired rows.
+    const partial = [...catalysts, ...(looked ?? []), ...catalystSearch.catalysts]
+      .filter((row) => row.symbol !== focusedRead.symbol)
+    const merged = new Map([...partial, ...focusedRead.catalysts].map((row) => [row.id, row]))
     return [...merged.values()]
-  }, [catalysts, catalystSearch.catalysts, focusedRead.catalysts, looked])
+  }, [catalysts, catalystSearch.catalysts, focusedRead.catalysts, focusedRead.symbol, looked])
   const nextCatalysts = nextCatalystsBySymbol(visibleCatalysts, now)
   // Choosing a sort, from a header or the phone's control, leaves search relevance behind.
   const applySort = (next: Sort) => {

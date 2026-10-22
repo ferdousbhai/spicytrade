@@ -33,6 +33,7 @@ const forbidden = () => { throw new Error('tastytrade transport reached') }
 
 const forbiddenBrokerApi = {
   claimMarketRefresh: forbidden,
+  renewMarketRefresh: forbidden,
   loadMarketSnapshot: forbidden,
   loadPublicMarketSnapshot: forbidden,
   loadQuoteToken: forbidden,
@@ -59,6 +60,13 @@ describe('broker adapter seam', () => {
   afterEach(() => {
     resetBrokerAdapters()
     resetBrokerApi()
+  })
+
+  it('refuses inherited registry entries as unregistered adapters', () => {
+    const registered = {}
+    Object.setPrototypeOf(registered, { [STUB_BROKER_ID]: adapter })
+    setBrokerAdapters(registered)
+    expect(() => brokerAdapterFor(stubBrokerCredential)).toThrow(UnknownBrokerError)
   })
 
   it('drives the account context, the portfolio guard, and the read tools with no provider code in the path', async () => {

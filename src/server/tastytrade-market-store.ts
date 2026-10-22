@@ -300,6 +300,27 @@ export async function claimMarketRefresh(
   }
 }
 
+/** Extend only the claim this holder owns; an expired or superseded holder cannot renew. */
+export async function renewMarketRefresh(
+  env: AppEnv,
+  leaseMs: number,
+  claimedAt: Date,
+  now = new Date(),
+  id = 'public-snapshot',
+): Promise<boolean> {
+  if (!env.DB) return true
+  const result = await env.DB.prepare(
+    `UPDATE market_refresh_lease SET expires_at = ?
+     WHERE id = ? AND expires_at = ? AND expires_at > ?`,
+  ).bind(
+    new Date(now.getTime() + leaseMs).toISOString(),
+    id,
+    new Date(claimedAt.getTime() + leaseMs).toISOString(),
+    now.toISOString(),
+  ).run()
+  return result.meta.changes === 1
+}
+
 /**
  * Give back a claim its holder has finished with, so the next caller need not wait out a lease
  * that guards nothing any more. Only the claim this holder made: its own expiry identifies it, so

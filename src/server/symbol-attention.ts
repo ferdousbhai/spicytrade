@@ -70,8 +70,8 @@ export function readsSymbols(toolName: string): boolean {
  * choice of how many searches one agent call may put behind it, so one call cannot fan out into a
  * sweep of the universe.
  *
- * The budget counts searches bought, not names named. Most names cost nothing -- searched this
- * month, held by a failure's backoff, off the watchlist, unknown to the catalog -- and a cap on
+ * The budget counts searches bought, not names named. Most names cost nothing -- searched today,
+ * held by a failure's backoff, off the watchlist, unknown to the catalog -- and a cap on
  * names spent the budget on those, so an agent that kept naming more than five symbols never had
  * the sixth searched at all. The names past the budget are counted in the log, not visited, and
  * buy their search the next time a call names them.

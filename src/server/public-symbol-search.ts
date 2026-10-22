@@ -6,6 +6,7 @@ import { COLD_STORE_RETRY_DELAYS_MS, storeEdgeCopy, type PublicSnapshotCache } f
 import { searchableQuery } from './symbol-search'
 import { SYMBOL_REFRESH_LEASE_PREFIX } from './tastytrade-market-store'
 import { brokerApi } from './tastytrade'
+import { MARKET_REFRESH_LEASE_MS, withMarketRefreshLease } from './market-refresh-lease'
 import { claimPublicSearchBudget } from './public-search-budget'
 
 /**
@@ -17,11 +18,10 @@ const FOUND_RETENTION_SECONDS = 60
 const MISSING_RETENTION_SECONDS = 300
 // One lookup per symbol may reach the provider at a time. The edge copy only dedupes readers
 // that land in the same location, so the claim is what stops the same search in twenty places
-// from becoming twenty provider calls. The lease bounds a holder that dies mid-lookup. A holder
+// from becoming twenty provider calls. Live lookups renew; a dead holder expires. A holder
 // whose lookup found a symbol keeps its claim until it expires, because the answer is in the
 // shared store; one that missed or failed gives it back, because a miss is kept only in the
 // holder's own location, and a reader elsewhere must be able to ask rather than be told "busy".
-const LOOKUP_LEASE_MS = 30 * 1_000
 
 function cacheKeyFor(request: Request, query: string): Request {
   const cacheUrl = new URL(request.url)
@@ -47,7 +47,7 @@ async function readStored(env: AppEnv, query: string): Promise<PublicSymbolLooku
 /** Claim the one provider lookup for this query, answering the claim's instant when it is ours. */
 async function claimLookup(env: AppEnv, leaseId: string): Promise<Date | undefined> {
   const claimedAt = new Date()
-  return await brokerApi().claimMarketRefresh(env, LOOKUP_LEASE_MS, claimedAt, leaseId) ? claimedAt : undefined
+  return await brokerApi().claimMarketRefresh(env, MARKET_REFRESH_LEASE_MS, claimedAt, leaseId) ? claimedAt : undefined
 }
 
 /**
@@ -64,31 +64,32 @@ async function lookupHoldingClaim(
   leaseId: string,
   claimedAt: Date,
 ): Promise<Response> {
-  const release = () => brokerApi().releaseMarketRefresh(env, LOOKUP_LEASE_MS, claimedAt, leaseId)
-  let lookup
-  try {
-    if (!(await claimPublicSearchBudget(env))) {
+  return withMarketRefreshLease(env, claimedAt, leaseId, async (release) => {
+    let lookup
+    try {
+      if (!(await claimPublicSearchBudget(env))) {
+        await release()
+        return jsonNoStore({ error: 'Search allowance is busy; try again shortly' }, { status: 429, headers: { 'Retry-After': '60' } })
+      }
+      lookup = await brokerApi().lookupPublicMarketSymbol(env, query)
+    } catch (error) {
       await release()
-      return jsonNoStore({ error: 'Search allowance is busy; try again shortly' }, { status: 429, headers: { 'Retry-After': '60' } })
+      throw error
     }
-    lookup = await brokerApi().lookupPublicMarketSymbol(env, query)
-  } catch (error) {
-    await release()
-    throw error
-  }
-  if (!lookup) {
-    // Released after the edge copy lands, so a waiter in this location reads it rather than
-    // claiming a second lookup in between.
-    const missed = await store(
-      edgeCache,
-      cacheKey,
-      jsonPublic({ error: 'No tradable symbol matches that search' }, { status: 404 }),
-      MISSING_RETENTION_SECONDS,
-    )
-    await release()
-    return missed
-  }
-  return await store(edgeCache, cacheKey, jsonPublic(lookup), FOUND_RETENTION_SECONDS)
+    if (!lookup) {
+      // Released after the edge copy lands, so a waiter in this location reads it rather than
+      // claiming a second lookup in between.
+      const missed = await store(
+        edgeCache,
+        cacheKey,
+        jsonPublic({ error: 'No tradable symbol matches that search' }, { status: 404 }),
+        MISSING_RETENTION_SECONDS,
+      )
+      await release()
+      return missed
+    }
+    return await store(edgeCache, cacheKey, jsonPublic(lookup), FOUND_RETENTION_SECONDS)
+  })
 }
 
 /** The edge copy, if any; a cache that fails to answer is logged and treated as a miss. */

@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import { EquitySymbolSchema } from './instrument'
 import { CitedSourceUrlSchema, HttpsSourceUrlSchema, sourceHost } from './https-url'
-import { addDays, IsoDateSchema } from './iso-date'
+import { IsoDateSchema } from './iso-date'
 
 /**
  * How far ahead a catalyst may be scheduled and still be worth carrying. Every research producer
@@ -229,35 +229,9 @@ export function upcomingCatalystsForSymbol(
   ))
 }
 
-/**
- * How far ahead a symbol has to be covered before a reader looking at it learns anything.
- * A calendar that is empty for the next month is the honest trigger for going and looking:
- * either nothing is scheduled, or nobody has searched this symbol yet.
- */
-const CATALYST_NEAR_TERM_DAYS = 30
-
 /** A row from the broker's earnings feed, which reports earnings and nothing else. */
 function isBrokerCatalyst(catalyst: Catalyst): boolean {
   return catalyst.id.startsWith('tastytrade:')
-}
-
-/**
- * Whether a symbol's next month is covered well enough that looking at it need not ask for a
- * search. Only a researched row counts. The broker's earnings date arrives for every symbol
- * whether or not anyone searched, and it can say nothing about any other kind of event, so a
- * calendar holding only that has not been looked at. Counting it also hid the case a search is
- * for: a stale estimate beside a newly confirmed date kept a symbol "covered" until the
- * estimate's own date passed. Asking is cheap; the server's receipt decides whether a search is
- * bought.
- */
-export function hasNearTermCatalyst(
-  symbol: string,
-  catalysts: readonly Catalyst[],
-  now: Date,
-): boolean {
-  const horizon = addDays(marketDate(now), CATALYST_NEAR_TERM_DAYS)
-  return upcomingCatalystsForSymbol(symbol, catalysts, now)
-    .some((catalyst) => catalyst.date <= horizon && !isBrokerCatalyst(catalyst))
 }
 
 export function catalystLabel(catalyst: Catalyst, now: Date): string {

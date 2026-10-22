@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   catalystLabel,
   catalystSourceLink,
-  hasNearTermCatalyst,
   MAX_CATALYSTS_PER_SYMBOL,
   nextCatalystsBySymbol,
   upcomingCatalystsForSymbol,
@@ -191,39 +190,6 @@ describe('tastytrade catalyst normalization', () => {
     }, NOW)).toBeNull()
   })
 
-})
-
-describe('when a symbol is worth searching', () => {
-  const catalyst = (symbol: string, date: string): Catalyst => ({
-    confidence: 'estimated',
-    date,
-    id: `exa:${symbol}:conference:${date}`,
-    kind: 'conference',
-    source: 'Exa search · example.com',
-    sourceUrl: 'https://example.com/events',
-    symbol,
-    timing: 'unknown',
-    title: `${symbol} conference`,
-    updatedAt: NOW.toISOString(),
-  })
-
-  it('counts only what falls inside the next month, for that symbol', () => {
-    const catalysts = [catalyst('NVDA', '2026-09-05'), catalyst('BE', '2026-11-30')]
-
-    expect(hasNearTermCatalyst('NVDA', catalysts, NOW)).toBe(true)
-    // Dated, but two months out: the reader still learns nothing about the coming weeks.
-    expect(hasNearTermCatalyst('BE', catalysts, NOW)).toBe(false)
-    expect(hasNearTermCatalyst('TSLA', catalysts, NOW)).toBe(false)
-  })
-
-  it('ignores a date that has already passed', () => {
-    expect(hasNearTermCatalyst('NVDA', [catalyst('NVDA', '2026-08-01')], NOW)).toBe(false)
-  })
-
-  it('holds the boundary day and refuses the one after it', () => {
-    expect(hasNearTermCatalyst('NVDA', [catalyst('NVDA', '2026-09-12')], NOW)).toBe(true)
-    expect(hasNearTermCatalyst('NVDA', [catalyst('NVDA', '2026-09-13')], NOW)).toBe(false)
-  })
 })
 
 describe('what a catalyst shows a reader', () => {
@@ -464,14 +430,6 @@ describe('an earnings estimate a confirmed date replaced', () => {
     expect(upcomingCatalystsForSymbol('INTC', [estimate, confirmed, nextQuarter, conference, otherSymbol], NOW).map((row) => row.id))
       .toEqual(['exa:INTC:conference:2026-10-22', 'tastytrade:INTC:earnings', 'exa:INTC:earnings:2027-01-28'])
     expect(upcomingCatalystsForSymbol('AMD', [estimate, confirmed, otherSymbol], NOW)).toEqual([otherSymbol])
-  })
-
-  it('does not count the broker date alone as a searched calendar', () => {
-    // The broker reports earnings for every symbol whether or not anyone searched, so INTC with
-    // only that row still asks; the replaced estimate no longer answers for it.
-    expect(hasNearTermCatalyst('INTC', [estimate, confirmed], NOW)).toBe(false)
-    const conference: Catalyst = { ...estimate, id: 'exa:INTC:conference:2026-10-22', kind: 'conference' }
-    expect(hasNearTermCatalyst('INTC', [estimate, confirmed, conference], NOW)).toBe(true)
   })
 
   it('is hidden from every server read, and kept in the store', async () => {

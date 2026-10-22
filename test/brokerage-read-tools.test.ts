@@ -712,6 +712,15 @@ describe('brokerage read tools', () => {
     await expect(findOptionContracts({}, { underlying: 'AAPL' }, now)).rejects.toThrow('invalid response')
   })
 
+  it.each(['symbols', 'contracts'])('refuses explicit null %s even when the other quote input is valid', async (field) => {
+    await expect(readInstrumentQuotes({}, {
+      symbols: ['AAPL'],
+      contracts: [{ underlying: 'AAPL', expiry: '2026-09-18', optionType: 'C', strike: 200 }],
+      [field]: null,
+    }, now)).rejects.toThrow('Quote instruments are invalid.')
+    expect(tastytrade.tastyRequest).not.toHaveBeenCalled()
+  })
+
   it('resolves an option tuple and returns a complete non-crossed exact quote', async () => {
     tastytrade.tastyRequest.mockImplementation((_env, path: string) => {
       if (path === '/option-chains/AAPL') return Promise.resolve({ data: { items: [{

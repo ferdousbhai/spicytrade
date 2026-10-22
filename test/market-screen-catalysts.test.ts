@@ -3,6 +3,7 @@
 import { cleanup, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { forgetPublicCatalysts } from '../src/data/public-catalysts'
 import { addDays } from '../src/domain/iso-date'
 import { marketDate, type Catalyst } from '../src/domain/catalyst'
 import { renderMarketScreen } from './fixtures/render-market-screen'
@@ -54,19 +55,19 @@ describe('reviewing a symbol with an empty calendar', () => {
     expect(screen.queryByText(/spicytrade is searching for scheduled/)).toBeNull()
   })
 
-  it('leaves a symbol alone when something is already scheduled this month', async () => {
+  it('checks server freshness even when an event is already scheduled this month', async () => {
     const requested: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       requested.push(String(input))
-      return Response.json({ catalysts: [], ran: false })
+      return Response.json({ catalysts: [catalyst('TSLA', 5)], ran: false })
     }))
 
     renderMarket('TSLA', [catalyst('TSLA', 5)])
 
     await waitFor(() => expect(screen.getByText('TSLA analyst day')).toBeTruthy())
-    // The focus card also asks for the symbol's evidence cards; what must not have been spent
-    // here is a catalyst search, which a scheduled date this month makes unnecessary.
-    expect(requested.filter((url) => url.startsWith('/api/public-catalyst-refresh'))).toEqual([])
+    // Event presence cannot establish freshness; only the server's receipt decides that.
+    expect(requested.filter((url) => url.startsWith('/api/public-catalyst-refresh')))
+      .toEqual(['/api/public-catalyst-refresh'])
   })
 
   it('says a search that ran and bound nothing found nothing, distinct from never searching', async () => {
@@ -190,27 +191,52 @@ describe('a calendar search that fails', () => {
       }
       requested.push(String(JSON.parse(String(init?.body)).symbol))
       return searchOk
-        ? Response.json({ catalysts: [catalyst('SPY', 30)], ran: true })
+        ? Response.json({ catalysts: [catalyst('NVDA', 30)], ran: true })
         : Response.json({ catalysts: [], ran: false, reason: 'failed' })
     }))
 
-    // SPY's other cases here carry a date this month, so no search has spent it yet.
-    renderMarket('SPY', [])
+    renderMarket('NVDA', [])
 
     expect(await screen.findByText('The calendar search didn’t finish.')).toBeTruthy()
-    expect(requested).toEqual(['SPY'])
+    expect(requested).toEqual(['NVDA'])
 
     searchOk = true
     // Same passive-effect race as the calendar-read retry above: focus again on every poll
     // until the retry's listener has attached and the search lands.
     await waitFor(() => {
       window.dispatchEvent(new Event('focus'))
-      expect(screen.queryByText('SPY analyst day')).not.toBeNull()
+      expect(screen.queryByText('NVDA analyst day')).not.toBeNull()
     })
     // A reader dispatching focus more than once before the listener attaches can spend more
     // than one retry; what matters is that every retry it did spend was for this symbol.
     expect(requested.length).toBeGreaterThanOrEqual(2)
-    expect(requested.every((symbol) => symbol === 'SPY')).toBe(true)
+    expect(requested.every((symbol) => symbol === 'NVDA')).toBe(true)
     expect(screen.queryByText('The calendar search didn’t finish.')).toBeNull()
+  })
+})
+
+describe('a complete calendar replacing older projections', () => {
+  it('does not resurrect a moved event from the snapshot', async () => {
+    forgetPublicCatalysts('TSLA')
+    const old = { ...catalyst('TSLA', 5), title: 'Retired event date' }
+    const current = { ...catalyst('TSLA', 9), title: 'Current event date' }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/public-catalysts')) return Response.json({ catalysts: [current] })
+      if (url.startsWith('/api/public-catalyst-refresh')) return Response.json({ catalysts: [old], ran: true })
+      return Response.json({ evidence: [], series: [] })
+    }))
+    renderMarket('TSLA', [old])
+    await waitFor(() => {
+      expect(screen.queryByText('Current event date')).not.toBeNull()
+      expect(screen.queryByText('Retired event date')).toBeNull()
+    })
+  })
+
+  it('accepts a complete empty calendar instead of restoring snapshot rows', async () => {
+    forgetPublicCatalysts('AMD')
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ catalysts: [], ran: false, evidence: [], series: [] })))
+    renderMarket('AMD', [{ ...catalyst('AMD', 5), title: 'Removed event' }])
+    await waitFor(() => expect(screen.queryByText('Removed event')).toBeNull())
   })
 })

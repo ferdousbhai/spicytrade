@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { marketSnapshotFixture } from './fixtures/market'
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.resetModules()
 })
 
@@ -19,8 +20,7 @@ it('reports a malformed catalyst response as a failed read, not an empty calenda
 })
 
 it('re-reads a symbol whose rows a search may have moved, rather than answering from the copy', async () => {
-  // The cache has no expiry, so a search that moves a date would otherwise leave the retired
-  // sighting on the runway beside the one it moved to for the rest of the session.
+  // A search invalidates the copy immediately, even inside the normal read freshness window.
   const catalysts = marketSnapshotFixture().catalysts.filter((row) => row.symbol === 'NVDA')
   // A fresh Response per call: a body is read once, and this test asks for the same page twice.
   const fetchMock = vi.fn(() => Promise.resolve(Response.json({ catalysts })))
@@ -64,5 +64,23 @@ it('lets a request started before a search neither cache its rows nor clear the 
   pending[1]!(Response.json({ catalysts: after }))
   await expect(current).resolves.toEqual({ catalysts: after, failed: false })
   await expect(loadPublicCatalysts('NVDA')).resolves.toEqual({ catalysts: after, failed: false })
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+})
+
+it("expires a successful read so another reader’s changes are visible in the same session", async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  const { CATALYST_BROWSER_REVALIDATE_MS } = await import('../src/data/catalyst-revalidation')
+  const rows = marketSnapshotFixture().catalysts.filter((row) => row.symbol === 'NVDA')
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(Response.json({ catalysts: rows }))
+    .mockResolvedValueOnce(Response.json({ catalysts: [] }))
+  vi.stubGlobal('fetch', fetchMock)
+  const { loadPublicCatalysts } = await import('../src/data/public-catalysts')
+  await loadPublicCatalysts('NVDA')
+  vi.setSystemTime(Date.now() + CATALYST_BROWSER_REVALIDATE_MS - 1)
+  await expect(loadPublicCatalysts('NVDA')).resolves.toMatchObject({ catalysts: rows })
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  vi.setSystemTime(Date.now() + 1)
+  await expect(loadPublicCatalysts('NVDA')).resolves.toEqual({ catalysts: [], failed: false })
   expect(fetchMock).toHaveBeenCalledTimes(2)
 })

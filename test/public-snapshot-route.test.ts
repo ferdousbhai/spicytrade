@@ -111,6 +111,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   resetBrokerApi()
 })
 
@@ -216,6 +217,27 @@ describe('public snapshot route cache', () => {
     expect(background.tasks).toHaveLength(0)
     expect(broker.claimMarketRefresh).not.toHaveBeenCalled()
     expect(broker.loadPublicMarketSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('renews the refresh claim throughout a slow multi-batch rebuild and stops on completion', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW)
+    broker.renewMarketRefresh.mockResolvedValue(true)
+    broker.loadStoredPublicMarketSnapshot.mockResolvedValue(storedPublicSnapshot(10 * 60_000, { marketState: 'open' }))
+    let finish!: (snapshot: PublicMarketSnapshot) => void
+    broker.loadPublicMarketSnapshot.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    const background = new Background()
+    await serve(new MemoryPublicSnapshotCache(), background)
+    const leaseMs = broker.claimMarketRefresh.mock.calls[0]![1]
+    await vi.advanceTimersByTimeAsync(leaseMs * 2)
+    expect(broker.renewMarketRefresh).toHaveBeenCalledTimes(4)
+    expect(broker.loadPublicMarketSnapshot).toHaveBeenCalledTimes(1)
+    const calls = broker.renewMarketRefresh.mock.calls
+    expect(calls[1]![2]).toEqual(calls[0]![3])
+    finish(publicSnapshot({ marketState: 'open' }))
+    await background.settle()
+    await vi.advanceTimersByTimeAsync(leaseMs)
+    expect(broker.renewMarketRefresh).toHaveBeenCalledTimes(4)
   })
 
   it('serves the stale stored snapshot and refreshes the provider behind the response', async () => {

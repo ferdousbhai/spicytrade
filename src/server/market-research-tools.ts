@@ -204,9 +204,9 @@ function roundedRow(row: PriceHistoryRow): PriceHistoryRow {
 }
 
 function requestedHistoryRange(input: PriceHistoryReadInput, now: Date) {
-  const endDate = input.endDate ?? marketDate(now)
+  const endDate = input.endDate === undefined ? marketDate(now) : input.endDate
   if (!isValidIsoDate(endDate)) throw new CallerVisibleError('Price history end date is invalid.')
-  const startDate = input.startDate ?? addDays(endDate, -DEFAULT_PRICE_HISTORY_LOOKBACK_DAYS)
+  const startDate = input.startDate === undefined ? addDays(endDate, -DEFAULT_PRICE_HISTORY_LOOKBACK_DAYS) : input.startDate
   if (!isValidIsoDate(startDate)) throw new CallerVisibleError('Price history start date is invalid.')
   // Both are valid YYYY-MM-DD strings, so they compare as the dates they name.
   if (startDate > endDate) throw new CallerVisibleError('Price history range is invalid.')
@@ -258,7 +258,7 @@ export async function readPriceHistory(
   now = new Date(),
 ): Promise<PriceHistoryReadResult> {
   const symbol = normalizeSymbol(input.symbol)
-  const interval = input.interval ?? '1d'
+  const interval = input.interval === undefined ? '1d' : input.interval
   if (interval !== '1d' && interval !== '1wk' && interval !== '1mo') throw new CallerVisibleError('Price history interval is invalid.')
   const limit = boundedInteger(input.limit, DEFAULT_PRICE_HISTORY_ROWS, 1, MAX_PRICE_HISTORY_RETURNED_ROWS, 'Price history limit')
   const requestedRange = requestedHistoryRange(input, now)

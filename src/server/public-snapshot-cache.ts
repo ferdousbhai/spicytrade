@@ -9,23 +9,21 @@ import { errorName, toError } from '../domain/failure'
 import { type AppEnv } from './env'
 import { jsonNoStore, jsonPublic, matchesIfNoneMatch, PUBLIC_RESPONSE_CACHE_CONTROL } from './http'
 import { brokerApi, type StoredPublicMarketSnapshot } from './tastytrade'
+import { MARKET_REFRESH_LEASE_MS, withMarketRefreshLease } from './market-refresh-lease'
 import { CallerVisibleError } from './caller-visible-error'
 
 // A provider reading is usable for one minute while the market is open before a refresh is
 // attempted; the retained copy of the store is rebuilt on the same bound, since catalysts,
 // the brief and searched-in symbols reach it through the store at any hour.
 const SNAPSHOT_FRESH_MS = 60 * 1_000
-// How long one refresh may hold the exclusive claim before another caller may retry it. Long
-// enough to cover a slow provider, short enough that a crashed refresh unblocks quickly.
-const REFRESH_LEASE_MS = 30 * 1_000
 // Only reached on a cold store, where the alternative is every concurrent visitor rebuilding
 // from the provider at once. Two short waits, then honest unavailability. The symbol search's
 // lost claim waits on the same schedule for the same reason.
 export const COLD_STORE_RETRY_DELAYS_MS = [1_000, 2_000]
 // A stale copy is served while the refresh behind it runs, so the copy must outlive its own
-// fresh window by the time one refresh may take. Anything older is rebuilt in the reader's
+// fresh window by one crash-recovery lease. Anything older is rebuilt in the reader's
 // path from the store, which is cheap; only the provider is ever kept off that path.
-const SNAPSHOT_RETENTION_SECONDS = (SNAPSHOT_FRESH_MS + REFRESH_LEASE_MS) / 1_000
+const SNAPSHOT_RETENTION_SECONDS = (SNAPSHOT_FRESH_MS + MARKET_REFRESH_LEASE_MS) / 1_000
 /** The provider's own observation instant, as the snapshot body also reports it. */
 export const SNAPSHOT_GENERATED_AT_HEADER = 'X-Snapshot-Generated-At'
 /**
@@ -215,10 +213,11 @@ function responseForVisitor(stored: Response): Response {
  * write reaches it on the next store read.
  */
 async function refreshFromProvider(env: AppEnv): Promise<PublicMarketSnapshot | undefined> {
-  const claimed = await brokerApi().claimMarketRefresh(env, REFRESH_LEASE_MS)
+  const claimedAt = new Date()
+  const claimed = await brokerApi().claimMarketRefresh(env, MARKET_REFRESH_LEASE_MS, claimedAt)
   if (!claimed) return undefined
   try {
-    return await brokerApi().loadPublicMarketSnapshot(env)
+    return await withMarketRefreshLease(env, claimedAt, 'public-snapshot', () => brokerApi().loadPublicMarketSnapshot(env))
   } catch (error) {
     console.error('PublicMarketSnapshotRefreshFailed', errorName(toError(error)))
     return undefined
@@ -241,8 +240,9 @@ async function awaitFirstRefresh(env: AppEnv): Promise<PublicMarketSnapshot | un
  * to the provider, which would be the exact fan-out the claim prevents.
  */
 async function buildFromColdStore(env: AppEnv): Promise<PublicMarketSnapshot> {
-  const claimed = await brokerApi().claimMarketRefresh(env, REFRESH_LEASE_MS)
-  if (claimed) return brokerApi().loadPublicMarketSnapshot(env)
+  const claimedAt = new Date()
+  const claimed = await brokerApi().claimMarketRefresh(env, MARKET_REFRESH_LEASE_MS, claimedAt)
+  if (claimed) return withMarketRefreshLease(env, claimedAt, 'public-snapshot', () => brokerApi().loadPublicMarketSnapshot(env))
   const filled = await awaitFirstRefresh(env)
   if (filled) return filled
   throw new CallerVisibleError('PublicMarketSnapshot:store-cold')

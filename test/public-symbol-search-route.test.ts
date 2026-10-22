@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type PublicSymbolLookup } from '../src/domain/market'
 import { COLD_STORE_RETRY_DELAYS_MS, type PublicSnapshotCache } from '../src/server/public-snapshot-cache'
 import { claimPublicSearchBudget } from '../src/server/public-search-budget'
+import { MARKET_REFRESH_LEASE_MS } from '../src/server/market-refresh-lease'
 import { servePublicSymbolSearch } from '../src/server/public-symbol-search'
 import { resetBrokerApi, setBrokerApi } from '../src/server/tastytrade'
 import { stubBroker } from './broker-stub'
@@ -43,6 +44,7 @@ function serve(query: string, cache: PublicSnapshotCache): Promise<Response> {
 beforeEach(async () => {
   store = await migrationStore()
   vi.clearAllMocks()
+  broker.renewMarketRefresh.mockResolvedValue(true)
   setBrokerApi(broker)
 })
 
@@ -66,6 +68,12 @@ function sharedLease() {
   broker.claimMarketRefresh.mockImplementation(async (_env, leaseMs, now = new Date(), id = 'public-snapshot') => {
     const expiry = held.get(id)
     if (expiry !== undefined && expiry > now.getTime()) return false
+    held.set(id, now.getTime() + leaseMs)
+    return true
+  })
+  broker.renewMarketRefresh.mockImplementation(async (_env, leaseMs, claimedAt, now = new Date(), id = 'public-snapshot') => {
+    const expiry = held.get(id)
+    if (expiry !== claimedAt.getTime() + leaseMs || expiry <= now.getTime()) return false
     held.set(id, now.getTime() + leaseMs)
     return true
   })
@@ -100,6 +108,23 @@ describe('public symbol search route', () => {
     expect(broker.lookupPublicMarketSymbol).toHaveBeenCalledTimes(1)
     expect((await serve('NVDA', cache)).status).toBe(200)
     expect(broker.lookupPublicMarketSymbol).toHaveBeenCalledTimes(1)
+  })
+
+  it('renews a slow lookup and releases the renewed claim when it misses', async () => {
+    vi.useFakeTimers()
+    const held = sharedLease()
+    slowMiss(MARKET_REFRESH_LEASE_MS * 2 + 1)
+    const response = serve('NVDA', new MemoryCache())
+    await vi.advanceTimersByTimeAsync(MARKET_REFRESH_LEASE_MS + 1)
+    await expect(broker.claimMarketRefresh({ DB: store.database }, MARKET_REFRESH_LEASE_MS, new Date(), 'symbol:NVDA'))
+      .resolves.toBe(false)
+    expect(broker.lookupPublicMarketSymbol).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(MARKET_REFRESH_LEASE_MS)
+    expect((await response).status).toBe(404)
+    expect(held.has('symbol:NVDA')).toBe(false)
+    const calls = broker.renewMarketRefresh.mock.calls.length
+    await vi.advanceTimersByTimeAsync(MARKET_REFRESH_LEASE_MS)
+    expect(broker.renewMarketRefresh).toHaveBeenCalledTimes(calls)
   })
 
   it('answers one lookup and replays it for the same search', async () => {

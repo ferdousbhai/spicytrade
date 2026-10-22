@@ -250,6 +250,26 @@ describe('market research tools', () => {
     expect(provider.readDaily).not.toHaveBeenCalled()
   })
 
+  it.each(['endDate', 'startDate', 'interval', 'limit', 'studies'])('refuses explicit null for %s before fetching', async (field) => {
+    const provider = priceProvider(historyRows(1))
+    await expect(readPriceHistory({ symbol: 'AAPL', [field]: null }, provider, now)).rejects.toThrow()
+    expect(provider.readDaily).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { kind: 'SMA' as const, field: 'period' },
+    { kind: 'BBANDS' as const, field: 'standardDeviations' },
+    { kind: 'MACD' as const, field: 'fastPeriod' },
+    { kind: 'MACD' as const, field: 'slowPeriod' },
+    { kind: 'MACD' as const, field: 'signalPeriod' },
+  ])('refuses explicit null for $kind $field before fetching', async ({ kind, field }) => {
+    const provider = priceProvider(historyRows(1))
+    await expect(readPriceHistory({
+      symbol: 'AAPL', studies: [{ kind, [field]: null }],
+    }, provider, now)).rejects.toThrow()
+    expect(provider.readDaily).not.toHaveBeenCalled()
+  })
+
   it('fails before fetching on invalid ranges and duplicate or invalid studies', async () => {
     const provider = priceProvider(historyRows(1))
     await expect(readPriceHistory({

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { normalizeTastytradeMarketTicker, tickerFromStoredRecords } from '../src/server/tastytrade-market-normalization'
 import {
   claimMarketRefresh,
+  renewMarketRefresh,
   persistMarketSession,
   persistTastytradeMarketSnapshot,
   readStoredMarketRecords,
@@ -187,6 +188,21 @@ describe('stored market read model', () => {
     await expect(claimMarketRefresh(env, 30_000, now, 'symbol:AAPL')).resolves.toBe(false)
     // A different resource is unaffected, and needs no seeded row to be claimable.
     await expect(claimMarketRefresh(env, 30_000, now, 'symbol:NVDA')).resolves.toBe(true)
+  })
+
+  it('renews a live refresh across batches without extending an expired or newer claim', async () => {
+    const env = { DB: store.database }
+    const start = new Date('2026-09-01T13:00:00.000Z')
+    const renewed = new Date(start.getTime() + 15_000)
+    await expect(claimMarketRefresh(env, 30_000, start)).resolves.toBe(true)
+    await expect(renewMarketRefresh(env, 30_000, start, renewed)).resolves.toBe(true)
+    await expect(claimMarketRefresh(env, 30_000, new Date(start.getTime() + 31_000))).resolves.toBe(false)
+    // The old expiry no longer identifies the claim, even while the renewed lease is live.
+    await expect(renewMarketRefresh(env, 30_000, start, new Date(start.getTime() + 32_000))).resolves.toBe(false)
+    const expiredAt = new Date(renewed.getTime() + 30_000)
+    await expect(renewMarketRefresh(env, 30_000, renewed, expiredAt)).resolves.toBe(false)
+    await expect(claimMarketRefresh(env, 30_000, expiredAt)).resolves.toBe(true)
+    await expect(renewMarketRefresh(env, 30_000, renewed, new Date(expiredAt.getTime() + 1))).resolves.toBe(false)
   })
 
   it('releases only the claim its holder made', async () => {
