@@ -23,8 +23,8 @@ import { tickerSymbolsArgument } from './ticker-arguments'
  *
  * These read the website's own cached snapshot instead, through the same edge cache entry a
  * visitor populates. An anonymous agent therefore costs exactly what an anonymous browser costs
- * and not a request more, so the tier needs no rate limit of its own: the bound is the cache
- * that already exists rather than a number chosen here.
+ * and not a request more. A per-IP request limit and a shared fresh-search budget also
+ * bound callers who vary their queries to miss the cache.
  *
  * The trade is honest and stated on each tool: the tracked universe only, priced as of the last
  * refresh rather than this instant.

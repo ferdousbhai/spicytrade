@@ -1,3 +1,4 @@
+import { migrationStore, type SqliteD1Store } from './sqlite-d1'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Value } from 'typebox/value'
 
@@ -102,19 +103,22 @@ describe('anonymous symbol search', () => {
   // The real search route behind the tool, over a stub broker and an edge cache that holds
   // nothing, so each call reaches the route's own answer.
   const broker = stubBroker()
+  let store: SqliteD1Store
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    store = await migrationStore()
     vi.clearAllMocks()
     setBrokerApi(broker)
     vi.stubGlobal('caches', { default: { match: async () => undefined, put: async () => undefined } })
   })
 
   afterEach(() => {
+    store.close()
     resetBrokerApi()
   })
 
   function searchTool() {
-    const tool = createPublicMarketReadTools({ AUTH_BASE_URL: 'https://spice.test' }, () => undefined)
+    const tool = createPublicMarketReadTools({ AUTH_BASE_URL: 'https://spice.test', DB: store.database }, () => undefined)
       .find((candidate) => candidate.name === 'search_symbols')
     if (!tool) throw new Error('search_symbols is missing')
     return tool

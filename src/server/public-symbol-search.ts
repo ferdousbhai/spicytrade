@@ -6,6 +6,7 @@ import { COLD_STORE_RETRY_DELAYS_MS, storeEdgeCopy, type PublicSnapshotCache } f
 import { searchableQuery } from './symbol-search'
 import { SYMBOL_REFRESH_LEASE_PREFIX } from './tastytrade-market-store'
 import { brokerApi } from './tastytrade'
+import { claimPublicSearchBudget } from './public-search-budget'
 
 /**
  * A lookup costs a broker read and a maintained-list write, so an answer is kept and
@@ -66,6 +67,10 @@ async function lookupHoldingClaim(
   const release = () => brokerApi().releaseMarketRefresh(env, LOOKUP_LEASE_MS, claimedAt, leaseId)
   let lookup
   try {
+    if (!(await claimPublicSearchBudget(env))) {
+      await release()
+      return jsonNoStore({ error: 'Search allowance is busy; try again shortly' }, { status: 429, headers: { 'Retry-After': '60' } })
+    }
     lookup = await brokerApi().lookupPublicMarketSymbol(env, query)
   } catch (error) {
     await release()

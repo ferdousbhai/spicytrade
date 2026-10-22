@@ -16,12 +16,11 @@ export default defineConfig({
     compatibilityFlags: ['nodejs_compat'],
     entrypoint: './src/server.ts',
     workersDev: false,
-    previewUrls: true,
-    // The Worker serves spicy.trade alone. www.spicy.trade and the retired heston.io and tryspice.xyz
-    // domains are redirected to it by Cloudflare Redirect Rules on their own zones, never routed
-    // here, so deleting or replacing this Worker cannot take their DNS records with it.
+    previewUrls: false,
+    // The public application is served only on its current domain.
     domains: ['spicy.trade'],
     observability: {
+      redactQueryString: true,
       enabled: true,
       headSamplingRate: 1,
       logs: { enabled: true, headSamplingRate: 1 },
@@ -43,6 +42,8 @@ export default defineConfig({
       triggers.scheduled({ schedule: '30 13,14 * * MON-FRI' }),
     ],
     env: {
+      // Public HTTP and MCP requests: a burst allowance for shared networks.
+      PUBLIC_READ_LIMITER: bindings.rateLimit({ namespace: "1001", simple: { limit: 120, period: 60 } }),
       BROKER_GATE: bindings.durableObject({ worker: 'spicytrade', exportName: 'BrokerGate' }),
       MARKET_FEED: bindings.durableObject({ worker: 'spicytrade', exportName: 'MarketFeed' }),
       // Cited pages are read through Browser Run so a recorded catalyst or evidence card is bound

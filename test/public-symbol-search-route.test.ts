@@ -1,7 +1,9 @@
+import { migrationStore, type SqliteD1Store } from './sqlite-d1'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { type PublicSymbolLookup } from '../src/domain/market'
 import { COLD_STORE_RETRY_DELAYS_MS, type PublicSnapshotCache } from '../src/server/public-snapshot-cache'
+import { claimPublicSearchBudget } from '../src/server/public-search-budget'
 import { servePublicSymbolSearch } from '../src/server/public-symbol-search'
 import { resetBrokerApi, setBrokerApi } from '../src/server/tastytrade'
 import { stubBroker } from './broker-stub'
@@ -9,6 +11,7 @@ import { marketSnapshotFixture } from './fixtures/market'
 
 const SEARCH_URL = 'https://spicy.trade/api/public-symbol-search'
 const broker = stubBroker()
+let store: SqliteD1Store
 
 class MemoryCache implements PublicSnapshotCache {
   private readonly responses = new Map<string, Response>()
@@ -32,17 +35,19 @@ function lookup(): PublicSymbolLookup {
 function serve(query: string, cache: PublicSnapshotCache): Promise<Response> {
   return servePublicSymbolSearch(
     new Request(`${SEARCH_URL}?q=${encodeURIComponent(query)}`),
-    {},
+    { DB: store.database },
     cache,
   )
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  store = await migrationStore()
   vi.clearAllMocks()
   setBrokerApi(broker)
 })
 
 afterEach(() => {
+  store.close()
   vi.useRealTimers()
   broker.claimMarketRefresh.mockResolvedValue(true)
   broker.releaseMarketRefresh.mockResolvedValue(undefined)
@@ -84,6 +89,19 @@ function slowMiss(ms: number) {
 }
 
 describe('public symbol search route', () => {
+  it('refuses fresh backend work when the shared budget is exhausted, but still serves cache hits', async () => {
+    const cache = new MemoryCache()
+    broker.lookupPublicMarketSymbol.mockResolvedValue(lookup())
+    expect((await serve('NVDA', cache)).status).toBe(200)
+    await Promise.all(Array.from({ length: 59 }, () => claimPublicSearchBudget({ DB: store.database })))
+    const refused = await serve('AAPL', cache)
+    expect(refused.status).toBe(429)
+    expect(refused.headers.get('Retry-After')).toBe('60')
+    expect(broker.lookupPublicMarketSymbol).toHaveBeenCalledTimes(1)
+    expect((await serve('NVDA', cache)).status).toBe(200)
+    expect(broker.lookupPublicMarketSymbol).toHaveBeenCalledTimes(1)
+  })
+
   it('answers one lookup and replays it for the same search', async () => {
     broker.lookupPublicMarketSymbol.mockResolvedValue(lookup())
     const cache = new MemoryCache()

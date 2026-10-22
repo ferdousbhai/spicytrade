@@ -1,3 +1,4 @@
+import { secureDocument } from './security-headers'
 import { type JsonValue } from '../domain/json-payload'
 import { SPICE_DEPLOYMENT_ID } from '../deployment'
 import { SPICE_DEPLOYMENT_ID_HEADER, PUBLIC_RESPONSE_MAX_AGE_SECONDS } from '../domain/deployment'
@@ -63,6 +64,7 @@ const STORAGE_PURGE_COOKIE_MAX_AGE_S = 365 * 24 * 60 * 60
  */
 export function finalizeDocumentResponse(request: Request, response: Response): Response {
   if (!response.headers.get('content-type')?.includes('text/html')) return response
+  response = secureDocument(response)
   const headers = new Headers(response.headers)
   headers.set('Cache-Control', 'no-cache')
   headers.set(SPICE_DEPLOYMENT_ID_HEADER, SPICE_DEPLOYMENT_ID)

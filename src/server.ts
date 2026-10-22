@@ -30,6 +30,11 @@ export { MarketFeed } from './server/market-feed'
 export default {
   async fetch(request: Request, env: AppEnv, ctx: ExecutionContext) {
     const url = new URL(request.url)
+    if (url.pathname === '/api/public-symbol-search' || (url.pathname === MCP_PATH && !request.headers.has('Authorization'))) {
+      if (!env.PUBLIC_READ_LIMITER) return Response.json({ error: 'Public request limiter unavailable' }, { status: 503 })
+      const allowed = await env.PUBLIC_READ_LIMITER.limit({ key: request.headers.get('CF-Connecting-IP') ?? 'unknown' })
+      if (!allowed.success) return Response.json({ error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': '60', 'Cache-Control': 'no-store' } })
+    }
     // OAuth discovery. An MCP client reads these before it can authenticate at all, and only
     // ever at the origin.
     if (url.pathname.startsWith('/.well-known/')) {

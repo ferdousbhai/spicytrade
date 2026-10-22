@@ -23,6 +23,7 @@ interface MarketFeedNamespace {
 }
 
 export interface AppEnv {
+  PUBLIC_READ_LIMITER?: { limit(options: { key: string }): Promise<{ success: boolean }> }
   AUTH_BASE_URL?: string
   BETTER_AUTH_SECRET?: string
   BROKER_GATE?: BrokerGateNamespace
