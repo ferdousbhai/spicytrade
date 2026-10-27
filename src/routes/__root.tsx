@@ -1,6 +1,7 @@
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
+import { HeadContent, Link, Scripts, createRootRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 
+import { SitePage } from '#/components/site-page'
 import { TooltipProvider } from '#/components/ui/tooltip'
 import { bootRecoveryScript } from '../boot-recovery'
 import { PUBLIC_SNAPSHOT_URL } from '../deployment'
@@ -75,8 +76,21 @@ export const Route = createRootRoute({
       },
     ],
   }),
+  notFoundComponent: NotFoundPage,
   shellComponent: RootDocument,
 })
+
+/** An address that names no page: the site's own frame, and the one way back to the market. */
+function NotFoundPage() {
+  return (
+    <SitePage intro="This address doesn't match a spicytrade page. It may have moved, or the link may be mistyped." title="Page not found">
+      <section>
+        <h2>Where to go instead</h2>
+        <p>The watchlist is at <Link to="/watch">/watch</Link>, the daily brief at <Link to="/recommendations">/recommendations</Link>, and agent setup at <Link to="/connect">/connect</Link>.</p>
+      </section>
+    </SitePage>
+  )
+}
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
