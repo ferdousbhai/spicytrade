@@ -11,7 +11,7 @@
 /*
  * Stocks-inspired reading hierarchy across phone and desktop: Geist text, tabular
  * prices, neutral separators, and spicytrade's amber accent. These type and spacing tokens
- * are the product scale; code samples alone retain the terminal font.
+ * are the product scale, every size a step of Tailwind's type scale; code samples alone are set in Geist Mono.
  */
 :root {
   color-scheme: dark;
@@ -41,9 +41,9 @@
   --down: #d8636f;
   --sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --page-gutter: 24px;
-  --type-body: 1.0625rem;
-  --type-secondary: .9375rem;
-  --type-caption: .8125rem;
+  --type-body: 1rem;
+  --type-secondary: .875rem;
+  --type-caption: .75rem;
   --touch-target: 44px;
   --mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
   --axis-gradient: linear-gradient(90deg, var(--cheap), #d7d26d 49%, var(--rich));
@@ -57,6 +57,9 @@
 }
 
 html { scroll-behavior: smooth; }
+/* Headings break where the thought breaks; body text never leaves one word on its last line. */
+:where(h1, h2, h3) { text-wrap: balance; }
+:where(p, li, blockquote) { text-wrap: pretty; }
 body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-height: 100dvh; }
 /* Parked above the viewport by transform, so revealing it moves no layout. */
 .skip-link { position: fixed; z-index: 100; left: 12px; top: 12px; padding: 8px 12px; background: var(--cheap); color: #0b0d08; font-weight: 600; transform: translateY(-64px); transition: transform .5s var(--ease); }
@@ -66,7 +69,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .app-shell { position: relative; padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
 .main-content { animation: enter .5s var(--ease) both; }
 .market-state { min-height: 50vh; min-height: 50dvh; padding: 24px var(--page-gutter); display: grid; place-items: center; color: var(--ink-muted); text-align: center; }
-.market-state p { font-size: 15px; }
+.market-state p { font-size: 14px; }
 .top-bar { padding: calc(20px + env(safe-area-inset-top)) var(--page-gutter) 16px; display: flex; align-items: center; justify-content: space-between; width: 100%; position: relative; z-index: 5; min-height: calc(84px + env(safe-area-inset-top)); gap: 16px; }
 .brand, .site-brand, .authorize-brand { display: flex; align-items: center; gap: 12px; }
 .brand { line-height: .9; }
@@ -74,7 +77,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 /* Below 400px, measured with the session light and Sign in beside it, the pepper pushes the
    actions onto a second line; the wordmark alone still names the site there. */
 @media (max-width: 399px) { .brand .brand-pepper { display: none; } }
-.brand > span { font-size: 28px; font-weight: 700; letter-spacing: -.045em; }
+.brand > span { font-size: 24px; font-weight: 700; letter-spacing: -.045em; }
 .brand em, .site-brand em, .authorize-brand em { color: var(--pepper); font-style: normal; }
 .top-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
 /* Session is a traffic light. Green open, yellow pre-market, red closed, muted when the session
@@ -88,7 +91,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .quote-source { color: var(--ink-faint); font-size: 12px; white-space: nowrap; }
 .quote-source[data-live] { color: var(--up); }
 .last-updated { color: var(--ink-faint); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.top-link { padding: 12px 8px; color: var(--ink-muted); font-size: 13px; font-weight: 400; text-decoration: none; }
+.top-link { padding: 12px 8px; color: var(--ink-muted); font-size: 12px; font-weight: 400; text-decoration: none; }
 .top-link:hover { color: var(--text); }
 /* Every plain link and control eases its colour on the one curve; zero specificity, so a rule that
    sets its own transition still wins. */
@@ -108,7 +111,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .google-sign-in span { grid-column: 2; }
 .google-sign-in:hover { background: white; }
 .google-sign-in:disabled { color: #65666a; background: #d8d8dc; }
-.auth-inline-error { max-width: 420px; padding: 12px 0; border-block: 1px solid rgba(255, 107, 120, .25); border-inline: 0; border-radius: 0; background: transparent; color: #efb4b9; font-size: 13px; line-height: 1.5; margin: 12px 0 0; }
+.auth-inline-error { max-width: 420px; padding: 12px 0; border-block: 1px solid rgba(255, 107, 120, .25); border-inline: 0; border-radius: 0; background: transparent; color: #efb4b9; font-size: 14px; line-height: 1.5; margin: 12px 0 0; }
 
 .site-page { padding: 0 24px; }
 .site-header, .site-content, .site-footer { width: min(100%, 1120px); margin-inline: auto; }
@@ -118,18 +121,18 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .authorize-brand span { font-size: 18px; line-height: .85; font-weight: 700; letter-spacing: -.03em; }
 .site-brand span { font-size: 16px; line-height: .85; font-weight: 700; }
 .site-header nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px 24px; }
-.site-header nav a { color: var(--ink-muted); font-size: 15px; }
+.site-header nav a { color: var(--ink-muted); font-size: 14px; }
 .site-header nav a:hover, .site-header nav a[aria-current="page"] { color: var(--brand); }
 .site-content { display: grid; grid-template-columns: minmax(220px, .6fr) minmax(0, 1.4fr); gap: clamp(40px, 7vw, 96px); padding: clamp(56px, 8vw, 96px) 0 80px; }
 .site-title { align-self: start; position: sticky; top: 40px; }
-.site-title h1 { max-width: 520px; font-size: clamp(38px, 6vw, 60px); line-height: .92; }
+.site-title h1 { max-width: 520px; font-size: 48px; font-weight: 600; line-height: 1; letter-spacing: -.025em; }
 .site-title > p:last-child { max-width: 400px; margin: 24px 0 0; color: var(--ink-muted); font-size: 14px; line-height: 1.6; }
 .site-prose > section { padding: 0 0 32px; margin: 0 0 32px; border-bottom: 1px solid var(--hairline); }
 .site-prose h2 { margin: 0 0 12px; font-size: 18px; line-height: 1.15; }
 .site-prose p { max-width: 68ch; color: var(--ink-muted); font-size: 14px; line-height: 1.7; }
 .site-prose a { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
-.site-prose .site-effective { margin: 0 0 32px; color: var(--ink-faint); font: 13px/1.4 var(--sans); }
-.site-footer { min-height: 72px; padding: 24px 0; border-top: 1px solid var(--hairline); display: flex; align-items: center; justify-content: space-between; gap: 24px; color: var(--ink-faint); font-size: 13px; }
+.site-prose .site-effective { margin: 0 0 32px; color: var(--ink-faint); font: 12px/1.4 var(--sans); }
+.site-footer { min-height: 72px; padding: 24px 0; border-top: 1px solid var(--hairline); display: flex; align-items: center; justify-content: space-between; gap: 24px; color: var(--ink-faint); font-size: 12px; }
 .site-footer a:hover { color: var(--text); }
 
 .market-screen { padding-bottom: 16px; }
@@ -142,18 +145,18 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .story.cheap::before { background: var(--cheap); }
 .story.fair::before { background: var(--fair-tone); }
 .story.rich::before { background: var(--rich); }
-.story-symbol { font-size: 15px; font-weight: 700; }
-.story-catalyst[data-slot="badge"] { height: auto; padding: 0; border: 0; color: var(--brand); font: 13px/1 var(--sans); font-variant-numeric: tabular-nums; }
+.story-symbol { font-size: 14px; font-weight: 700; }
+.story-catalyst[data-slot="badge"] { height: auto; padding: 0; border: 0; color: var(--brand); font: 12px/1 var(--sans); font-variant-numeric: tabular-nums; }
 .story-catalyst.estimated { color: color-mix(in srgb, var(--brand) 60%, var(--ink-muted)); }
 .story-empty[data-slot="empty"] { min-height: 36px; padding: 0; align-items: flex-start; text-align: left; }
 
 .instrument-focus { --card-spacing: 0px; }
 .selected-summary { min-width: 0; flex: 1; }
 .selected-instrument p { margin: 8px 0 0; overflow: hidden; color: var(--ink-faint); font-size: var(--type-secondary); text-overflow: ellipsis; white-space: nowrap; }
-.selected-symbol { font-size: 28px; font-weight: 700; line-height: 1.1; letter-spacing: -.03em; }
+.selected-symbol { font-size: 24px; font-weight: 700; line-height: 1.1; letter-spacing: -.03em; }
 .selected-price { margin-top: 12px; display: flex; align-items: baseline; gap: 8px; }
 .selected-price strong { font: 600 30px/1.15 var(--sans); letter-spacing: -.025em; }
-.selected-price span { color: var(--ink-soft); font: 500 15px/1.2 var(--sans); }
+.selected-price span { color: var(--ink-soft); font: 500 14px/1.2 var(--sans); }
 .premium-gauge { flex: 0 0 auto; display: grid; justify-items: end; }
 .premium-gauge > span { color: var(--ink-faint); font: 12px/1 var(--sans); }
 .premium-verdict { margin-top: 8px; font-size: 16px; font-weight: 700; }
@@ -169,7 +172,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 
 /* The arrow rides the last word rather than sitting in its own flex slot, so a source that
    wraps in a narrow column never strands it on a line of its own. */
-.runway-body > a { display: block; width: fit-content; max-width: 100%; margin-top: 8px; color: var(--ink-faint); font-size: 13px; line-height: 1.3; }
+.runway-body > a { display: block; width: fit-content; max-width: 100%; margin-top: 8px; color: var(--ink-faint); font-size: 14px; line-height: 1.3; }
 .runway-body > a:hover, .runway-body > a:focus-visible, .evidence-meta a:hover, .evidence-meta a:focus-visible { color: var(--text); }
 .runway-body > a svg, .evidence-meta svg, .brief-headlines svg { display: inline-block; width: 10px; height: 10px; margin-left: 4px; vertical-align: -1px; }
 
@@ -183,7 +186,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .runway-event::before { content: ""; position: absolute; left: 68.5px; top: 18px; bottom: 2px; width: 1px; background: var(--hairline); }
 .runway-event:last-child::before { content: none; }
 .runway-when { text-align: right; }
-.runway-when strong { display: block; color: var(--brand); font: 700 13px/1 var(--sans); font-variant-numeric: tabular-nums; }
+.runway-when strong { display: block; color: var(--brand); font: 700 12px/1 var(--sans); font-variant-numeric: tabular-nums; }
 .runway-event:not(.next) .runway-when strong { color: color-mix(in srgb, var(--brand) 68%, var(--bg)); }
 .runway-when time { display: block; margin-top: 4px; color: var(--ink-faint); font: 12px/1.2 var(--sans); }
 .runway-mark { position: relative; }
@@ -193,10 +196,10 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 /* What the event is on one line, how sure and how recent on the next, so a narrow column never
    breaks the line mid-phrase. */
 .runway-kind { display: grid; gap: 4px; color: var(--ink-faint); font: 12px/1.1 var(--sans); }
-.runway-body > strong { display: block; margin-top: 8px; font-size: 15px; line-height: 1.32; }
-.runway-detail { margin: 8px 0 0; max-width: 72ch; color: var(--ink-muted); font-size: 13px; line-height: 1.55; }
-.runway-empty { margin: 16px 0 0; max-width: 72ch; color: var(--ink-muted); font-size: 13px; line-height: 1.62; }
-.runway-searching { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; color: var(--ink-muted); font-size: 13px; }
+.runway-body > strong { display: block; margin-top: 8px; font-size: 14px; line-height: 1.32; }
+.runway-detail { margin: 8px 0 0; max-width: 72ch; color: var(--ink-muted); font-size: 14px; line-height: 1.55; }
+.runway-empty { margin: 16px 0 0; max-width: 72ch; color: var(--ink-muted); font-size: 14px; line-height: 1.62; }
+.runway-searching { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; color: var(--ink-muted); font-size: 14px; }
 .runway-searching > span:first-child { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--brand); animation: runway-pulse 1.2s var(--ease) infinite; }
 @keyframes runway-pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
 .runway-empty strong { color: var(--text); }
@@ -206,11 +209,11 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .focus-evidence { padding-top: 24px; border-top: 1px solid var(--hairline); }
 .evidence-cards { display: grid; gap: 16px; margin: 16px 0 0; }
 .evidence-card { padding-left: 12px; border-left: 1px solid var(--hairline); }
-.evidence-card blockquote { max-width: 72ch; color: var(--ink-soft); font-size: 15px; line-height: 1.55; }
-.evidence-note { margin: 8px 0 0; max-width: 72ch; color: var(--ink-muted); font-size: 13px; line-height: 1.55; }
+.evidence-card blockquote { max-width: 72ch; color: var(--ink-soft); font-size: 14px; line-height: 1.55; }
+.evidence-note { margin: 8px 0 0; max-width: 72ch; color: var(--ink-muted); font-size: 14px; line-height: 1.55; }
 .evidence-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 8px 0 0; color: var(--ink-faint); font: 12px/1.3 var(--sans); }
-.evidence-meta a { font-size: 13px; }
-.evidence-unavailable { color: var(--ink-faint); font-size: 13px; line-height: 1.4; }
+.evidence-meta a { font-size: 12px; }
+.evidence-unavailable { color: var(--ink-faint); font-size: 12px; line-height: 1.4; }
 
 /* A grid of label-over-value cells rather than an inline run with separators: a run wraps
    wherever the width falls and strands its separator at the end of each line. */
@@ -219,22 +222,24 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .focus-tape dt { color: var(--ink-faint); }
 .focus-tape dd { color: var(--ink-soft); overflow-wrap: anywhere; }
 /* The age of each fact on the card, under the readings it describes. */
-.focus-freshness { padding: 0 0 16px; display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--ink-faint); font: 13px/1.4 var(--sans); font-variant-numeric: tabular-nums; }
+.focus-freshness { padding: 0 0 16px; display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--ink-faint); font: 12px/1.4 var(--sans); font-variant-numeric: tabular-nums; }
 .focus-freshness time { color: var(--ink-muted); }
 
 .watch-table { padding: 24px var(--page-gutter) 16px; }
 .section-header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
-.watchlist-title { font-size: 22px; line-height: 1.2; font-weight: 700; }
+.watchlist-title { font-size: 20px; line-height: 1.2; font-weight: 700; }
 .watch-search { min-width: 0; flex: 1; max-width: 360px; height: var(--touch-target); padding: 0 12px; display: flex; align-items: center; gap: 12px; background: var(--surface); color: var(--ink-muted); border-radius: 10px; }
 .watch-search:focus-within { outline: 2px solid var(--ring); outline-offset: 2px; }
 .watch-search svg { width: 18px; height: 18px; flex: 0 0 auto; }
 .watch-search input { width: 100%; outline: 0; color: var(--text); font-size: var(--type-body); }
+/* Reading text that runs to more than one line stays at 14px; only single line labels and data
+   captions take the 12px step. */
 /* A status line above the list: what the search or the year charts could not deliver. */
-.watch-status { margin: 12px 0 0; color: var(--ink-muted); font-size: 13px; }
+.watch-status { margin: 12px 0 0; color: var(--ink-muted); font-size: 14px; }
 .watch-search input::placeholder { color: var(--ink-muted); }
 .watch-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
-.premium-data-table { min-width: 850px; border-top: 1px solid var(--hairline); font-size: 15px; }
-.premium-data-table [data-slot="table-head"] { height: 44px; color: var(--ink-muted); font: 500 13px/1.2 var(--sans); }
+.premium-data-table { min-width: 850px; border-top: 1px solid var(--hairline); font-size: 14px; }
+.premium-data-table [data-slot="table-head"] { height: 44px; color: var(--ink-muted); font: 500 12px/1.2 var(--sans); }
 .sort-button { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
 .sort-button:hover { color: var(--text); }
 .sort-button:disabled { opacity: .5; cursor: default; }
@@ -264,7 +269,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .ticker-table-button[data-slot="button"] { width: 100%; height: auto; padding: 0; align-items: flex-start; flex-direction: column; gap: 4px; background: transparent; text-align: left; }
 .ticker-table-button > span { display: flex; align-items: baseline; gap: 8px; }
 .ticker-table-button strong { font-size: 18px; font-variant-numeric: tabular-nums; font-weight: 600; }
-.ticker-table-button > span small { color: var(--ink-faint); font-size: 13px; }
+.ticker-table-button > span small { color: var(--ink-faint); font-size: 12px; }
 .ticker-table-button > small { width: 100%; overflow: hidden; color: var(--ink-faint); font-size: var(--type-caption); text-overflow: ellipsis; white-space: nowrap; font-weight: 400; line-height: 1.3; }
 .ticker-table-button > small:nth-child(3) { color: var(--brand); }
 /* In the table the next catalyst sits on the symbol's line, so a row is two lines, not three. */
@@ -280,7 +285,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .premium-data-table .premium-cell.cheap strong { color: var(--cheap); }
 .premium-data-table .premium-cell.fair strong { color: var(--fair-tone); }
 .premium-data-table .premium-cell.rich strong { color: var(--rich); }
-.premium-data-table .price-cell small, .premium-data-table .premium-cell small, .premium-data-table .liquidity-cell small { color: var(--ink-faint); font-size: 13px; font-variant-numeric: tabular-nums; }
+.premium-data-table .price-cell small, .premium-data-table .premium-cell small, .premium-data-table .liquidity-cell small { color: var(--ink-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
 .premium-data-table .premium-cell > small, .premium-data-table .liquidity-cell > small { display: block; margin-top: 2px; }
 .premium-reading { display: flex; align-items: baseline; justify-content: flex-end; gap: 8px; white-space: nowrap; }
 .watch-empty { min-height: 100px; }
@@ -312,13 +317,13 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
    reading the verdict is drawn from. A tap opens the whole card as a sheet. */
 .focus-strip { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto 16px; column-gap: 12px; row-gap: 8px; align-items: baseline; padding: 16px var(--page-gutter); border-bottom: 1px solid var(--hairline); text-align: left; cursor: pointer; }
 .focus-strip-name { display: flex; align-items: baseline; gap: 8px; }
-.focus-strip-name strong, .focus-strip-quote strong { font-size: 17px; font-weight: 600; }
-.focus-strip-name small { overflow: hidden; color: var(--ink-faint); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.focus-strip-name strong, .focus-strip-quote strong { font-size: 16px; font-weight: 600; }
+.focus-strip-name small { overflow: hidden; color: var(--ink-faint); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .focus-strip-quote { display: flex; align-items: baseline; gap: 8px; font-variant-numeric: tabular-nums; }
-.focus-strip-quote small { font-size: 13px; color: var(--ink-soft); }
+.focus-strip-quote small { font-size: 12px; color: var(--ink-soft); }
 .focus-strip-quote small[data-tone="up"] { color: var(--up); }
 .focus-strip-quote small[data-tone="down"] { color: var(--down); }
-.focus-strip-read { grid-column: 1 / 3; overflow: hidden; color: var(--ink-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.focus-strip-read { grid-column: 1 / 3; overflow: hidden; color: var(--ink-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .focus-strip svg { grid-column: 3; grid-row: 1 / 3; width: 16px; height: 16px; align-self: center; color: var(--ink-faint); }
 .strip-verdict { font-style: normal; font-weight: 700; }
 .focus-strip.cheap .strip-verdict { color: var(--cheap); }
@@ -340,7 +345,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .market-state-loading { width: min(100%, 260px); display: flex; flex-direction: column; gap: 12px; }
 .market-state-loading [data-slot="skeleton"]:first-child { width: 54%; height: 13px; margin-inline: auto; }
 .market-state-loading [data-slot="skeleton"]:nth-child(2) { height: 42px; }
-.market-state-title { margin: 0 0 8px; color: var(--text); font-size: 17px; font-weight: 600; }
+.market-state-title { margin: 0 0 8px; color: var(--text); font-size: 16px; font-weight: 600; }
 .market-state [data-slot="empty"] button { margin-top: 16px; }
 
 /* The first load's outline, sized to the view it stands in for so the page does not jump when
@@ -400,10 +405,10 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
      between its own sections. */
   .instrument-focus { padding: 32px var(--page-gutter); border-bottom: 1px solid var(--hairline); display: grid; grid-template-columns: clamp(300px, 24vw, 420px) minmax(0, 1fr); grid-template-rows: auto auto 1fr; column-gap: clamp(22px, 2.4vw, 40px); align-items: start; }
   .instrument-focus [data-slot="card-header"] { grid-column: 1; grid-row: 1; display: block; }
-  .selected-instrument p { font-size: 13px; }
+  .selected-instrument p { font-size: 12px; }
   .selected-price { margin-top: 8px; }
   .premium-gauge { margin-top: 12px; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; align-items: end; }
-  .premium-verdict { margin-top: 0; font-size: 15px; line-height: 1; }
+  .premium-verdict { margin-top: 0; font-size: 14px; line-height: 1; }
   .premium-axis[data-slot="progress"] { width: 100%; grid-column: 1 / -1; height: 9px; margin-top: 8px; }
   .focus-narrative { display: contents; }
   /* Dissolving the narrative grid drops its gap, so the runway carries its own spacing from the
@@ -440,12 +445,12 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
   .focus-reading > .focus-metrics { grid-column: 1 / -1; }
 
   .premium-data-table .year-cell { display: table-cell; width: 11%; min-width: 96px; text-align: right; }
-  .premium-data-table .year-cell strong { display: block; margin-top: 4px; color: var(--ink-faint); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .premium-data-table .year-cell strong { display: block; margin-top: 4px; color: var(--ink-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
   .year-sparkline { max-width: 96px; height: 20px; }
 
 }
 
-.connect-footer { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 16px var(--page-gutter) 24px; color: var(--ink-faint); font-size: 13px; }
+.connect-footer { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 16px var(--page-gutter) 24px; color: var(--ink-faint); font-size: 12px; }
 .connect-footer a:hover { color: var(--ink-muted); }
 /* Connect centres its content on a wide screen, signed in or not, so its links centre under it
    rather than hanging at the page's left edge. The brief's footer sits inside its own column. */
@@ -459,7 +464,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
   .site-header nav { justify-content: flex-start; gap: 8px 16px; }
   .site-content { display: block; padding: 64px 0 64px; }
   .site-title { position: static; margin-bottom: 48px; }
-  .site-title h1 { font-size: clamp(34px, 10vw, 60px); }
+  .site-title h1 { font-size: 36px; line-height: 40px; }
   .site-footer { align-items: flex-start; }
 }
 
@@ -546,9 +551,9 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 /* The shell owns bottom-navigation clearance for every tab. */
 .connect-screen { padding: 32px var(--page-gutter) 32px; display: grid; gap: 32px; max-width: 720px; }
 .connect-screen > * { min-width: 0; }
-.connect-screen header h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: -.03em; }
+.connect-screen header h1 { margin: 0 0 8px; font-size: 30px; font-weight: 600; letter-spacing: -.03em; }
 .connect-screen p { margin: 0 0 12px; color: var(--ink-muted); font-size: var(--type-body); line-height: 1.5; }
-.connect-screen code { padding: 2px 4px; border-radius: 4px; background: var(--surface-2); color: var(--text); font-size: 13px; overflow-wrap: anywhere; font-family: var(--mono); }
+.connect-screen code { padding: 2px 4px; border-radius: 4px; background: var(--surface-2); color: var(--text); font-size: 12px; overflow-wrap: anywhere; font-family: var(--mono); }
 /* The OAuth authorization and consent pages. Standalone: a browser arrives here mid-flow from an
    agent, not by navigating the app, so they carry no shell and nothing to wander off into. */
 .authorize-page { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; gap: 16px; width: min(100%, 420px); margin-inline: auto; padding: 32px 24px; }
@@ -577,10 +582,10 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .connect-tokens { margin: 12px 0; display: grid; gap: 1px; background: var(--hairline); border: 1px solid var(--hairline); border-radius: 6px; overflow: hidden; }
 .connect-tokens li { padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--surface); }
 .connect-tokens li > div { min-width: 0; overflow-wrap: anywhere; }
-.connect-tokens strong { display: block; font-size: 15px; }
-.connect-tokens span { color: var(--ink-faint); font-size: 13px; }
+.connect-tokens strong { display: block; font-size: 14px; }
+.connect-tokens span { color: var(--ink-faint); font-size: 12px; }
 .connect-code { margin: 12px 0; border: 1px solid var(--hairline); border-radius: 6px; overflow: hidden; }
-.connect-code-head { padding: 8px 8px 8px 12px; display: flex; align-items: center; justify-content: space-between; background: var(--surface-2); color: var(--ink-muted); font-size: 13px; }
+.connect-code-head { padding: 8px 8px 8px 12px; display: flex; align-items: center; justify-content: space-between; background: var(--surface-2); color: var(--ink-muted); font-size: 12px; }
 .connect-code pre { padding: 12px 12px; background: var(--surface); }
 /* Wrapped rather than scrolled, so a long command shows whole; Copy takes the value, not the
    wrapped text, and pre-wrap keeps the JSON's indentation. */
@@ -589,7 +594,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .connect-aside { display: contents; }
 .connect-guards { order: 1; }
 .connect-picker { min-width: 0; }
-.connect-picker legend { margin-bottom: 8px; color: var(--ink-muted); font-size: 13px; }
+.connect-picker legend { margin-bottom: 8px; color: var(--ink-muted); font-size: 12px; }
 .connect-picker > div { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 10px; background: var(--surface); }
 .connect-picker label { position: relative; cursor: pointer; }
 .connect-picker input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
@@ -612,7 +617,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
   .watch-search { grid-column: 1 / -1; grid-row: 2; max-width: none; }
   .focus-sheet { border-radius: 24px 24px 0 0; }
   .focus-sheet .instrument-focus { padding: 48px var(--page-gutter) 24px; }
-  .premium-gauge > span { font-size: 11px; }
+  .premium-gauge > span { font-size: 12px; }
   .watch-row .ticker-table-button strong { font-size: 20px; letter-spacing: -.025em; }
   .bottom-nav .primary-link svg { width: 23px; height: 23px; }
 }
@@ -636,25 +641,25 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .brief-navigation { min-height: 42px; padding: 8px 16px; border-bottom: 1px solid var(--hairline); display: flex; align-items: center; justify-content: space-between; }
 .brief-cover { padding: 24px 24px 16px; border-bottom: 1px solid var(--hairline); }
 .brief-date { font: 600 var(--type-secondary)/1.2 var(--sans); outline: none; }
-.brief-meta { margin: 8px 0 0; color: var(--ink-faint); font: 13px/1.3 var(--sans); overflow-wrap: anywhere; }
+.brief-meta { margin: 8px 0 0; color: var(--ink-faint); font: 12px/1.3 var(--sans); overflow-wrap: anywhere; }
 .brief-headlines-section { padding: 24px 24px 0; }
 .brief-trades { padding: 0 24px; }
 .brief-trades > .brief-card:first-child { border-top: 0; }
-.brief-headlines-section h2, .brief-trades h2, .brief-empty h2 { margin: 0 0 12px; font-size: 15px; font-weight: 700; line-height: 1.1; }
+.brief-headlines-section h2, .brief-trades h2, .brief-empty h2 { margin: 0 0 12px; font-size: 14px; font-weight: 700; line-height: 1.1; }
 .brief-trades > h2 { margin-top: 24px; }
 .brief-headlines { border-top: 1px solid var(--hairline); }
 .brief-headlines li { border-bottom: 1px solid var(--hairline); }
 .brief-headlines a { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; overflow-wrap: anywhere; }
-.brief-headline-title { font-size: 15px; line-height: 1.35; }
+.brief-headline-title { font-size: 14px; line-height: 1.35; }
 .brief-headlines a:hover .brief-headline-title, .brief-headlines a:focus-visible .brief-headline-title { color: var(--brand); }
 /* The list stays scannable: a snippet shows its first three lines, and the linked page holds the rest. The
    whole snippet is still in the markup and in the brief tool's result. */
-.brief-headline-snippet { display: -webkit-box; overflow: hidden; color: var(--ink-muted); font-size: 13px; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; }
+.brief-headline-snippet { display: -webkit-box; overflow: hidden; color: var(--ink-muted); font-size: 14px; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; }
 .brief-headline-host { color: var(--ink-faint); font-size: 12px; line-height: 1.3; }
 /* A path is an address, not prose: one clipped line, with the whole URL still in the href. */
 .brief-headline-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brief-card { padding: 16px 0 24px; border-top: 1px solid var(--hairline); }
-.trade-line { color: var(--brand); font: 700 17px/1.2 var(--sans); }
+.trade-line { color: var(--brand); font: 700 16px/1.2 var(--sans); }
 .trade-link { text-align: left; cursor: pointer; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; }
 .trade-link:hover, .trade-link:focus-visible { text-decoration-color: currentColor; }
 .thesis { max-width: 60ch; margin-top: 12px; color: var(--ink-muted); font-size: var(--type-secondary); line-height: 1.6; }
@@ -670,7 +675,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .thesis li { margin: 4px 0; }
 .thesis a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
 .brief-empty { padding: 24px 24px; }
-.brief-empty p { margin: 8px 0 0; color: var(--ink-faint); font-size: 15px; }
+.brief-empty p { margin: 8px 0 0; color: var(--ink-faint); font-size: 14px; }
 /* A wide screen reads the brief as trades beside their headlines rather than one narrow column
    with the headlines below it: the theses keep their measure and the sources fill the width. */
 @media (min-width: 1120px) {
