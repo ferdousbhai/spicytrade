@@ -190,7 +190,7 @@ function ViewerMenu({ viewerImage, viewerName }: { viewerImage?: string; viewerN
         <DropdownMenuSeparator />
         <DropdownMenuItem closeOnClick={false} disabled={phase === 'signing-out'} onClick={() => void signOut()}>
           <SignOut aria-hidden="true" size={14} />
-          {phase === 'signing-out' ? 'Signing out…' : phase === 'failed' ? 'Sign-out failed — try again' : 'Sign out'}
+          {phase === 'signing-out' ? 'Signing out…' : phase === 'failed' ? 'Sign out failed. Try again' : 'Sign out'}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

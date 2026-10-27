@@ -219,8 +219,8 @@ export function ConnectScreen({ authError, owner, signedIn }: { authError?: stri
       <header>
         <h1>Connect your agent</h1>
         <p>
-          Give your agent live quotes, option chains, and research — plus your positions and guarded orders
-          when tastytrade is connected through the local connector.
+          Give your agent live quotes, option chains, and research. Connect tastytrade through the local
+          connector and it also sees your positions and places guarded orders.
         </p>
       </header>
 
@@ -293,7 +293,7 @@ export function ConnectScreen({ authError, owner, signedIn }: { authError?: stri
           {client === 'claude' && <> in Claude Code, <code>/mcp</code>.</>}
           {client === 'codex' && <> in Codex, <code>codex mcp login {MCP_SERVER_NAME}</code>.</>}
           {client === 'grok' && <> in Grok, its authenticate action for this server.</>}
-          {client === 'other' && <> its authenticate action for this server — in Muse, <code>muse mcp login {MCP_SERVER_NAME}</code>.</>}
+          {client === 'other' && <> its authenticate action for this server; in Muse, <code>muse mcp login {MCP_SERVER_NAME}</code>.</>}
         </p>
       </details>
 
@@ -307,7 +307,7 @@ export function ConnectScreen({ authError, owner, signedIn }: { authError?: stri
                 <p>Sign in to see your computers and create tokens.</p>
                 {authError && (
                   <Alert variant="destructive">
-                    <AlertTitle>Sign-in unavailable</AlertTitle>
+                    <AlertTitle>Sign in is unavailable</AlertTitle>
                     <AlertDescription>{authError}</AlertDescription>
                   </Alert>
                 )}
@@ -365,7 +365,7 @@ function HeadlessTokens() {
       )}
 
       <p>
-        For a job that runs with no one signed in — a scheduled script — create a token. It gets market
+        For a job that runs with no one signed in, such as a scheduled script, create a token. It gets market
         and research tools only, never your account. A computer you SSH into can use the install above
         if your desktop session is logged in there; setup tells you how to finish signing in from your
         own computer.
@@ -425,7 +425,7 @@ function IssuedToken({ token }: { token: string }) {
         </AlertDescription>
       </Alert>
       <CopyBlock label="Your token" value={token} />
-      <p>Both blocks below already carry the token you just created — copy either one.</p>
+      <p>Both blocks below already carry the token you just created. Copy either one.</p>
       <CopyBlock label="Claude Code" value={headlessCommand} />
       <CopyBlock label=".mcp.json" value={mcpConfig} />
     </>

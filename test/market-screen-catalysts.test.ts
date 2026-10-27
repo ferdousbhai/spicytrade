@@ -75,7 +75,7 @@ describe('reviewing a symbol with an empty calendar', () => {
 
     renderMarket('META', [])
 
-    expect(await screen.findByText('Searched — nothing scheduled.')).toBeTruthy()
+    expect(await screen.findByText('Searched. Nothing scheduled.')).toBeTruthy()
     expect(screen.queryByText('Nothing is on the calendar.')).toBeNull()
   })
 
@@ -88,7 +88,7 @@ describe('reviewing a symbol with an empty calendar', () => {
     renderMarket('INTC', [])
 
     expect(await screen.findByText('Nothing is on the calendar.')).toBeTruthy()
-    expect(screen.queryByText('Searched — nothing scheduled.')).toBeNull()
+    expect(screen.queryByText('Searched. Nothing scheduled.')).toBeNull()
   })
 
   it('shows the search running, then failed, each in its own words', async () => {
@@ -100,10 +100,10 @@ describe('reviewing a symbol with an empty calendar', () => {
     renderMarket('SPCX', [])
 
     expect(await screen.findByText('Looking for what’s coming.')).toBeTruthy()
-    expect(screen.queryByText('Searched — nothing scheduled.')).toBeNull()
+    expect(screen.queryByText('Searched. Nothing scheduled.')).toBeNull()
     answer(Response.json({ catalysts: [], ran: false, reason: 'failed' }))
     expect(await screen.findByText('The calendar search didn’t finish.')).toBeTruthy()
-    expect(screen.queryByText('Searched — nothing scheduled.')).toBeNull()
+    expect(screen.queryByText('Searched. Nothing scheduled.')).toBeNull()
   })
 
   it('treats a refresh request that errors as a failed search too', async () => {
@@ -134,7 +134,7 @@ describe('a thin calendar', () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ catalysts: [], ran: true })))
 
     renderMarket('BE', [])
-    await screen.findByText('Searched — nothing scheduled.')
+    await screen.findByText('Searched. Nothing scheduled.')
     expect(screen.queryByRole('button', { name: /search/i })).toBeNull()
   })
 })
@@ -156,7 +156,7 @@ describe('a calendar read that fails', () => {
 
     expect(await screen.findByText('The calendar didn’t load.')).toBeTruthy()
     // A search that bound nothing cannot vouch for a calendar whose other rows never arrived.
-    expect(screen.queryByText('Searched — nothing scheduled.')).toBeNull()
+    expect(screen.queryByText('Searched. Nothing scheduled.')).toBeNull()
 
     readOk = true
     // The failure text renders before React runs the passive effect that attaches the retry's

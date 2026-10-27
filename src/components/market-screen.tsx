@@ -361,7 +361,7 @@ function RunwayEmpty({
       ]
     : confirmedEmpty
     ? [
-        'Searched — nothing scheduled.',
+        'Searched. Nothing scheduled.',
         ` spicytrade just searched for ${symbol}'s ${CATALYST_SCOPE} dates and found none. A re-rating from here would have to come from something unannounced.`,
       ]
     : [

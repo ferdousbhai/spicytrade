@@ -128,7 +128,7 @@ export function GoogleSignInButton(
   const label = submitting
     ? 'Opening Google…'
     : compact
-      ? signInError ? 'Sign-in failed — try again' : 'Sign in'
+      ? signInError ? 'Sign in failed. Try again' : 'Sign in'
       : 'Continue with Google'
   return (
     <>
