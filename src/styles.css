@@ -58,12 +58,13 @@
 
 html { scroll-behavior: smooth; }
 body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-height: 100dvh; }
-.skip-link { position: fixed; z-index: 100; left: 12px; top: -60px; padding: 10px 14px; background: var(--cheap); color: #0b0d08; font-weight: 700; transition: top .2s; }
-.skip-link:focus { top: 12px; }
+/* Parked above the viewport by transform, so revealing it moves no layout. */
+.skip-link { position: fixed; z-index: 100; left: 12px; top: 12px; padding: 8px 12px; background: var(--cheap); color: #0b0d08; font-weight: 600; transform: translateY(-64px); transition: transform .5s var(--ease); }
+.skip-link:focus { transform: none; }
 
 .app-viewport { overflow: clip; }
 .app-shell { position: relative; padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
-.main-content { animation: enter .45s var(--ease) both; }
+.main-content { animation: enter .5s var(--ease) both; }
 .market-state { min-height: 50vh; min-height: 50dvh; padding: 24px var(--page-gutter); display: grid; place-items: center; color: var(--ink-muted); text-align: center; }
 .market-state p { font-size: 15px; }
 .top-bar { padding: calc(20px + env(safe-area-inset-top)) var(--page-gutter) 16px; display: flex; align-items: center; justify-content: space-between; width: 100%; position: relative; z-index: 5; min-height: calc(84px + env(safe-area-inset-top)); gap: 16px; }
@@ -89,13 +90,20 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .last-updated { color: var(--ink-faint); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .top-link { padding: 12px 6px; color: var(--ink-muted); font-size: 13px; font-weight: 400; text-decoration: none; }
 .top-link:hover { color: var(--text); }
+/* Every plain link and control eases its colour on the one curve; zero specificity, so a rule that
+   sets its own transition still wins. */
+:where(a, button, summary, .story, .focus-strip) { transition: color .3s var(--ease), background-color .3s var(--ease), translate .3s var(--ease); }
+:where(.story, .focus-strip, .sort-button, .trade-link):active { translate: 0 1px; }
+.story[data-slot="button"]:hover { background: var(--surface-2); }
+.focus-strip:hover { background: rgba(255, 255, 255, .04); }
 .viewer-avatar { width: 40px; height: 40px; background: var(--brand); }
 .viewer-menu-trigger { border-radius: 50%; cursor: pointer; }
 .viewer-menu-name { display: block; margin-top: 2px; color: var(--text); font-weight: 600; }
 .owner-sign-in { min-height: var(--touch-target); padding: 0 16px; border: 0; font-size: 14px; font-weight: 700; cursor: pointer; border-radius: 22px; }
 .owner-sign-in:disabled { opacity: .62; }
 
-.google-sign-in { width: min(100%, 360px); min-height: 54px; padding: 0 18px; border: 0; display: grid; grid-template-columns: 24px 1fr 24px; align-items: center; background: #f5f5f7; color: #17181b; font-size: 14px; font-weight: 700; cursor: pointer; transition: background .2s ease; }
+.google-sign-in { width: min(100%, 360px); min-height: 54px; padding: 0 18px; border: 0; display: grid; grid-template-columns: 24px 1fr 24px; align-items: center; background: #f5f5f7; color: #17181b; font-size: 14px; font-weight: 700; cursor: pointer; transition: background-color .3s var(--ease), translate .3s var(--ease); }
+.google-sign-in:active:not(:disabled) { translate: 0 1px; }
 .google-sign-in svg { width: 21px; height: 21px; }
 .google-sign-in span { grid-column: 2; }
 .google-sign-in:hover { background: white; }
@@ -189,7 +197,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .runway-detail { margin: 6px 0 0; max-width: 72ch; color: var(--ink-muted); font-size: 13px; line-height: 1.55; }
 .runway-empty { margin: 14px 0 0; max-width: 72ch; color: var(--ink-muted); font-size: 13px; line-height: 1.62; }
 .runway-searching { display: flex; align-items: center; gap: 7px; margin: 12px 0 0; color: var(--ink-muted); font-size: 13px; }
-.runway-searching > span:first-child { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--brand); animation: runway-pulse 1.2s ease-in-out infinite; }
+.runway-searching > span:first-child { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--brand); animation: runway-pulse 1.2s var(--ease) infinite; }
 @keyframes runway-pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
 .runway-empty strong { color: var(--text); }
 
@@ -557,7 +565,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .connect-fold > summary::-webkit-details-marker { display: none; }
 .connect-fold > summary h2 { margin: 0; }
 /* A chevron that turns as the step opens, so a folded step reads as one that opens. */
-.connect-fold > summary::after { content: ""; width: 8px; height: 8px; margin-left: auto; border-right: 1.5px solid var(--ink-muted); border-bottom: 1.5px solid var(--ink-muted); transform: rotate(45deg); transition: transform .15s var(--ease); }
+.connect-fold > summary::after { content: ""; width: 8px; height: 8px; margin-left: auto; border-right: 1.5px solid var(--ink-muted); border-bottom: 1.5px solid var(--ink-muted); transform: rotate(45deg); transition: transform .5s var(--ease); }
 .connect-fold[open] > summary::after { transform: rotate(-135deg); }
 .connect-fold > summary:hover h2 { color: var(--brand); }
 .connect-fold > summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; border-radius: 4px; }
@@ -624,7 +632,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 }
 
 /* The daily brief the spicy-workflow Workflow publishes: its trade lines and theses, one issue at a time. */
-.brief-screen { max-width: 760px; margin-inline: auto; animation: enter .35s var(--ease) both; }
+.brief-screen { max-width: 760px; margin-inline: auto; animation: enter .5s var(--ease) both; }
 .brief-navigation { min-height: 42px; padding: 7px 14px; border-bottom: 1px solid var(--hairline); display: flex; align-items: center; justify-content: space-between; }
 .brief-cover { padding: 24px 22px 18px; border-bottom: 1px solid var(--hairline); }
 .brief-date { font: 600 var(--type-secondary)/1.2 var(--sans); outline: none; }

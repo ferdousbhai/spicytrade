@@ -190,7 +190,7 @@ export function SpiceApp() {
 function PrimaryLink({ icon, label, to }: { icon: ReactNode; label: string; to: AppView }) {
   return (
     <Link
-      className="primary-link inline-flex flex-1 rounded-md items-center justify-center whitespace-nowrap transition-all focus-visible:outline-1 focus-visible:outline-ring [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+      className="primary-link inline-flex flex-1 rounded-md items-center justify-center whitespace-nowrap transition-colors duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] active:translate-y-px focus-visible:outline-1 focus-visible:outline-ring [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
       to={to}
     >
       {icon}
