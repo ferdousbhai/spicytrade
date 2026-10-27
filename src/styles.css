@@ -15,9 +15,11 @@
  */
 :root {
   color-scheme: dark;
-  --bg: #09090b;
-  --surface: #171719;
-  --surface-2: #222225;
+  /* Surfaces step through one neutral dark palette (black, #181818, #1F1F1F, #272727), with no
+     blue or warm tint, so the market colours are the only hue on the page. */
+  --bg: #000000;
+  --surface: #181818;
+  --surface-2: #272727;
   --text: #e6e7ec;
   --ink-muted: #a1a1a8;
   --ink-faint: #93939b;
@@ -498,7 +500,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
   --popover-foreground: var(--text);
   --primary: var(--brand);
   --primary-foreground: var(--bg);
-  --muted: #1f222b;
+  --muted: #1f1f1f;
   --muted-foreground: var(--ink-muted);
   --accent: rgba(255, 255, 255, .08);
   --accent-foreground: var(--text);
