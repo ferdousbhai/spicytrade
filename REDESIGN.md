@@ -75,5 +75,39 @@ ferdousbhai.com repo's `.claude/skills/`). Written before any fix; the fix log i
   material from the owner.
 - Risk reversal copy ("free", "cancel anytime") is a business fact the repo does not state. TODO.
 
-## Fix log
-(filled in as commits land)
+## Fix log (in the skill's fix priority order)
+
+1. **Fonts.** Geist and Geist Mono via `@fontsource-variable`, served from this origin. JetBrains
+   Mono and its unused italic import removed. Markdown emphasis set upright by weight.
+2. **Color.** Surfaces snapped to `#000000`, `#181818`, `#1F1F1F`, `#272727`. The browser theme
+   colour and the manifest follow. IV rank axis gradient kept (decision).
+3. **States.** One easing curve everywhere (300ms colour, 500ms movement). Pressed feedback on
+   stories, the focus strip, sort and trade links, nav links and the Google button. The skip link
+   moves by transform instead of `top`.
+4. **Layout.** All 120 padding, margin and gap declarations in `styles.css` snapped to the spacing
+   scale (expressions inside `calc` and `clamp` left alone). Page gutter is 24px on a phone, 32px
+   wide. Runway connector offset recomputed for the 12px gap. Off-step radii snapped.
+5. **Motion.** Entrance animations at 500ms on the base curve. No scroll reveals: this is a data
+   app, and making price and recommendation rows fade in would delay reading them.
+6. **Components.** Lucide replaced with Phosphor (regular weight; fill marks a pinned star), and
+   `lucide-react` removed.
+7. **States.** Branded not-found page added through the root route's `notFoundComponent`.
+8. **Copy.** Hyphens and dashes removed from our own UI sentences.
+9. **Type.** Sizes snapped down to the Tailwind scale. Exception: multi-line reading text (runway
+   detail, empty calendar note, evidence notes, headline snippets, status lines) stays at 14px,
+   because 12px was too small in the dense desktop rail (checked in screenshots). Buttons are
+   semibold with 12px side padding. Page titles weight 600. Headings use balanced wrapping, body
+   text pretty wrapping.
+
+## Left as is, on purpose
+- Hyphenated names still in use: "Signed-in computers" (also used by the CLI, MCP server errors
+  and the token API) and "Pre-market" (a standard market term, also in server and domain code).
+- Legal page copy (terms, privacy, disclosures): not rewritten.
+- The `--radius` theme value (10px) is the project's own `rounded-lg` and stays.
+- Column dividers and the evidence quote rule use a one-sided hairline. They are layout rules,
+  not card borders.
+- Spinner kept for in-button pending states, which have no layout for a skeleton to stand in for.
+- Drawer swipe physics (vendored shadcn) keep their own curves.
+- Default button size stays at `text-sm` instead of the skill's `text-base`. This is a dense
+  trading UI, and every button there is secondary.
+- Mobile top bar: the status line wraps above Sign in, as it did before.
