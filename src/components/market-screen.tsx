@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import { ArrowDown, ArrowUp, ArrowUpRight, ChevronRight, Search, Star, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpRight, CaretRight, MagnifyingGlass, Star, X } from '@phosphor-icons/react/ssr'
 import { matchSorter } from 'match-sorter'
 
 import { Button } from '#/components/ui/button'
@@ -554,7 +554,7 @@ function PinButton({
       type="button"
       variant="ghost"
     >
-      <Star aria-hidden="true" fill={pinned ? 'currentColor' : 'none'} />
+      <Star aria-hidden="true" weight={pinned ? 'fill' : 'regular'} />
     </Button>
   )
 }
@@ -1003,7 +1003,7 @@ export function MarketScreen({
               {formatIfReported(selected.ivIndex, (iv) => ` · IV ${formatMarketMetric(iv)}%`) ?? ''}
               {selectedCatalyst ? ` · ${catalystLabel(selectedCatalyst, now)}` : ''}
             </span>
-            <ChevronRight aria-hidden="true" />
+            <CaretRight aria-hidden="true" />
           </button>
           <Drawer onOpenChange={setDetailOpen} open={detailOpen} showSwipeHandle>
             <DrawerContent className="focus-sheet">
@@ -1033,7 +1033,7 @@ export function MarketScreen({
         <header className="section-header">
           <h2 className="watchlist-title" id="watch-title">{activeWatchlist.kind === 'public' ? 'Watchlist' : activeWatchlist.name}</h2>
           <div className="watch-search">
-            <Search aria-hidden="true" />
+            <MagnifyingGlass aria-hidden="true" />
             <input
               aria-label="Search all symbols"
               name="symbol-search"

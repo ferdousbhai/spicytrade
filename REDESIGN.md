@@ -55,7 +55,7 @@ ferdousbhai.com repo's `.claude/skills/`). Written before any fix; the fix log i
   Tailwind steps where touched.
 
 ### Iconography
-- lucide-react in `spice-app`, `top-bar`, `market-screen`, `brief-screen`, `catalyst-stories`?,
+- lucide-react in `spice-app`, `top-bar`, `market-screen`, `brief-screen`,
   `ui/spinner`. **Fix:** `@phosphor-icons/react` (new dependency), one weight throughout.
 
 ### Content

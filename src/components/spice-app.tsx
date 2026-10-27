@@ -1,6 +1,6 @@
 import { createContext, lazy, Suspense, useCallback, useContext, type ComponentProps, type ReactNode } from 'react'
 import { Link, Outlet, useMatchRoute, useRouter } from '@tanstack/react-router'
-import { Gauge, Newspaper, Plug } from 'lucide-react'
+import { Gauge, Newspaper, Plug } from '@phosphor-icons/react/ssr'
 
 import { Alert, AlertDescription, AlertTitle } from '#/components/ui/alert'
 import { Button } from '#/components/ui/button'

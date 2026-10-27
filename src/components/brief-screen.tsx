@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { ArrowUpRight, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ArrowUpRight, CaretLeft, CaretRight } from '@phosphor-icons/react/ssr'
 
 import { Alert, AlertDescription, AlertTitle } from '#/components/ui/alert'
 import { Button } from '#/components/ui/button'
@@ -31,11 +31,11 @@ function BriefNavigation({ index, loading, onNewer, onOlder, olderDisabled }: {
         type="button"
         variant="ghost"
       >
-        {loading ? <Spinner data-icon="inline-start" /> : <ChevronLeft data-icon="inline-start" />}
+        {loading ? <Spinner data-icon="inline-start" /> : <CaretLeft data-icon="inline-start" />}
         Previous
       </Button>
       <Button disabled={index === 0 || loading} focusableWhenDisabled onClick={onNewer} size="sm" type="button" variant="ghost">
-        Next<ChevronRight data-icon="inline-end" />
+        Next<CaretRight data-icon="inline-end" />
       </Button>
     </nav>
   )

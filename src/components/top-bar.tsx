@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { LogOut } from 'lucide-react'
+import { SignOut } from '@phosphor-icons/react/ssr'
 
 import { authClient } from '../data/auth-client'
 
@@ -189,7 +189,7 @@ function ViewerMenu({ viewerImage, viewerName }: { viewerImage?: string; viewerN
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem closeOnClick={false} disabled={phase === 'signing-out'} onClick={() => void signOut()}>
-          <LogOut aria-hidden="true" size={14} />
+          <SignOut aria-hidden="true" size={14} />
           {phase === 'signing-out' ? 'Signing out…' : phase === 'failed' ? 'Sign-out failed — try again' : 'Sign out'}
         </DropdownMenuItem>
       </DropdownMenuContent>
