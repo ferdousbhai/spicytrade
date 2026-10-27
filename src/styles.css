@@ -1,13 +1,15 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "./vendor/shadcn-tailwind.css";
-@import "@fontsource-variable/jetbrains-mono/wght.css";
-@import "@fontsource-variable/jetbrains-mono/wght-italic.css";
+/* Geist for every reading, Geist Mono for code samples alone; both bundled from this origin. The
+   interface sets no italics, so neither italic file is imported. */
+@import "@fontsource-variable/geist/wght.css";
+@import "@fontsource-variable/geist-mono/wght.css";
 
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Stocks-inspired reading hierarchy across phone and desktop: system UI text, tabular
+ * Stocks-inspired reading hierarchy across phone and desktop: Geist text, tabular
  * prices, neutral separators, and spicytrade's amber accent. These type and spacing tokens
  * are the product scale; code samples alone retain the terminal font.
  */
@@ -35,13 +37,13 @@
   /* Direction of a move, distinct from the premium trio: a price up is not a premium cheap. */
   --up: #5fd08a;
   --down: #d8636f;
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --page-gutter: 20px;
   --type-body: 1.0625rem;
   --type-secondary: .9375rem;
   --type-caption: .8125rem;
   --touch-target: 44px;
-  --mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
   --axis-gradient: linear-gradient(90deg, var(--cheap), #d7d26d 49%, var(--rich));
   --ease: cubic-bezier(.22, 1, .36, 1);
   font-family: var(--sans);
@@ -649,6 +651,8 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .thesis p { margin: 0 0 10px; white-space: pre-line; }
 .thesis > :last-child { margin-bottom: 0; }
 .thesis strong { color: var(--text); }
+/* Markdown emphasis reads by weight, not slant: the interface sets no italics. */
+.thesis em { font-style: normal; font-weight: 500; color: var(--ink-soft); }
 .thesis ul, .thesis ol { margin: 0 0 10px; padding-left: 1.3em; }
 /* Tailwind's preflight strips list markers, and a thesis list is content, not navigation. */
 .thesis ul { list-style: disc; }
