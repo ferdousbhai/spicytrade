@@ -91,6 +91,22 @@ export function dailyBriefId(marketDate: string): string {
   return `brief-${marketDate}`
 }
 
+/**
+ * The newest recommendation a published brief made for one name, with the market date of that
+ * brief: a thesis is argued on its morning, so it never reaches a reader without the day it was
+ * argued on.
+ */
+export const DatedRecommendationSchema = z.strictObject({
+  marketDate: IsoDateSchema,
+  recommendation: BriefRecommendationSchema,
+})
+
+/** `null` is a name no brief has recommended, distinct from a read that failed. */
+export const SymbolRecommendationResponseSchema = z.strictObject({
+  recommendation: DatedRecommendationSchema.nullable(),
+})
+
+export type DatedRecommendation = z.infer<typeof DatedRecommendationSchema>
 export type BriefRecommendation = z.infer<typeof BriefRecommendationSchema>
 export type DailyBriefSubmission = z.infer<typeof DailyBriefSubmissionSchema>
 export type DailyBrief = z.infer<typeof DailyBriefSchema>

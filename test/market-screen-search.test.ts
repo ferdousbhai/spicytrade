@@ -85,8 +85,10 @@ describe('searching beyond the loaded watchlist', () => {
       }
       if (url.startsWith('/api/public-catalysts')) return Response.json({ catalysts: [] })
       if (url.startsWith('/api/public-year-candles')) return Response.json({ series: [] })
-      // The focus card asks for the selected symbol's evidence cards for the same reason.
+      // The focus card asks for the selected symbol's evidence cards and latest recommendation
+      // for the same reason.
       if (url.startsWith('/api/public-symbol-evidence')) return Response.json({ evidence: [] })
+      if (url.startsWith('/api/public-symbol-recommendation')) return Response.json({ recommendation: null })
       lookupRequests.push(url)
       return Response.json({
         catalysts: [],

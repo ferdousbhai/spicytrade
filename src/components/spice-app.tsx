@@ -13,7 +13,7 @@ import { useLiveMarket } from '../data/live-market'
 import { useAudienceMarket } from '../data/use-audience-market'
 import { useWorkspaceFavorites } from '../data/use-workspace-favorites'
 import { type Viewer, useViewer } from './auth-gate'
-import { MarketScreen } from './market-screen'
+import { FULL_TAPE_LENGTH, MarketScreen, tapeColumnsStyle } from './market-screen'
 import { LegalLinks } from './site-page'
 import { TopBar } from './top-bar'
 import { type AppView, useWebMcpTools } from './webmcp-tools'
@@ -298,7 +298,7 @@ export function ConnectView() {
       </Suspense>
       {/* The top bar has no room for these on a phone, so the view about the reader's own
           account carries them for every width. */}
-      <nav aria-label="Legal and support" className="connect-footer">
+      <nav aria-label="Legal and support" className="connect-footer app-footer">
         <LegalLinks />
       </nav>
     </>
@@ -324,8 +324,9 @@ function PageSkeleton({ view }: { view: 'brief' | 'watch' }) {
                   <Skeleton className="skeleton-price" />
                   <Skeleton className="skeleton-gauge" />
                 </div>
-                <div className="skeleton-main">
-                  {[0, 1, 2, 3].map((line) => <Skeleton className="skeleton-line" key={line} />)}
+                {/* The loaded card's metric band, laid out as the card lays out a full tape. */}
+                <div className="skeleton-main" style={tapeColumnsStyle(FULL_TAPE_LENGTH)}>
+                  {Array.from({ length: FULL_TAPE_LENGTH }, (_, metric) => <Skeleton className="skeleton-metric" key={metric} />)}
                 </div>
               </div>
               <div className="skeleton-rows" aria-hidden="true">

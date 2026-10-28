@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
 import { cleanup, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { type SymbolEvidence } from '../src/domain/symbol-evidence'
-import { renderMarketScreen } from './fixtures/render-market-screen'
+import { renderMarketScreen, stubFocusCardFetch } from './fixtures/render-market-screen'
 
 afterEach(() => {
   cleanup()
@@ -24,13 +24,8 @@ function card(overrides: Partial<SymbolEvidence> = {}): SymbolEvidence {
   }
 }
 
-/** Answers every request the focus card makes: the evidence read, and the catalyst read and search. */
 function stubFetch(evidence: readonly SymbolEvidence[]): void {
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (
-    String(input).startsWith('/api/public-symbol-evidence')
-      ? Response.json({ evidence })
-      : Response.json({ catalysts: [], ran: false })
-  )))
+  stubFocusCardFetch({ '/api/public-symbol-evidence': () => Response.json({ evidence }) })
 }
 
 describe('evidence recorded under the selected symbol', () => {
@@ -47,17 +42,13 @@ describe('evidence recorded under the selected symbol', () => {
     expect(source.getAttribute('href')).toBe('https://www.reuters.com/technology/nvidia-supply')
     expect(source.getAttribute('target')).toBe('_blank')
     expect(source.getAttribute('rel')).toBe('noreferrer')
-    // The wide layout puts evidence in the main column only because it shares the reading
-    // wrapper; outside it, evidence would land in the rail under the runway instead.
-    expect(document.querySelector('.focus-reading > .focus-evidence')).not.toBeNull()
+    // The wide layout flows evidence with the rest of the reading only because it shares the
+    // flow wrapper; outside it, evidence would fall out of the balanced columns.
+    expect(document.querySelector('.focus-flow > .focus-evidence')).not.toBeNull()
   })
 
   it('says the evidence is unavailable when the read fails, rather than passing for an empty name', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (
-      String(input).startsWith('/api/public-symbol-evidence')
-        ? new Response('{}', { status: 503 })
-        : Response.json({ catalysts: [], ran: false })
-    )))
+    stubFocusCardFetch({ '/api/public-symbol-evidence': () => new Response('{}', { status: 503 }) })
 
     renderMarketScreen({ symbol: 'NVDA' })
 

@@ -5,8 +5,10 @@ import {
   DailyBriefSchema,
   DailyBriefSubmissionSchema,
   type DailyBrief,
+  type DatedRecommendation,
   type DailyBriefSubmission,
 } from '../domain/brief'
+import { EquitySymbolSchema } from '../domain/instrument'
 import { IsoDateSchema } from '../domain/iso-date'
 
 const StoredRowSchema = z.object({ payload_json: z.string() })
@@ -37,6 +39,35 @@ export async function readDailyBriefBefore(db: D1Database, marketDateBefore: str
     'SELECT payload_json FROM daily_briefs WHERE id < ? ORDER BY id DESC LIMIT 1',
   ).bind(dailyBriefId(IsoDateSchema.parse(marketDateBefore))).first<StoredRow>()
   return row ? parseStored(row) : undefined
+}
+
+/**
+ * The newest brief, by market date, that recommended this symbol, and that recommendation, or
+ * `null` when none has. The SQL match only selects the row; the whole brief is re-parsed and the
+ * recommendation picked from the parsed contract, so a payload that matched in JSON but fails the
+ * schema, or parses without that recommendation, throws here.
+ *
+ * A symbol no brief names reads every row: one per market date, so a year is a few hundred
+ * payloads. The route's edge cache bounds how often that runs; a derived (symbol, date) index
+ * written at publish is the step up if the archive outgrows it.
+ */
+export async function readLatestRecommendation(db: D1Database, symbol: string): Promise<DatedRecommendation | null> {
+  const wanted = EquitySymbolSchema.parse(symbol)
+  const row = await db.prepare(
+    `SELECT payload_json FROM daily_briefs
+     WHERE EXISTS (
+       SELECT 1 FROM json_each(payload_json, '$.recommendations')
+       WHERE json_extract(value, '$.symbol') = ?
+     )
+     ORDER BY id DESC LIMIT 1`,
+  ).bind(wanted).first<StoredRow>()
+  if (!row) return null
+  const brief = parseStored(row)
+  const recommendation = brief.recommendations.find((candidate) => candidate.symbol === wanted)
+  // The row was selected for naming this symbol, so a parsed brief without it is stored data the
+  // SQL and the schema read differently: that is a failure, not a name never recommended.
+  if (!recommendation) throw new Error('Stored brief names the symbol only outside its parsed recommendations')
+  return { marketDate: brief.marketDate, recommendation }
 }
 
 /**

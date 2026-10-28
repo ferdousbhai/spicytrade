@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { memo, useCallback, useMemo, useState, useSyncExternalStore, type CSSProperties } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpRight, CaretRight, MagnifyingGlass, Star, X } from '@phosphor-icons/react/ssr'
 import { matchSorter } from 'match-sorter'
 
@@ -18,7 +18,7 @@ import {
 import { equitySymbolFromModelText } from '../domain/instrument'
 import { RecommendationCard } from './brief-card'
 import { cn } from '#/lib/utils'
-import { type DailyBrief } from '../domain/brief'
+import { type DailyBrief, type DatedRecommendation } from '../domain/brief'
 import { latestSessionCandles, REGULAR_SESSION_MS, type CandlePoint } from '../domain/candle'
 import {
   CATALYST_KIND_NAMES,
@@ -46,16 +46,17 @@ import {
   type Watchlist,
 } from '../domain/market'
 import { sourceHost } from '../domain/https-url'
-import { type SymbolEvidence } from '../domain/symbol-evidence'
 import { useCatalystSearch } from '../data/catalyst-refresh'
 import { usePublicCatalysts } from '../data/public-catalysts'
 import { loadSymbolEvidence } from '../data/symbol-evidence'
+import { loadSymbolRecommendation } from '../data/symbol-recommendation'
+import { useSymbolRead } from '../data/symbol-read'
+import { Disclaimer } from './disclaimer'
 import { useYearCandles } from '../data/year-candles'
 import { useSymbolSearch, type SymbolSearchState } from '../data/symbol-search'
 import { CatalystStories } from './catalyst-stories'
 import { formatCalendarDay, nyDate } from './ny-time'
 import { compactElapsedLabel, useElapsedLabel } from './top-bar'
-import { useRetryOnFocus } from '../data/retry-on-focus'
 
 const verdictCopy = {
   cheap: 'Cheap',
@@ -295,22 +296,41 @@ function liquidityLabel(ticker: Pick<Ticker, 'liquidity'>): string | undefined {
   return formatIfReported(ticker.liquidity, (liquidity) => `${formatMarketMetric(liquidity)}/5`)
 }
 
+/**
+ * The wide card sets its metrics in two rows beside the instrument, which two rows match in
+ * height; the stylesheet spreads them over as many columns as that takes, down to a minimum width.
+ */
+const FOCUS_TAPE_ROWS = 2
+
+export function tapeColumnsStyle(count: number): CSSProperties {
+  // SAFETY: a custom property is a valid style key the CSSProperties type does not enumerate.
+  return { '--tape-columns': Math.ceil(count / FOCUS_TAPE_ROWS) } as CSSProperties
+}
+
+/** Every metric the card can show, in reading order; a name shows the ones its provider reports. */
+const FOCUS_TAPE: ReadonlyArray<[label: string, read: (ticker: Ticker) => string | undefined]> = [
+  ['IV', (ticker) => formatIfReported(ticker.ivIndex, (iv) => `${formatMarketMetric(iv)}%`)],
+  ['HV30', (ticker) => formatIfReported(ticker.historicalVolatility30Day, (hv) => `${formatMarketMetric(hv)}%`)],
+  ['IV−HV', (ticker) => formatIfReported(ticker.ivHistoricalVolatility30DayDifference, (gap) => formatSignedMetric(gap, ' pts'))],
+  ['5d', (ticker) => formatIfReported(ticker.ivIndex5DayChange, (change) => formatSignedMetric(change, ' pts'))],
+  ['Rank', (ticker) => formatIfReported(ticker.ivRank, formatMarketMetric)],
+  ['Pct', (ticker) => formatIfReported(ticker.ivPercentile, formatMarketMetric)],
+  ['Term', (ticker) => formatIfReported(ticker.ivTermStructure, termStructureLabel)],
+  ['Liq', liquidityLabel],
+  ['Lend', (ticker) => ticker.lendability],
+  ['Vol', (ticker) => formatIfReported(ticker.volume, compactMetric)],
+  ['Cap', (ticker) => formatIfReported(ticker.marketCap, (cap) => compactMetric(cap, '$'))],
+  ['52w', yearRangeLabel],
+]
+
+/** The loading outline draws a full tape, so the loaded card can only be shorter, never jump. */
+export const FULL_TAPE_LENGTH = FOCUS_TAPE.length
+
 function focusTape(ticker: Ticker): Array<[label: string, value: string]> {
-  const reported: Array<[label: string, value: string | undefined]> = [
-    ['IV', formatIfReported(ticker.ivIndex, (iv) => `${formatMarketMetric(iv)}%`)],
-    ['HV30', formatIfReported(ticker.historicalVolatility30Day, (hv) => `${formatMarketMetric(hv)}%`)],
-    ['IV−HV', formatIfReported(ticker.ivHistoricalVolatility30DayDifference, (gap) => formatSignedMetric(gap, ' pts'))],
-    ['5d', formatIfReported(ticker.ivIndex5DayChange, (change) => formatSignedMetric(change, ' pts'))],
-    ['Rank', formatIfReported(ticker.ivRank, formatMarketMetric)],
-    ['Pct', formatIfReported(ticker.ivPercentile, formatMarketMetric)],
-    ['Term', formatIfReported(ticker.ivTermStructure, termStructureLabel)],
-    ['Liq', liquidityLabel(ticker)],
-    ['Lend', ticker.lendability],
-    ['Vol', formatIfReported(ticker.volume, compactMetric)],
-    ['Cap', formatIfReported(ticker.marketCap, (cap) => compactMetric(cap, '$'))],
-    ['52w', yearRangeLabel(ticker)],
-  ]
-  return reported.filter((entry): entry is [label: string, value: string] => entry[1] !== undefined)
+  return FOCUS_TAPE.flatMap<[label: string, value: string]>(([label, read]) => {
+    const value = read(ticker)
+    return value === undefined ? [] : [[label, value]]
+  })
 }
 
 /** The table's empty state and the status line above a partial list say the same thing. */
@@ -468,45 +488,58 @@ function CatalystRunway({
   )
 }
 
+/** One recommendation under the date of the brief that argued it, closed by the disclaimer. */
+function RecommendationSection({ dated }: { dated: DatedRecommendation }) {
+  return (
+    <section aria-labelledby="focus-recommendation-title" className="focus-recommendation">
+      <header className="focus-eyebrow">
+        <h3 id="focus-recommendation-title">
+          Recommendation <time dateTime={dated.marketDate}>{formatCalendarDay(dated.marketDate)}</time>
+        </h3>
+      </header>
+      <RecommendationCard recommendation={dated.recommendation} />
+      <Disclaimer className="focus-disclaimer" />
+    </section>
+  )
+}
+
+/**
+ * The newest recommendation the archive holds for a name the standing brief does not argue. A
+ * thesis from an earlier morning is still the latest argued view of it, and the date in its heading
+ * keeps it from passing for today's. A name no brief has recommended renders nothing, and a failed
+ * read says so in one muted line.
+ */
+function ArchivedRecommendation({ symbol }: { symbol: string }) {
+  const read = useSymbolRead(symbol, loadSymbolRecommendation)
+  if (read.status === 'failed') {
+    return (
+      <section className="focus-recommendation" aria-label="Recommendation">
+        <p className="evidence-unavailable">Recommendation unavailable</p>
+      </section>
+    )
+  }
+  return read.status === 'ready' && read.value ? <RecommendationSection dated={read.value} /> : null
+}
+
 /**
  * What members' agents have quoted under this name.
  *
  * Every card is a passage the server re-read on the page it cites, so the quote is the source's
  * own words; the note beside it is the recorder's reading and is labelled as theirs. Nothing
  * renders when nothing has been recorded: an empty state here would explain a surface a reader
- * has no way to fill, and the runway already says what is known about the name.
+ * has no way to fill, and the runway already says what is known about the name. A failed read is
+ * not a name nothing has been recorded under, so it says so in one muted line.
  */
 function EvidenceCards({ symbol }: { symbol: string }) {
-  // The answer carries the symbol it answers, so the cards of the name a reader just left can
-  // never stand under the one they moved to while its own request is still in flight.
-  const [answer, setAnswer] = useState<
-    { cards: readonly SymbolEvidence[]; symbol: string } | { failed: true; symbol: string }
-  >()
-  const [attempt, setAttempt] = useState(0)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    loadSymbolEvidence(symbol, controller.signal)
-      .then((cards) => { if (!controller.signal.aborted) setAnswer({ cards, symbol }) })
-      // A read that failed is not a name nothing has been recorded under, so it says so in one
-      // muted line instead of passing for the empty case, which renders nothing.
-      .catch(() => { if (!controller.signal.aborted) setAnswer({ failed: true, symbol }) })
-    return () => controller.abort()
-  }, [attempt, symbol])
-
-  const current = answer?.symbol === symbol ? answer : undefined
-  const failed = current !== undefined && 'failed' in current
-  // A failed read is asked again when the window regains focus, as the calendar and year series
-  // are; a mounted card otherwise kept its failure for as long as the symbol stayed selected.
-  useRetryOnFocus(failed, () => setAttempt((count) => count + 1))
-  if (failed) {
+  const read = useSymbolRead(symbol, loadSymbolEvidence)
+  if (read.status === 'failed') {
     return (
       <section className="focus-evidence" aria-label="Evidence">
         <p className="evidence-unavailable">Evidence unavailable</p>
       </section>
     )
   }
-  const cards = current?.cards ?? []
+  const cards = read.status === 'ready' ? read.value : []
   if (!cards.length) return null
   return (
     <section className="focus-evidence" aria-labelledby="focus-evidence-title">
@@ -885,7 +918,7 @@ export function MarketScreen({
   const selectedVerdict = volatilityVerdict(selected)
   const selectedCopy = verdictCopy[selectedVerdict]
   const selectedAsset = assetLabel(selected)
-  const selectedRecommendation = brief?.recommendations.find((recommendation) => recommendation.symbol === selected.symbol)
+  const briefRecommendation = brief?.recommendations.find((recommendation) => recommendation.symbol === selected.symbol)
   const selectedTape = focusTape(selected)
   // Two ages, because they are two facts: the quote moves with the market, while the provider
   // recomputes volatility and liquidity on its own schedule and can leave them hours behind.
@@ -919,43 +952,43 @@ export function MarketScreen({
           </div>
         </CardHeader>
         <CardContent className="focus-narrative">
-          {/* What a reader reads, then the numbers under it: one column dissolves this wrapper into
-              the narrative grid, and the wide layout makes it the main column beside the rail
-              (see .instrument-focus in styles.css). */}
-          <div className="focus-reading">
-            {selectedRecommendation && (
-              <section aria-labelledby="focus-recommendation-title" className="focus-recommendation">
-                <header className="focus-eyebrow"><h3 id="focus-recommendation-title">Recommendation</h3></header>
-                <RecommendationCard recommendation={selectedRecommendation} />
-              </section>
-            )}
+          {/* What a reader reads, in reading order: the recommendation, what is coming, then the
+              evidence, flowed through as many balanced columns as the width holds (see .focus-flow
+              in styles.css). One column stacks it above the numbers; the wide layout puts the
+              numbers in a band beside the instrument instead. */}
+          <div className="focus-flow">
+            {/* The standing brief is the newest in the archive (the screen mounts only with the
+                snapshot that carries it), so a name it argues needs no archive read. */}
+            {brief && briefRecommendation
+              ? <RecommendationSection dated={{ marketDate: brief.marketDate, recommendation: briefRecommendation }} />
+              : <ArchivedRecommendation symbol={selected.symbol} />}
+            <CatalystRunway
+              catalysts={visibleCatalysts}
+              confirmedEmpty={catalystSearch.confirmedEmpty}
+              failed={catalystSearch.failed}
+              now={now}
+              readFailed={focusedRead.failed}
+              searching={catalystSearch.searching}
+              symbol={selected.symbol}
+            />
             <EvidenceCards symbol={selected.symbol} />
-            <section aria-label={`${selected.symbol} metrics`} className="focus-metrics">
-              <dl className="focus-tape">
-                {selectedTape.map(([label, value]) => (
-                  <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
-                ))}
-              </dl>
-              <p className="focus-freshness">
-                <span>Quote <time dateTime={selected.updatedAt}>{quoteAge}</time></span>
-                <span>
-                  {'IV & liquidity '}
-                  {selected.metricsUpdatedAt
-                    ? <time dateTime={selected.metricsUpdatedAt}>{metricsAge}</time>
-                    : 'age not reported'}
-                </span>
-              </p>
-            </section>
           </div>
-          <CatalystRunway
-            catalysts={visibleCatalysts}
-            confirmedEmpty={catalystSearch.confirmedEmpty}
-            failed={catalystSearch.failed}
-            now={now}
-            readFailed={focusedRead.failed}
-            searching={catalystSearch.searching}
-            symbol={selected.symbol}
-          />
+          <section aria-label={`${selected.symbol} metrics`} className="focus-metrics">
+            <dl className="focus-tape" style={tapeColumnsStyle(selectedTape.length)}>
+              {selectedTape.map(([label, value]) => (
+                <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
+              ))}
+            </dl>
+            <p className="focus-freshness">
+              <span>Quote <time dateTime={selected.updatedAt}>{quoteAge}</time></span>
+              <span>
+                {'IV & liquidity '}
+                {selected.metricsUpdatedAt
+                  ? <time dateTime={selected.metricsUpdatedAt}>{metricsAge}</time>
+                  : 'age not reported'}
+              </span>
+            </p>
+          </section>
         </CardContent>
       </Card>
   )

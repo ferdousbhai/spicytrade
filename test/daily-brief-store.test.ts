@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { publishDailyBrief, readDailyBriefBefore, readLatestDailyBrief } from '../src/server/daily-brief-store'
+import { publishDailyBrief, readDailyBriefBefore, readLatestDailyBrief, readLatestRecommendation } from '../src/server/daily-brief-store'
 import { dailyBriefFixture } from './fixtures/market'
 import { migrationStore } from './sqlite-d1'
 
@@ -75,6 +75,21 @@ describe('daily brief store', () => {
       'INSERT INTO daily_briefs (id, published_at, payload_json) VALUES (?, ?, ?)',
     ).run('brief-2026-08-13', '2026-08-13T13:35:00.000Z', JSON.stringify({ id: 'brief-2026-08-13', ideas: [] }))
     await expect(readLatestDailyBrief(store.database)).rejects.toThrow()
+    store.close()
+  })
+
+  it('finds the newest market date that recommended a symbol, dated by that brief', async () => {
+    const store = await migrationStore()
+    const [nvda] = submission.recommendations
+    await publishDailyBrief(store.database, { ...submission, marketDate: '2026-08-11', recommendations: [{ ...nvda!, trade: 'Older NVDA trade' }] })
+    await publishDailyBrief(store.database, { ...submission, marketDate: '2026-08-12' })
+    // The newest brief argues a different name, so NVDA's latest view is a day older.
+    await publishDailyBrief(store.database, { ...submission, recommendations: [{ ...nvda!, symbol: 'AMD', trade: 'Buy AMD' }] })
+
+    await expect(readLatestRecommendation(store.database, 'NVDA')).resolves.toEqual({ marketDate: '2026-08-12', recommendation: nvda })
+    await expect(readLatestRecommendation(store.database, 'AMD')).resolves.toMatchObject({ marketDate: '2026-08-13' })
+    await expect(readLatestRecommendation(store.database, 'SPY')).resolves.toBeNull()
+    await expect(readLatestRecommendation(store.database, 'not a symbol')).rejects.toThrow()
     store.close()
   })
 })

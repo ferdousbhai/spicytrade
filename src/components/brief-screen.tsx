@@ -8,6 +8,7 @@ import { loadPreviousDailyBrief } from '../data/brief-archive'
 import { type DailyBrief } from '../domain/brief'
 import { marketDate } from '../domain/catalyst'
 import { RecommendationCard } from './brief-card'
+import { Disclaimer } from './disclaimer'
 import { formatCalendarDay, nyDateTime, nyTime } from './ny-time'
 
 function BriefNavigation({ index, loading, onNewer, onOlder, olderDisabled }: {
@@ -101,12 +102,8 @@ function BriefIssue({ brief, focusTarget, onSymbol }: {
           </ol>
         </section>
       )}
-      {/* Said once, at the foot of the brief, in the same quiet row Connect uses for its legal
-          links; the Disclosures page is where it is said in full. */}
-      <footer className="connect-footer brief-footer">
-        <span>Not financial advice.</span>
-        <a href="/disclosures">Disclosures</a>
-      </footer>
+      {/* Said once, at the foot of the brief. */}
+      <Disclaimer className="brief-footer" />
     </>
   )
 }
