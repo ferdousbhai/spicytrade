@@ -12,9 +12,10 @@ import { STORAGE_PURGE_COOKIE } from '../src/domain/storage-purge'
 
 describe('document response', () => {
   const html = () => new Response('<!doctype html>', { headers: { 'content-type': 'text/html; charset=utf-8' } })
+  const nonce = 'test-nonce'
 
   it('asks a browser without the receipt to purge its storage, and leaves it a receipt', () => {
-    const response = finalizeDocumentResponse(new Request('https://spicy.trade/'), html())
+    const response = finalizeDocumentResponse(new Request('https://spicy.trade/'), html(), nonce)
     expect(response.headers.get('cache-control')).toBe('no-cache')
     expect(response.headers.get(SPICE_DEPLOYMENT_ID_HEADER)).toBe('test')
     expect(response.headers.get('clear-site-data')).toBe('"cache", "storage"')
@@ -25,6 +26,7 @@ describe('document response', () => {
     const response = finalizeDocumentResponse(
       new Request('https://spicy.trade/', { headers: { cookie: `session=abc; ${STORAGE_PURGE_COOKIE}=1` } }),
       html(),
+      nonce,
     )
     expect(response.headers.get('cache-control')).toBe('no-cache')
     expect(response.headers.has('clear-site-data')).toBe(false)
@@ -35,18 +37,19 @@ describe('document response', () => {
     const response = finalizeDocumentResponse(
       new Request('https://spicy.trade/', { headers: { cookie: `${STORAGE_PURGE_COOKIE}=0` } }),
       html(),
+      nonce,
     )
     expect(response.headers.get('clear-site-data')).toBe('"cache", "storage"')
   })
 
   it('leaves the Secure attribute off the receipt where the local dev server could not set it', () => {
-    const response = finalizeDocumentResponse(new Request('http://localhost:3000/'), html())
+    const response = finalizeDocumentResponse(new Request('http://localhost:3000/'), html(), nonce)
     expect(response.headers.get('set-cookie')).toBe(`${STORAGE_PURGE_COOKIE}=1; Max-Age=31536000; Path=/; SameSite=Lax`)
   })
 
   it('touches nothing but documents', () => {
     const json = new Response('{}', { headers: { 'content-type': 'application/json' } })
-    const response = finalizeDocumentResponse(new Request('https://spicy.trade/api/viewer'), json)
+    const response = finalizeDocumentResponse(new Request('https://spicy.trade/api/viewer'), json, nonce)
     expect(response).toBe(json)
     expect(response.headers.has('clear-site-data')).toBe(false)
   })

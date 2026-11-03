@@ -61,10 +61,13 @@ const STORAGE_PURGE_COOKIE_MAX_AGE_S = 365 * 24 * 60 * 60
  * credentials never carries the receipt and is purged again on purpose: that is how the old
  * worker refreshed its shell, and a purge it triggers itself is the best outcome available.
  * The guard clears the receipt before its own reload for the same reason.
+ *
+ * `nonce` is the one the router stamped on this document's scripts (see `router.tsx`); the
+ * policy runs nothing inline without it.
  */
-export function finalizeDocumentResponse(request: Request, response: Response): Response {
+export function finalizeDocumentResponse(request: Request, response: Response, nonce: string): Response {
   if (!response.headers.get('content-type')?.includes('text/html')) return response
-  response = secureDocument(response)
+  response = secureDocument(response, nonce)
   const headers = new Headers(response.headers)
   headers.set('Cache-Control', 'no-cache')
   headers.set(SPICE_DEPLOYMENT_ID_HEADER, SPICE_DEPLOYMENT_ID)

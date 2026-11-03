@@ -3,6 +3,7 @@ import handler from '@tanstack/react-start/server-entry'
 import { handleWellKnownDiscovery } from './server/auth'
 import { type AppEnv } from './server/env'
 import { finalizeDocumentResponse } from './server/http'
+import { createNonce } from './server/security-headers'
 import { mcpEndpointRedirect } from './server/mcp-endpoint-redirect'
 import { injectWatchSummary, isWatchDocument, readPublicSnapshotForDocument } from './server/watch-summary'
 import { configureTypeboxRuntime } from './server/typebox-runtime'
@@ -51,12 +52,15 @@ export default {
     // redirect it answers with needs nothing from that graph either.
     const misdirected = await mcpEndpointRedirect(request)
     if (misdirected) return misdirected
+    // One nonce per request: the router stamps it on every script it writes (`router.tsx`), and
+    // the document's policy names it, so nothing else inline can run.
+    const nonce = createNonce()
     // `/watch` is client-rendered; the server writes a plain reading of the public snapshot into
     // the shell's placeholder so a crawler, a link preview, or a reader without JavaScript sees
     // the market rather than an empty page. Read alongside the render, never ahead of it.
     if (request.method === 'GET' && isWatchDocument(url.pathname)) {
       const [document, snapshot] = await Promise.all([
-        handler.fetch(request),
+        handler.fetch(request, { context: { nonce } }),
         readPublicSnapshotForDocument(request, async (snapshotRequest) => {
           const { edgeCache, servePublicSnapshot } = await publicSnapshotCache()
           const read = servePublicSnapshot(snapshotRequest, env, edgeCache(), (work) => ctx.waitUntil(work))
@@ -66,9 +70,9 @@ export default {
           return read
         }),
       ])
-      return finalizeDocumentResponse(request, injectWatchSummary(document, snapshot))
+      return finalizeDocumentResponse(request, injectWatchSummary(document, snapshot), nonce)
     }
-    return finalizeDocumentResponse(request, await handler.fetch(request))
+    return finalizeDocumentResponse(request, await handler.fetch(request, { context: { nonce } }), nonce)
   },
   scheduled(controller: ScheduledController, env: AppEnv, context: ExecutionContext) {
     const scheduledAt = new Date(controller.scheduledTime)

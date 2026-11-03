@@ -1,4 +1,4 @@
-import { HeadContent, Link, Scripts, createRootRoute } from '@tanstack/react-router'
+import { HeadContent, Link, Scripts, createRootRoute, useRouter } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 
 import { SitePage } from '#/components/site-page'
@@ -93,11 +93,15 @@ function NotFoundPage() {
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  // The document CSP runs no inline script without this request's nonce (`security-headers.ts`).
+  // The browser hides a script's nonce from the DOM once parsed, so hydration would read it as
+  // empty and report a mismatch; the tag itself never changes on the client.
+  const nonce = useRouter().options.ssr?.nonce
   return (
     <html className="dark" lang="en">
       <head>
         <HeadContent />
-        <script dangerouslySetInnerHTML={{ __html: bootRecoveryScript() }} />
+        <script dangerouslySetInnerHTML={{ __html: bootRecoveryScript() }} nonce={nonce} suppressHydrationWarning />
       </head>
       <body>
         <TooltipProvider>{children}</TooltipProvider>
