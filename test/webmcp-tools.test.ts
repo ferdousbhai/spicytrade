@@ -54,6 +54,15 @@ describe('WebMCP tools', () => {
     expect(registered.every(({ options }) => options?.signal?.aborted)).toBe(true)
   })
 
+  it('answers the brief in the MCP server\'s shape, and refuses before the snapshot lands', async () => {
+    await expect(mount().call('read_daily_brief', {})).resolves.toEqual({
+      brief: dailyBriefFixture, fetchedAt: '2026-08-28T12:00:00.000Z', source: 'spice-brief-store', status: 'ok',
+    })
+    await expect(mount({ brief: undefined }).call('read_daily_brief', {})).resolves.toMatchObject({ status: 'not_found' })
+    await expect(mount({ brief: undefined, syncedAt: undefined }).call('read_daily_brief', {}))
+      .rejects.toThrow('The market snapshot has not loaded yet.')
+  })
+
   it('reads the favorites as shown, without the sparkline', async () => {
     const { call } = mount()
     const result = await call('read_market', { favoritesOnly: true })

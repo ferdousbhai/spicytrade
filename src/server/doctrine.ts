@@ -158,8 +158,8 @@ What is not obvious from the tool list:
   re-reads each cited page and refuses anything absent from that text; a repeat refreshes what
   is stored rather than duplicating it.
 - \`read_daily_brief\` is the standing brief: the day's trade lines, theses and links, as the
-  site shows them. It is prior work argued here, not a current read of anything, and nothing on
-  this server writes one.
+  site shows them, or with a before date the earlier one. It is prior work argued here, not a
+  current read of anything, and nothing on this server writes one.
 
 \`evaluate_trade_idea\` and, once signed in, \`portfolio_review\` are registered prompts the user
 invokes. If a question is really one of those, say the workflow exists.

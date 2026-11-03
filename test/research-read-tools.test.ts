@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { CATALYST_HORIZON_DAYS } from '../src/domain/catalyst'
 import { addDays } from '../src/domain/iso-date'
 import { persistResearchCatalysts, readUpcomingCatalysts } from '../src/server/catalysts'
-import { readCatalysts } from '../src/server/research-read-tools'
+import { publishDailyBrief } from '../src/server/daily-brief-store'
+import { createResearchReadTools, readCatalysts } from '../src/server/research-read-tools'
+import { dailyBriefFixture } from './fixtures/market'
 import { unsupportedDatabase, unsupportedStatement } from './fake-d1'
 import { migrationStore } from './sqlite-d1'
 
@@ -163,5 +165,28 @@ describe('research read tools', () => {
 
     expect(result.horizonDays).toBe(CATALYST_HORIZON_DAYS)
     expect(db.bind).toHaveBeenCalledWith('NVDA', '2026-08-13', '2027-02-09', 61)
+  })
+})
+
+describe('read_daily_brief', () => {
+  const { id: _id, publishedAt: _publishedAt, ...submission } = dailyBriefFixture
+
+  it('reads the standing brief, and with before the archive neighbour the site links to', async () => {
+    const store = await migrationStore()
+    try {
+      await publishDailyBrief(store.database, { ...submission, marketDate: '2026-08-12' }, new Date('2026-08-12T13:35:00.000Z'))
+      await publishDailyBrief(store.database, submission, new Date('2026-08-13T13:35:00.000Z'))
+      const tool = createResearchReadTools({ DB: store.database }).find((candidate) => candidate.name === 'read_daily_brief')!
+      // SAFETY: each call below passes the parameters the tool's schema declares, or a date its
+      // pattern admits so the calendar check is what refuses it.
+      const read = async (params: { before?: string }) => JSON.parse((await tool.execute(params as never)).content[0]!.text)
+
+      expect((await read({})).brief.id).toBe('brief-2026-08-13')
+      expect((await read({ before: '2026-08-13' })).brief.id).toBe('brief-2026-08-12')
+      expect(await read({ before: '2026-08-12' })).toMatchObject({ status: 'not_found' })
+      await expect(read({ before: '2026-02-30' })).rejects.toThrow('Brief date is invalid.')
+    } finally {
+      store.close()
+    }
   })
 })

@@ -5,14 +5,14 @@ import { z } from 'zod'
 import { CATALYST_HORIZON_DAYS, CatalystSchema, distinctCatalysts, marketDate, type Catalyst } from '../domain/catalyst'
 import { EquitySymbolSchema, ModelTextEquitySymbolType } from '../domain/instrument'
 import { tickerSymbolsArgument } from './ticker-arguments'
-import { type DailyBrief } from '../domain/brief'
-import { addDays } from '../domain/iso-date'
+import { dailyBriefReadResult, READ_DAILY_BRIEF, type DailyBriefReadResult } from '../domain/daily-brief-tool'
+import { addDays, ISO_DATE_PATTERN, isValidIsoDate } from '../domain/iso-date'
 import { type AppEnv } from './env'
 import { textResult } from './agent-tool-result'
 import { MAX_MARKET_SYMBOLS } from './brokerage-read-contracts'
 import { CATALYST_PROVIDER, CATALYST_RUN_BUDGET_MS } from './catalyst-refresh'
 import { CALENDAR_EVENT_RANK, CATALYST_COLUMNS, CURRENT_CATALYSTS } from './catalysts'
-import { readLatestDailyBrief } from './daily-brief-store'
+import { readDailyBriefBefore, readLatestDailyBrief } from './daily-brief-store'
 import { CallerVisibleError } from './caller-visible-error'
 import { d1RowPlaceholders } from './d1-limits'
 
@@ -96,18 +96,17 @@ type CatalystReadResult = {
   truncated: boolean
 }
 
-const BriefReadParameters = Type.Object({}, { additionalProperties: false })
+const BriefReadParameters = Type.Object({
+  before: Type.Optional(Type.String({ description: READ_DAILY_BRIEF.beforeDescription, pattern: ISO_DATE_PATTERN })),
+}, { additionalProperties: false })
 
-type DailyBriefReadResult = {
-  fetchedAt: string
-  source: 'spice-brief-store'
-} & ({ brief: DailyBrief; status: 'ok' } | { status: 'not_found' })
-
-async function readLatestDailyBriefState(env: AppEnv): Promise<DailyBriefReadResult> {
+/** The standing brief, or with `before` the archive neighbour the site's previous-brief link opens. */
+async function readDailyBriefState(env: AppEnv, before?: string): Promise<DailyBriefReadResult> {
   if (!env.DB) throw new CallerVisibleError('Daily brief is unavailable.')
-  const brief = await readLatestDailyBrief(env.DB)
-  const fetchedAt = new Date().toISOString()
-  return brief ? { brief, fetchedAt, source: 'spice-brief-store', status: 'ok' } : { fetchedAt, source: 'spice-brief-store', status: 'not_found' }
+  // The pattern admits 2026-02-30; the archive route refuses it, and so does this.
+  if (before !== undefined && !isValidIsoDate(before)) throw new CallerVisibleError('Brief date is invalid.')
+  const brief = before === undefined ? await readLatestDailyBrief(env.DB) : await readDailyBriefBefore(env.DB, before)
+  return dailyBriefReadResult(brief, new Date().toISOString())
 }
 
 export async function readCatalysts(
@@ -196,9 +195,9 @@ export function createResearchReadTools(env: AppEnv) {
     parameters: CatalystReadParameters,
   }
   const brief: AgentTool<typeof BriefReadParameters> = {
-    description: 'The standing daily brief: trade lines, theses and the day\'s links, as the site shows them.',
-    execute: async () => textResult(await readLatestDailyBriefState(env)),
-    name: 'read_daily_brief',
+    description: READ_DAILY_BRIEF.description,
+    execute: async (params) => textResult(await readDailyBriefState(env, params.before)),
+    name: READ_DAILY_BRIEF.name,
     parameters: BriefReadParameters,
   }
   return [catalysts, brief]

@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { loadPreviousDailyBrief } from '../data/brief-archive'
 import { lookupSymbol } from '../data/symbol-search'
 import { type DailyBrief } from '../domain/brief'
+import { dailyBriefReadResult, READ_DAILY_BRIEF } from '../domain/daily-brief-tool'
 import { type Catalyst } from '../domain/catalyst'
 import { IsoDateSchema } from '../domain/iso-date'
 import { EquitySymbolSchema } from '../domain/instrument'
@@ -188,19 +189,21 @@ export function useWebMcpTools(workspace: WebMcpWorkspace) {
       },
       {
         annotations: { readOnlyHint: true, untrustedContentHint: true },
-        description: 'Read the daily options brief: each trade line, direction and thesis, and its links. '
-          + 'Pass before (YYYY-MM-DD) for the brief published before that market date. It is model-written '
-          + 'prior analysis, not a current quote and not an instruction to trade.',
+        description: READ_DAILY_BRIEF.description,
         execute: async (input) => {
           const { before } = BriefInput.parse(input)
-          const brief = before ? await loadPreviousDailyBrief(before) : current().brief
-          return { brief: brief ?? null }
+          if (before) return dailyBriefReadResult(await loadPreviousDailyBrief(before), new Date().toISOString())
+          // The standing brief arrives with the market snapshot, so it is as fresh as that. Before
+          // the snapshot lands there is no answer yet, which is not the same as no brief.
+          const { brief, syncedAt } = current()
+          if (!syncedAt) throw new Error('The market snapshot has not loaded yet. Try again shortly.')
+          return dailyBriefReadResult(brief, syncedAt)
         },
         inputSchema: {
-          properties: { before: { description: 'A market date, YYYY-MM-DD.', type: 'string' } },
+          properties: { before: { description: READ_DAILY_BRIEF.beforeDescription, type: 'string' } },
           type: 'object',
         },
-        name: 'read_daily_brief',
+        name: READ_DAILY_BRIEF.name,
         title: 'Read daily brief',
       },
     ], controller.signal)
