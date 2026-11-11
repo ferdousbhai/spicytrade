@@ -4,7 +4,7 @@ import { access, constants } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 import { promisify } from 'node:util'
 
-import { AGENT_TOKEN_SERVICE, cliCommand, LEGACY_AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY } from './config.mjs'
+import { AGENT_TOKEN_SERVICE, cliCommand, LEGACY_AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY, ORIGIN } from './config.mjs'
 import { CliFailure } from './loopback.mjs'
 import { keyringEnvironment } from './keyring-environment.mjs'
 
@@ -12,8 +12,9 @@ import { keyringEnvironment } from './keyring-environment.mjs'
  * Keyring access for the local tools, shared so every one of them (`mcp`, setup, doctor, login
  * and the tastytrade connect step) reads the same entries the same way.
  *
- * Everything goes through the secret-tool binary, and no secret is ever an argv value: a lookup
- * prints the value to our stdout, a store reads it from our stdin.
+ * Everything goes through the platform's own password-storage command (`HELPERS` below), and no
+ * secret is ever an argv value: a lookup prints the value to our stdout, a store reads it from our
+ * stdin.
  *
  * Credentials are filed under the service that issued them, not the app that spends them: the
  * agent token is spicytrade's, while a client secret and refresh token are tastytrade's and would be
@@ -37,26 +38,113 @@ export async function commandInstalled(name) {
   return false
 }
 
-export const secretToolInstalled = () => commandInstalled('secret-tool')
+/**
+ * Wraps a constant for a line of `security -i`, which splits its input on spaces and honours
+ * double quotes. Only this file's own service names, keys and labels pass through, so a quote or
+ * backslash in one is a programming error, refused rather than escaped.
+ */
+function securityWord(word) {
+  if (/["\\\n]/.test(word)) throw new Error('a keychain attribute may not contain a quote, backslash or newline')
+  return `"${word}"`
+}
+
+/**
+ * The password-storage command on each platform this CLI runs on, and how it is spoken to:
+ *   linux   `secret-tool`, the libsecret client of the desktop keyring.
+ *   darwin  `security`, which ships with macOS, on the login keychain. An entry is a generic
+ *           password whose service is ours and whose account is the key. `security` has no way to
+ *           read a new password from stdin, so a store is one command on the stdin of its
+ *           interactive mode (`-i`): plain when the value is made only of characters that mode
+ *           takes literally, as tokens are, and otherwise as hex (`-X`). That mode's exit status is
+ *           not relied on -- the read-back in `keyringStore` is what decides -- and a value too long
+ *           for one of its input lines fails that read-back rather than being stored cut short.
+ * `absent` is how each says "no such entry", which is a different fact from a failure.
+ */
+const HELPERS = {
+  linux: {
+    bin: 'secret-tool',
+    install: 'Install it (Debian/Ubuntu: sudo apt install libsecret-tools; Arch: sudo pacman -S libsecret; Fedora: sudo dnf install libsecret)',
+    fix: 'If you have one, unlock it. If not, install one (Debian/Ubuntu: sudo apt install'
+      + ' gnome-keyring; Arch: sudo pacman -S gnome-keyring; Fedora: sudo dnf install gnome-keyring) and log out and back in',
+    lookup: (service, key) => ['lookup', 'service', service, 'key', key],
+    clear: (service, key) => ['clear', 'service', service, 'key', key],
+    // Exit 1 with nothing on stderr; a failure also exits 1 but says why.
+    absent: ({ status, stderr }) => status === 1 && !stderr.trim(),
+    store: (service, key, label, value) => ({ args: ['store', `--label=${label}`, 'service', service, 'key', key], stdin: value }),
+    stored: (status) => status === 0,
+    prompt: (service, key, label) => ['store', `--label=${label}`, 'service', service, 'key', key],
+    promptNote: 'at the Password prompt (it is not shown as you type)',
+  },
+  darwin: {
+    bin: 'security',
+    install: 'It ships with macOS at /usr/bin/security; put /usr/bin back on your PATH',
+    fix: 'Unlock your login keychain in Keychain Access. Over SSH, run: security unlock-keychain',
+    lookup: (service, key) => ['find-generic-password', '-s', service, '-a', key, '-w'],
+    clear: (service, key) => ['delete-generic-password', '-s', service, '-a', key],
+    // errSecItemNotFound, which `security` reports as exit 44 with a line on stderr.
+    absent: ({ status }) => status === 44,
+    store: (service, key, label, value) => ({
+      args: ['-i'],
+      stdin: `add-generic-password -U -s ${securityWord(service)} -a ${securityWord(key)} -l ${securityWord(label)} `
+        + `${/^[\w.~+/=-]+$/.test(value) ? `-w ${value}` : `-X ${Buffer.from(value).toString('hex')}`}\n`,
+    }),
+    stored: () => true,
+    // `-w` last makes `security` ask for the value on the terminal itself, twice.
+    prompt: (service, key, label) => ['add-generic-password', '-U', '-s', service, '-a', key, '-l', label, '-w'],
+    promptNote: 'when asked, and again to confirm (it is not shown as you type)',
+  },
+}
+
+/** Where the installer and the connector run, as a sentence says it. */
+const SUPPORTED_PLATFORMS = 'Linux and macOS'
+/** Windows by its own name: it is the platform most people refused here are on. */
+const platformName = () => (process.platform === 'win32' ? 'Windows' : process.platform)
+
+/** This platform's helper; a platform without one is refused here, before anything is attempted. */
+function helper() {
+  const found = HELPERS[process.platform]
+  if (!found) {
+    throw new CliFailure(`account access needs the local connector, which runs on ${SUPPORTED_PLATFORMS}, not on ${platformName()}.`
+      + ` Your agent can still use market data and research without installing: see "Without installing" at ${ORIGIN}/connect`)
+  }
+  return found
+}
+
+/** Throws on a platform the connector does not run on; the first line of every command that stores. */
+export function requireSupportedPlatform() {
+  helper()
+}
+
+export const keyringHelperInstalled = () => commandInstalled(helper().bin)
+
+/** What to say when the helper is missing: its name, and how to get it. */
+export const keyringHelperMissing = () => ({ name: helper().bin, install: helper().install })
+
+/** The command a member runs by hand to remove one entry, for when this CLI could not. */
+export const keyringClearCommand = (service, key) => [helper().bin, ...helper().clear(service, key)].join(' ')
+
+/** The terminal prompt that takes one value straight into password storage; see `storePersonalGrant`. */
+export const keyringPrompt = (service, key, label) => ({ args: helper().prompt(service, key, label), bin: helper().bin, note: helper().promptNote })
 
 /**
  * The stored value, or undefined when there is none.
  *
- * "Not stored" and "could not read the keyring" are different facts. `secret-tool lookup` exits 1
- * and prints nothing when the entry is absent; anything else -- a missing binary, a locked or
- * unreachable keyring, which it reports on stderr -- is a failure, thrown as `KeyringUnavailable`
+ * "Not stored" and "could not read the keyring" are different facts. Each helper has its own way
+ * of saying an entry is absent (`absent` in `HELPERS`); anything else -- a missing binary, a locked
+ * or unreachable keyring, which it reports on stderr -- is a failure, thrown as `KeyringUnavailable`
  * rather than carried on as though a credential that is in fact stored were absent.
  */
 export async function keyringSecret(service, key) {
+  const { absent, bin, lookup } = helper()
   try {
-    const { stdout } = await execFileAsync('secret-tool', ['lookup', 'service', service, 'key', key], {
+    const { stdout } = await execFileAsync(bin, lookup(service, key), {
       timeout: KEYRING_UNLOCK_WAIT_MS, env: await keyringEnvironment(),
     })
     const value = stdout.trim()
     return value || undefined
   } catch (error) {
-    if (error?.code === 1 && !String(error.stderr ?? '').trim()) return undefined
-    // secret-tool's stderr is not echoed: its words are not ours. The caller reports the failure.
+    if (absent({ status: error?.code, stderr: String(error?.stderr ?? '') })) return undefined
+    // The helper's stderr is not echoed: its words are not ours. The caller reports the failure.
     throw new KeyringUnavailable(keyringFailure(error))
   }
 }
@@ -98,13 +186,14 @@ export async function keyringWritable(out = process.stdout) {
 }
 
 /** What to do about a keyring that cannot be opened, shared with what the agent is told. */
-export const KEYRING_FIX = 'If you have one, unlock it. If not, install one (Debian/Ubuntu: sudo apt install'
-  + ' gnome-keyring; Arch: sudo pacman -S gnome-keyring; Fedora: sudo dnf install gnome-keyring) and log out and back in'
+export const keyringFix = () => helper().fix
 
-/** Inspect only known diagnostics; never expose secret-tool output to an agent or log. */
+/** Inspect only known diagnostics; never expose the helper's output to an agent or log. */
 function keyringFailure(error) {
   if (error?.code === 'ENOENT') return 'missing-tool'
   if (error?.killed) return 'timeout'
+  // macOS, with the login keychain locked and no desktop to ask on (errSecInteractionNotAllowed).
+  if (/User interaction is not allowed/i.test(String(error?.stderr ?? ''))) return 'locked'
   if (/Cannot autolaunch D-Bus|Unable to autolaunch a dbus-daemon|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR/i.test(String(error?.stderr ?? ''))) return 'session-unavailable'
   return /locked collection|collection is locked|keyring is locked/i.test(String(error?.stderr ?? '')) ? 'locked' : 'unknown'
 }
@@ -120,10 +209,10 @@ export class KeyringUnavailable extends CliFailure {
       : reason === 'timeout'
         ? 'Password storage did not answer. Run setup in a desktop terminal and watch for a password dialog'
         : reason === 'missing-tool'
-          ? 'The password-storage helper secret-tool is missing. Install libsecret-tools (Debian/Ubuntu), libsecret (Arch), or libsecret (Fedora)'
+          ? `The password-storage helper ${helper().bin} is missing. ${helper().install}`
           : reason === 'session-unavailable'
             ? 'Your desktop session bus could not be reached. Run from a signed-in desktop session; unlocking the keyring alone does not restore this connection'
-            : `Your system keyring could not be opened. ${KEYRING_FIX}`
+            : `Your system keyring could not be opened. ${helper().fix}`
     super(`${recovery}. Run: ${cliCommand('setup')}`)
     this.name = 'KeyringUnavailable'
     this.reason = reason
@@ -132,16 +221,18 @@ export class KeyringUnavailable extends CliFailure {
 }
 
 /**
- * Store a value, passing it on secret-tool's stdin, then read the entry back. Resolves true only
- * when secret-tool exits 0 and the read-back matches, rather than trusting the exit status alone.
+ * Store a value, passing it on the helper's stdin, then read the entry back. Resolves true only
+ * when the helper reports success and the read-back matches, rather than trusting the exit status alone.
  * `label` is only what a keyring UI displays; the service and key attributes are what a lookup
  * finds.
  */
 export async function keyringStore(service, key, label, value, { timeoutMs } = {}) {
   const env = await keyringEnvironment()
+  const { bin, store, stored: reportsStored } = helper()
+  const { args, stdin } = store(service, key, label, value)
   const stored = await new Promise((resolve) => {
     // A store against a locked keyring waits on an unlock prompt; `timeoutMs` bounds that wait.
-    const child = spawn('secret-tool', ['store', `--label=${label}`, 'service', service, 'key', key], {
+    const child = spawn(bin, args, {
       stdio: ['pipe', 'ignore', 'pipe'],
       env,
       timeout: timeoutMs ?? KEYRING_UNLOCK_WAIT_MS,
@@ -149,28 +240,29 @@ export async function keyringStore(service, key, label, value, { timeoutMs } = {
     let stderr = ''
     child.stderr.on('data', (chunk) => { stderr += chunk })
     child.on('error', (error) => resolve({ ok: false, reason: keyringFailure(error) }))
-    child.on('close', (status, signal) => resolve({ ok: status === 0, reason: keyringFailure({ stderr, killed: Boolean(signal) }) }))
-    // A secret-tool that dies before reading surfaces as its exit status, not as an EPIPE here.
+    child.on('close', (status, signal) => resolve({ ok: !signal && reportsStored(status), reason: keyringFailure({ stderr, killed: Boolean(signal) }) }))
+    // A helper that dies before reading surfaces as its exit status, not as an EPIPE here.
     child.stdin.on('error', () => {})
-    child.stdin.end(value)
+    child.stdin.end(stdin)
   })
   if (!stored.ok && stored.reason !== 'unknown') throw new KeyringUnavailable(stored.reason)
   return stored.ok && await keyringSecret(service, key) === value
 }
 
 /**
- * Remove an entry. Resolves true when it is gone -- including when there was none: secret-tool
- * exits 1 with nothing on stderr when no entry matches, as a lookup does for "not stored" -- and
- * false when the keyring could not be reached, which it reports on stderr.
+ * Remove an entry. Resolves true when it is gone -- including when there was none, which each
+ * helper says the way its lookup says "not stored" -- and false when the keyring could not be
+ * reached, which it reports on stderr.
  */
 export async function keyringClear(service, key) {
   const env = await keyringEnvironment()
+  const { absent, bin, clear } = helper()
   return new Promise((resolve) => {
-    const child = spawn('secret-tool', ['clear', 'service', service, 'key', key], { stdio: ['ignore', 'ignore', 'pipe'], timeout: KEYRING_UNLOCK_WAIT_MS, env })
+    const child = spawn(bin, clear(service, key), { stdio: ['ignore', 'ignore', 'pipe'], timeout: KEYRING_UNLOCK_WAIT_MS, env })
     let stderr = ''
     child.stderr.on('data', (chunk) => { stderr += chunk })
     child.on('error', () => resolve(false))
-    child.on('close', (status) => resolve(status === 0 || (status === 1 && !stderr.trim())))
+    child.on('close', (status) => resolve(status === 0 || absent({ status, stderr })))
   })
 }
 

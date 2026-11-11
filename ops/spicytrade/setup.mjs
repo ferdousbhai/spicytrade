@@ -3,11 +3,12 @@ import { createInterface } from 'node:readline/promises'
 import { grantMinter, grantRefused, TastytradeAuthError } from './broker-grants.mjs'
 import { CLIENTS, EXPECTED_TARGET, namesSpicytrade } from './clients.mjs'
 import {
-  AGENT_TOKEN_SERVICE, cliCommand, LEGACY_AGENT_TOKEN_SERVICE, LEGACY_MCP_SERVER_NAME, MCP_SERVER_NAME, MCP_TOKEN_KEY, ORIGIN,
+  AGENT_TOKEN_SERVICE, cliCommand, LEGACY_AGENT_TOKEN_SERVICE, LEGACY_MCP_SERVER_NAME, MCP_SERVER_NAME, MCP_TOKEN_KEY,
 } from './config.mjs'
 import { doctor } from './doctor.mjs'
 import {
-  agentToken, commandInstalled, KEYRING_FIX, keyringClear, keyringSecret, KeyringUnavailable, keyringWritable, secretToolInstalled, storeAgentToken,
+  agentToken, commandInstalled, keyringClear, keyringFix, keyringHelperInstalled, keyringHelperMissing, keyringSecret, KeyringUnavailable, keyringWritable,
+  requireSupportedPlatform, storeAgentToken,
   tastytradeCredentialKind,
 } from './keyring.mjs'
 import { removeLegacyUnits } from './legacy-proxy.mjs'
@@ -135,15 +136,13 @@ async function tryConnect(out) {
 export async function setup(out = process.stdout) {
   // Whether this run replaced a credential a running agent session may still hold.
   let credentialsChanged = false
-  if (process.platform !== 'linux') {
-    throw new CliFailure(`the install runs on Linux for now; this is ${process.platform}. Your agent can still use market data and research`
-      + ` without installing: see "Without installing" at ${ORIGIN}/connect`)
-  }
-  if (!await secretToolInstalled()) {
-    throw new CliFailure(`secret-tool is not installed. Install it (Debian/Ubuntu: sudo apt install libsecret-tools; Arch: sudo pacman -S libsecret; Fedora: sudo dnf install libsecret), then run: ${cliCommand('setup')}`)
+  requireSupportedPlatform()
+  if (!await keyringHelperInstalled()) {
+    const { install, name } = keyringHelperMissing()
+    throw new CliFailure(`${name} is not installed. ${install}, then run: ${cliCommand('setup')}`)
   }
   if (!await keyringWritable(out)) {
-    throw new CliFailure(`your system keyring cannot save credentials here. ${KEYRING_FIX}. Over SSH, this computer's`
+    throw new CliFailure(`your system keyring cannot save credentials here. ${keyringFix()}. Over SSH, this computer's`
       + ` desktop session must also be logged in. Then run: ${cliCommand('setup')}`)
   }
 

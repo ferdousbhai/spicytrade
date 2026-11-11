@@ -9,7 +9,7 @@ import {
   MCP_TOKEN_KEY,
 } from './config.mjs'
 import {
-  agentToken, keyringSecret, secretToolInstalled, tastytradeCredentialKind,
+  agentToken, keyringHelperInstalled, keyringHelperMissing, keyringSecret, tastytradeCredentialKind,
 } from './keyring.mjs'
 import { legacyUnits } from './legacy-proxy.mjs'
 import { unexpectedTail } from './loopback.mjs'
@@ -146,8 +146,9 @@ export async function doctor(out = process.stdout, { quiet = false, settled = ne
   const checks = report(out, quiet)
   const setup = cliCommand('setup')
 
-  if (!await secretToolInstalled()) {
-    checks.fail('secret-tool is not installed', `Install it (Debian/Ubuntu: sudo apt install libsecret-tools; Arch: sudo pacman -S libsecret; Fedora: sudo dnf install libsecret), then run: ${setup}`)
+  if (!await keyringHelperInstalled()) {
+    const { install, name } = keyringHelperMissing()
+    checks.fail(`${name} is not installed`, `${install}, then run: ${setup}`)
     return false
   }
 

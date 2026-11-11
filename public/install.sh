@@ -29,14 +29,16 @@ fail() {
 
 # Every check runs before anything is written, so a machine that cannot run spicytrade is left as
 # it was -- and every missing piece is named at once, so one round of installing covers them all.
-[[ $(uname -s) == Linux ]] || fail 'spicytrade'\''s install runs on Linux for now. Your agent can still use market data and research without installing: see "Without installing" at '"$origin"'/connect'
+system=$(uname -s)
+[[ $system == Linux || $system == Darwin ]] || fail 'spicytrade'\''s install runs on Linux and macOS, not on Windows. Your agent can still use market data and research without installing: see "Without installing" at '"$origin"'/connect'
 missing=()
 if ! command -v node >/dev/null; then
   missing+=('Node.js 22 or newer (https://nodejs.org)')
 elif (($(node -p 'process.versions.node.split(".")[0]') < 22)); then
   missing+=("Node.js 22 or newer (https://nodejs.org); this is $(node --version)")
 fi
-command -v secret-tool >/dev/null \
+# macOS keeps credentials in the login keychain through its own `security`, so only Linux needs a helper.
+[[ $system == Darwin ]] || command -v secret-tool >/dev/null \
   || missing+=('secret-tool, which keeps your credentials in the system keyring (Debian/Ubuntu: sudo apt install libsecret-tools; Arch: sudo pacman -S libsecret; Fedora: sudo dnf install libsecret)')
 if ((${#missing[@]})); then
   {

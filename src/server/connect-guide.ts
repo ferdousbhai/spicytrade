@@ -12,10 +12,12 @@ a special trading folder. Configure only this harness in the user's current work
 
 ## Local account access
 
-Requires a local Linux execution environment, Node.js 22+, secret-tool, a desktop keyring,
-and a browser the user can approve in. If the harness has no local shell or no stdio MCP
-support, explain that account access needs the local connector; offer research through
-${MCP_ENDPOINT} instead. Do not claim a cloud shell is the user's local computer.
+Requires a local Linux or macOS execution environment, Node.js 22+, and a browser the user can
+approve in. Linux also needs secret-tool and a desktop keyring; macOS uses its login keychain.
+Windows is not supported: on Windows, do not attempt the install. Tell the user account access
+needs Linux or macOS, and offer research through ${MCP_ENDPOINT} instead.
+If the harness has no local shell or no stdio MCP support, explain that account access needs
+the local connector; offer research through ${MCP_ENDPOINT} instead. Do not claim a cloud shell is the user's local computer.
 
 1. Inspect the install script before running it. Install the connector without configuring any
    agent or starting terminal setup:

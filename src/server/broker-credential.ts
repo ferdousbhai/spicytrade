@@ -14,7 +14,7 @@ export class BrokerCredentialMissingError extends CallerVisibleError {
     super(
       // The local relay recognizes this prefix and offers its in-conversation connection tool.
       'No brokerage is connected. Connect Spicytrade in your current agent conversation using '
-        + `${CONNECT_GUIDE_URL}. Account access needs the local Linux connector; research can use the remote MCP server.`,
+        + `${CONNECT_GUIDE_URL}. Account access needs the local connector (Linux or macOS, not Windows); research can use the remote MCP server.`,
     )
     this.name = 'BrokerCredentialMissingError'
   }
