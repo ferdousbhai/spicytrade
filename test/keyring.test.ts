@@ -113,6 +113,6 @@ describe('keyring on macOS', () => {
       const keyring = await import(${JSON.stringify(module)})
       try { keyring.requireSupportedPlatform() } catch (error) { console.log(error.message) }
     `])
-    expect(stdout).toContain('Linux and macOS; this is win32')
+    expect(stdout).toContain('Linux and macOS, not on Windows.')
   })
 })

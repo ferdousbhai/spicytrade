@@ -30,7 +30,7 @@ fail() {
 # Every check runs before anything is written, so a machine that cannot run spicytrade is left as
 # it was -- and every missing piece is named at once, so one round of installing covers them all.
 system=$(uname -s)
-[[ $system == Linux || $system == Darwin ]] || fail 'spicytrade'\''s install runs on Linux and macOS. Your agent can still use market data and research without installing: see "Without installing" at '"$origin"'/connect'
+[[ $system == Linux || $system == Darwin ]] || fail 'spicytrade'\''s install runs on Linux and macOS, not on Windows. Your agent can still use market data and research without installing: see "Without installing" at '"$origin"'/connect'
 missing=()
 if ! command -v node >/dev/null; then
   missing+=('Node.js 22 or newer (https://nodejs.org)')

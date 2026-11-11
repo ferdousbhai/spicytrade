@@ -97,12 +97,14 @@ const HELPERS = {
 
 /** Where the installer and the connector run, as a sentence says it. */
 const SUPPORTED_PLATFORMS = 'Linux and macOS'
+/** Windows by its own name: it is the platform most people refused here are on. */
+const platformName = () => (process.platform === 'win32' ? 'Windows' : process.platform)
 
 /** This platform's helper; a platform without one is refused here, before anything is attempted. */
 function helper() {
   const found = HELPERS[process.platform]
   if (!found) {
-    throw new CliFailure(`account access needs the local connector, which runs on ${SUPPORTED_PLATFORMS}; this is ${process.platform}.`
+    throw new CliFailure(`account access needs the local connector, which runs on ${SUPPORTED_PLATFORMS}, not on ${platformName()}.`
       + ` Your agent can still use market data and research without installing: see "Without installing" at ${ORIGIN}/connect`)
   }
   return found

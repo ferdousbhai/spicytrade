@@ -255,7 +255,7 @@ export function ConnectScreen({ authError, owner, signedIn }: { authError?: stri
         <p>Once connected, ask “How is my account doing?”</p>
         <p className="connect-note">
           Account access needs an agent running on your own Linux or macOS computer, with shell access and local MCP support.
-          Other agents can use market data and research below. Some agents need a reconnect to load new tools;
+          It is not available on Windows. There, and in any other agent, market data and research below work without installing. Some agents need a reconnect to load new tools;
           your agent will guide that step when needed.
         </p>
       </section>
@@ -265,7 +265,7 @@ export function ConnectScreen({ authError, owner, signedIn }: { authError?: stri
         <p>If you prefer to set up from a terminal on the computer your agent runs on:</p>
         <CopyBlock label="Terminal" value={INSTALL_COMMAND} />
         <p>
-          Needs Node.js 22 or newer, on macOS or on Linux with secret-tool and a desktop keyring.
+          Needs Node.js 22 or newer, on macOS or on Linux with secret-tool and a desktop keyring. It does not run on Windows.
           Run <code>spicytrade setup</code> to repair; run the install again to update.
           Return to your existing agent after setup. To remove it, run <code>spicytrade uninstall</code>.
         </p>
