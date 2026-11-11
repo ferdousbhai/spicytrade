@@ -77,7 +77,7 @@
           },
           {
             "symbol": "NVDA",
-            "direction": "neutral",
+            "direction": "bullish",
             "trade": "NVDA 1/15/27: Buy 150c Sell 170c",
             "thesis": "A call spread thesis."
           }
