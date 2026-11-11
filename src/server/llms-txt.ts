@@ -1,4 +1,4 @@
-import { CONNECT_GUIDE_URL, INSTALL_SCRIPT_URL, MCP_ENDPOINT, MCP_PATH, SITE_NAME } from '../domain/site'
+import { BRIEF_ARCHIVE_PATH, briefPagePath, CONNECT_GUIDE_URL, INSTALL_SCRIPT_URL, MCP_ENDPOINT, MCP_PATH, SITE_NAME, symbolPagePath } from '../domain/site'
 import { SPICE_GUIDE } from './doctrine'
 
 /**
@@ -22,9 +22,10 @@ export function llmsTxt(): string {
 > through a member's own tastytrade account. Agents should use the MCP server at
 > ${MCP_ENDPOINT} rather than scraping the web app.
 
-The web app is client-rendered; its pages need JavaScript. Every account read and every order
-goes through the MCP server, never through the web app, and the server's own guards decide
-what is admissible.
+The web app is client-rendered; its views need JavaScript. Each published brief and each
+symbol on the public watchlist also has a server-rendered page that reads without it. Every
+account read and every order goes through the MCP server, never through the web app, and the
+server's own guards decide what is admissible.
 
 ## MCP server
 
@@ -45,6 +46,8 @@ what is admissible.
 
 - [Watch](${at('/watch')}): The market table and one symbol's detail.
 - [Recommendations](${at('/recommendations')}): The daily options brief and its archive.
+- [Brief archive](${at(BRIEF_ARCHIVE_PATH)}): Every published daily brief by market date, server-rendered, linking to one page per brief at \`${briefPagePath('YYYY-MM-DD')}\`.
+- [Symbol pages](${at('/sitemap.xml')}): One server-rendered page per symbol on the public watchlist at \`${symbolPagePath('SYMBOL')}\` -- price, IV rank and percentile, volatility, liquidity, stored catalysts, and the latest brief recommendation; the sitemap lists them all.
 - [Connect](${at('/connect')}): Setup commands for connecting an agent.
 
 ## Optional

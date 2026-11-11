@@ -94,6 +94,15 @@ export const MarketStateSchema = z.enum(['open', 'closed', 'pre', 'after', 'unkn
 
 export type MarketState = z.infer<typeof MarketStateSchema>
 
+/** The session as a server-written page words it; a page never infers a session of its own. */
+export const MARKET_STATE_LABELS = {
+  open: 'Market open',
+  closed: 'Market closed',
+  pre: 'Pre-market',
+  after: 'After hours',
+  unknown: 'Market status unknown',
+} as const satisfies Record<MarketState, string>
+
 const CASH_OPEN_MINUTE_FORMATTER = new Intl.DateTimeFormat('en-US', {
   hour: '2-digit',
   hourCycle: 'h23',
@@ -162,7 +171,7 @@ export type Ticker = z.infer<typeof TickerSchema>
 export type IvTermStructure = z.infer<typeof IvTermStructureSchema>
 export type MarketSnapshot = z.infer<typeof MarketSnapshotSchema>
 export type PublicMarketSnapshot = z.infer<typeof PublicMarketSnapshotSchema>
-type PublicTicker = z.infer<typeof PublicTickerSchema>
+export type PublicTicker = z.infer<typeof PublicTickerSchema>
 
 export function publicTickerFromTicker(ticker: Ticker): PublicTicker {
   return PublicTickerSchema.parse(ticker)

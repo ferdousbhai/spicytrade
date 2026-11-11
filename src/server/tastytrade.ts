@@ -1,6 +1,6 @@
 import { chunked } from '../domain/chunked'
 import { errorName, toError } from '../domain/failure'
-import { equitySymbolFromModelText } from '../domain/instrument'
+import { EquitySymbolSchema, equitySymbolFromModelText } from '../domain/instrument'
 import {
   MarketSnapshotSchema,
   PublicMarketSnapshotSchema,
@@ -9,6 +9,7 @@ import {
   type Watchlist,
   publicTickerFromTicker,
   type PublicSymbolLookup,
+  type PublicTicker,
 } from '../domain/market'
 import {
   createTastytradeClient,
@@ -718,6 +719,46 @@ async function loadStoredPublicMarketSnapshot(env: AppEnv): Promise<StoredPublic
     brief: parts.brief,
   })
   return { lastWrittenAt: parts.latestObservedAt, snapshot }
+}
+
+/** One symbol of the stored public snapshot: its row, its calendar, and the store's instants. */
+export type StoredPublicSymbol = {
+  catalysts: PublicMarketSnapshot['catalysts']
+  marketState: PublicMarketSnapshot['marketState']
+  syncedAt: string
+  ticker: PublicTicker
+}
+
+/**
+ * One symbol as the stored public snapshot carries it, for that symbol's own document
+ * (`/options/$symbol`), which every crawler requests for every name.
+ *
+ * Read-only by construction, and it must stay so: SELECTs over the published universe and the
+ * market store, nothing else. It never asks the provider, claims no refresh lease, admits no
+ * symbol to the watchlist, records no reader attention and schedules no refresh -- a crawler
+ * walking the sitemap is not a reader, and attention is what buys a search. That is also why
+ * this is not `lookupStoredMarketSymbol` (which answers for any catalogued name, on the list or
+ * not) nor `servePublicSnapshot` (which schedules a provider refresh behind a stale copy).
+ *
+ * `undefined` is a symbol the public snapshot would not show: one the published universe does
+ * not list, or one it lists that the store holds no quote for. The row is built by
+ * `storedSnapshotParts`, the same derivation the whole snapshot uses, so the page and the
+ * snapshot cannot disagree about a ticker.
+ */
+export async function loadStoredPublicSymbol(env: AppEnv, symbol: string): Promise<StoredPublicSymbol | undefined> {
+  if (!env.DB) throw new CallerVisibleError('PublicMarketSnapshot:store-unavailable')
+  const wanted = EquitySymbolSchema.parse(symbol)
+  const universe = await loadStoredPublicMarketUniverse(env)
+  if (!universe.symbols.includes(wanted)) return undefined
+  const parts = await storedSnapshotParts(env, [wanted])
+  const ticker = parts?.tickers[0]
+  if (!parts || !ticker) return undefined
+  return {
+    catalysts: parts.catalysts,
+    marketState: parts.sessionFields.marketState,
+    syncedAt: parts.observedAt,
+    ticker: publicTickerFromTicker(ticker),
+  }
 }
 
 /** The owner's default view, served entirely from the market store. */

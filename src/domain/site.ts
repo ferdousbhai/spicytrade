@@ -28,7 +28,39 @@ export const LEGAL_EMAIL = `legal@${SITE_HOST}`
 /** The element the server fills with a plain snapshot reading on `/watch` (`server/watch-summary.ts`). */
 export const WATCH_SUMMARY_ID = 'watch-summary'
 
+/** The archive of published daily briefs, one server-rendered page per market date under it. */
+export const BRIEF_ARCHIVE_PATH = '/briefs'
+
+/** One published brief's own address, keyed by its market date (`YYYY-MM-DD`). */
+export function briefPagePath(marketDate: string): string {
+  return `${BRIEF_ARCHIVE_PATH}/${marketDate}`
+}
+
+/**
+ * One symbol's server-rendered page. A share class is written after a slash (`BRK/B`), which a
+ * single path segment cannot carry bare, so it travels percent-encoded.
+ */
+export function symbolPagePath(symbol: string): string {
+  return `/options/${encodeURIComponent(symbol)}`
+}
+
 /** A page's document title: what the page is, then whose it is. */
 export function pageTitle(page: string): string {
   return `${page} | ${SITE_NAME}`
+}
+
+/**
+ * The application shell's views, named once: each view's own `head` titles it in the browser,
+ * and the shell's `head` titles the document the server sends (`routes/_app.tsx` says why the
+ * view's own cannot).
+ */
+const APP_VIEW_NAMES = { '/connect': 'Connect', '/recommendations': 'Recommendations', '/watch': 'Watch' } as const
+export type AppViewPath = keyof typeof APP_VIEW_NAMES
+
+export function isAppViewPath(path: string): path is AppViewPath {
+  return Object.hasOwn(APP_VIEW_NAMES, path)
+}
+
+export function appViewHead(path: AppViewPath) {
+  return { meta: [{ title: pageTitle(APP_VIEW_NAMES[path]) }] }
 }

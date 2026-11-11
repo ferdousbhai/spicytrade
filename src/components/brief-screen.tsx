@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { ArrowUpRight, CaretLeft, CaretRight } from '@phosphor-icons/react/ssr'
+import { CaretLeft, CaretRight } from '@phosphor-icons/react/ssr'
 
 import { Alert, AlertDescription, AlertTitle } from '#/components/ui/alert'
 import { Button } from '#/components/ui/button'
@@ -8,6 +8,7 @@ import { loadPreviousDailyBrief } from '../data/brief-archive'
 import { type DailyBrief } from '../domain/brief'
 import { marketDate } from '../domain/catalyst'
 import { RecommendationCard } from './brief-card'
+import { BriefHeadlines } from './brief-headlines'
 import { Disclaimer } from './disclaimer'
 import { formatCalendarDay, nyDateTime, nyTime } from './ny-time'
 
@@ -77,31 +78,7 @@ function BriefIssue({ brief, focusTarget, onSymbol }: {
           <RecommendationCard key={`${recommendation.symbol}-${index}`} onSymbol={onSymbol} recommendation={recommendation} />
         ))}
       </section>
-      {brief.links.length > 0 && (
-        <section aria-labelledby="brief-headlines-title" className="brief-headlines-section">
-          <h2 id="brief-headlines-title">Headlines</h2>
-          <ol className="brief-headlines">
-            {brief.links.map((link) => {
-              const url = new URL(link.url)
-              return (
-                <li key={link.url}>
-                  {/* Title and snippet are third-party page text: React escapes them. With no
-                      headline the host stands in as the title and the path follows on one
-                      clipped line; nothing is derived from the slug, since that would put words
-                      in the reader's view the page never said. The href keeps the whole URL. */}
-                  <a href={link.url} rel="noreferrer" target="_blank">
-                    <span className="brief-headline-title">{link.title ?? url.host}<ArrowUpRight aria-hidden="true" /></span>
-                    {link.snippet && <span className="brief-headline-snippet">{link.snippet}</span>}
-                    {link.title
-                      ? <span className="brief-headline-host">{url.host}</span>
-                      : <span className="brief-headline-host brief-headline-path">{url.pathname + url.search}</span>}
-                  </a>
-                </li>
-              )
-            })}
-          </ol>
-        </section>
-      )}
+      <BriefHeadlines links={brief.links} />
       {/* Said once, at the foot of the brief. */}
       <Disclaimer className="brief-footer" />
     </>

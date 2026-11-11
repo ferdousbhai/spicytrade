@@ -39,8 +39,11 @@ import { Route as ApiStreamRouteImport } from './routes/api.stream'
 import { Route as ApiViewerRouteImport } from './routes/api.viewer'
 import { Route as AuthorizeIndexRouteImport } from './routes/authorize.index'
 import { Route as AuthorizeConsentRouteImport } from './routes/authorize.consent'
+import { Route as BriefsIndexRouteImport } from './routes/briefs.index'
+import { Route as BriefsDateRouteImport } from './routes/briefs.$date'
 import { Route as ConnectAgentRouteImport } from './routes/connect.agent'
 import { Route as ConnectGuideRouteImport } from './routes/connect.guide'
+import { Route as OptionsSymbolRouteImport } from './routes/options.$symbol'
 import { Route as ApiAgentLoginsExchangeRouteImport } from './routes/api.agent-logins.exchange'
 import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
 import { Route as ApiBrokersTastytradeAuthorizeRouteImport } from './routes/api.brokers.tastytrade.authorize'
@@ -199,6 +202,16 @@ const AuthorizeConsentRoute = AuthorizeConsentRouteImport.update({
   path: '/consent',
   getParentRoute: () => AuthorizeRoute,
 } as any)
+const BriefsIndexRoute = BriefsIndexRouteImport.update({
+  id: '/briefs/',
+  path: '/briefs/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BriefsDateRoute = BriefsDateRouteImport.update({
+  id: '/briefs/$date',
+  path: '/briefs/$date',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConnectAgentRoute = ConnectAgentRouteImport.update({
   id: '/connect/agent',
   path: '/connect/agent',
@@ -207,6 +220,11 @@ const ConnectAgentRoute = ConnectAgentRouteImport.update({
 const ConnectGuideRoute = ConnectGuideRouteImport.update({
   id: '/connect/guide',
   path: '/connect/guide',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OptionsSymbolRoute = OptionsSymbolRouteImport.update({
+  id: '/options/$symbol',
+  path: '/options/$symbol',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAgentLoginsExchangeRoute = ApiAgentLoginsExchangeRouteImport.update({
@@ -273,9 +291,12 @@ export interface FileRoutesByFullPath {
   '/api/stream': typeof ApiStreamRoute
   '/api/viewer': typeof ApiViewerRoute
   '/authorize/consent': typeof AuthorizeConsentRoute
+  '/briefs/$date': typeof BriefsDateRoute
   '/connect/agent': typeof ConnectAgentRoute
   '/connect/guide': typeof ConnectGuideRoute
+  '/options/$symbol': typeof OptionsSymbolRoute
   '/authorize/': typeof AuthorizeIndexRoute
+  '/briefs/': typeof BriefsIndexRoute
   '/api/agent-logins/exchange': typeof ApiAgentLoginsExchangeRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/brokers/tastytrade/authorize': typeof ApiBrokersTastytradeAuthorizeRoute
@@ -311,9 +332,12 @@ export interface FileRoutesByTo {
   '/api/stream': typeof ApiStreamRoute
   '/api/viewer': typeof ApiViewerRoute
   '/authorize/consent': typeof AuthorizeConsentRoute
+  '/briefs/$date': typeof BriefsDateRoute
   '/connect/agent': typeof ConnectAgentRoute
   '/connect/guide': typeof ConnectGuideRoute
+  '/options/$symbol': typeof OptionsSymbolRoute
   '/authorize': typeof AuthorizeIndexRoute
+  '/briefs': typeof BriefsIndexRoute
   '/api/agent-logins/exchange': typeof ApiAgentLoginsExchangeRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/brokers/tastytrade/authorize': typeof ApiBrokersTastytradeAuthorizeRoute
@@ -352,9 +376,12 @@ export interface FileRoutesById {
   '/api/stream': typeof ApiStreamRoute
   '/api/viewer': typeof ApiViewerRoute
   '/authorize/consent': typeof AuthorizeConsentRoute
+  '/briefs/$date': typeof BriefsDateRoute
   '/connect/agent': typeof ConnectAgentRoute
   '/connect/guide': typeof ConnectGuideRoute
+  '/options/$symbol': typeof OptionsSymbolRoute
   '/authorize/': typeof AuthorizeIndexRoute
+  '/briefs/': typeof BriefsIndexRoute
   '/api/agent-logins/exchange': typeof ApiAgentLoginsExchangeRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/brokers/tastytrade/authorize': typeof ApiBrokersTastytradeAuthorizeRoute
@@ -393,9 +420,12 @@ export interface FileRouteTypes {
     | '/api/stream'
     | '/api/viewer'
     | '/authorize/consent'
+    | '/briefs/$date'
     | '/connect/agent'
     | '/connect/guide'
+    | '/options/$symbol'
     | '/authorize/'
+    | '/briefs/'
     | '/api/agent-logins/exchange'
     | '/api/auth/$'
     | '/api/brokers/tastytrade/authorize'
@@ -431,9 +461,12 @@ export interface FileRouteTypes {
     | '/api/stream'
     | '/api/viewer'
     | '/authorize/consent'
+    | '/briefs/$date'
     | '/connect/agent'
     | '/connect/guide'
+    | '/options/$symbol'
     | '/authorize'
+    | '/briefs'
     | '/api/agent-logins/exchange'
     | '/api/auth/$'
     | '/api/brokers/tastytrade/authorize'
@@ -471,9 +504,12 @@ export interface FileRouteTypes {
     | '/api/stream'
     | '/api/viewer'
     | '/authorize/consent'
+    | '/briefs/$date'
     | '/connect/agent'
     | '/connect/guide'
+    | '/options/$symbol'
     | '/authorize/'
+    | '/briefs/'
     | '/api/agent-logins/exchange'
     | '/api/auth/$'
     | '/api/brokers/tastytrade/authorize'
@@ -508,8 +544,11 @@ export interface RootRouteChildren {
   ApiSnapshotRoute: typeof ApiSnapshotRoute
   ApiStreamRoute: typeof ApiStreamRoute
   ApiViewerRoute: typeof ApiViewerRoute
+  BriefsDateRoute: typeof BriefsDateRoute
   ConnectAgentRoute: typeof ConnectAgentRoute
   ConnectGuideRoute: typeof ConnectGuideRoute
+  OptionsSymbolRoute: typeof OptionsSymbolRoute
+  BriefsIndexRoute: typeof BriefsIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBrokersTastytradeAuthorizeRoute: typeof ApiBrokersTastytradeAuthorizeRoute
   ApiBrokersTastytradeCallbackRoute: typeof ApiBrokersTastytradeCallbackRoute
@@ -729,6 +768,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthorizeConsentRouteImport
       parentRoute: typeof AuthorizeRoute
     }
+    '/briefs/': {
+      id: '/briefs/'
+      path: '/briefs'
+      fullPath: '/briefs/'
+      preLoaderRoute: typeof BriefsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/briefs/$date': {
+      id: '/briefs/$date'
+      path: '/briefs/$date'
+      fullPath: '/briefs/$date'
+      preLoaderRoute: typeof BriefsDateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/connect/agent': {
       id: '/connect/agent'
       path: '/connect/agent'
@@ -741,6 +794,13 @@ declare module '@tanstack/react-router' {
       path: '/connect/guide'
       fullPath: '/connect/guide'
       preLoaderRoute: typeof ConnectGuideRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/options/$symbol': {
+      id: '/options/$symbol'
+      path: '/options/$symbol'
+      fullPath: '/options/$symbol'
+      preLoaderRoute: typeof OptionsSymbolRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/agent-logins/exchange': {
@@ -854,8 +914,11 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSnapshotRoute: ApiSnapshotRoute,
   ApiStreamRoute: ApiStreamRoute,
   ApiViewerRoute: ApiViewerRoute,
+  BriefsDateRoute: BriefsDateRoute,
   ConnectAgentRoute: ConnectAgentRoute,
   ConnectGuideRoute: ConnectGuideRoute,
+  OptionsSymbolRoute: OptionsSymbolRoute,
+  BriefsIndexRoute: BriefsIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBrokersTastytradeAuthorizeRoute: ApiBrokersTastytradeAuthorizeRoute,
   ApiBrokersTastytradeCallbackRoute: ApiBrokersTastytradeCallbackRoute,

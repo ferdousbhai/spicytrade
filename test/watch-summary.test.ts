@@ -21,10 +21,15 @@ describe('watch summary', () => {
   it('renders market state, update time and ticker rows from the public snapshot', () => {
     const html = renderWatchSummary(snapshot)
     expect(html).toContain('Market closed · updated <time datetime="2026-10-15T08:12:59.466Z">')
-    expect(html).toContain('<th scope="row">AAL</th>')
+    expect(html).toContain('<th scope="row"><a href="/options/AAL">AAL</a></th>')
     expect(html).toContain('$11.85</td><td>+0.51%</td><td>24.6</td>')
     expect(html).toContain('-1.20%</td><td>—</td>')
     expect(html).toContain('Showing 2 of 2 symbols')
+  })
+
+  it('links a share-class symbol to its page with the slash percent-encoded', () => {
+    const shareClass = PublicMarketSnapshotSchema.parse({ ...snapshot, tickers: [{ ...snapshot.tickers[0], symbol: 'BRK/B' }] })
+    expect(renderWatchSummary(shareClass)).toContain('<a href="/options/BRK%2FB">BRK/B</a>')
   })
 
   it('escapes provider text', () => {

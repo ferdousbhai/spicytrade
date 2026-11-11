@@ -1,6 +1,6 @@
-import { formatMarketPrice, PublicMarketSnapshotSchema, type MarketState, type PublicMarketSnapshot } from '../domain/market'
+import { formatMarketPrice, MARKET_STATE_LABELS, PublicMarketSnapshotSchema, type PublicMarketSnapshot } from '../domain/market'
 import { PUBLIC_SNAPSHOT_URL } from '../deployment'
-import { WATCH_SUMMARY_ID } from '../domain/site'
+import { symbolPagePath, WATCH_SUMMARY_ID } from '../domain/site'
 
 /**
  * A plain-HTML reading of the public snapshot, written into the `/watch` document on the server.
@@ -32,22 +32,18 @@ const escapeHtml = (value: string) => value
 const percent = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
 const rank = (value: number | undefined) => (value === undefined ? '—' : value.toFixed(1))
 
-const MARKET_STATE_LABELS = {
-  open: 'Market open',
-  closed: 'Market closed',
-  pre: 'Pre-market',
-  after: 'After hours',
-  unknown: 'Market status unknown',
-} as const satisfies Record<MarketState, string>
-
 /** Market state as the snapshot reports it; the summary never infers a session of its own. */
 function marketStateLine(snapshot: PublicMarketSnapshot): string {
   const state = MARKET_STATE_LABELS[snapshot.marketState]
   return `${state} · updated <time datetime="${escapeHtml(snapshot.syncedAt)}">${escapeHtml(new Date(snapshot.syncedAt).toUTCString())}</time>`
 }
 
+/**
+ * Each symbol links to its own server-rendered page (`/options/$symbol`): this table is what a
+ * crawler reads on `/watch`, so the link is how it finds every symbol page without the sitemap.
+ */
 export function renderWatchSummary(snapshot: PublicMarketSnapshot): string {
-  const rows = snapshot.tickers.map((ticker) => `<tr><th scope="row">${escapeHtml(ticker.symbol)}</th><td>${escapeHtml(ticker.name)}</td><td>${formatMarketPrice(ticker.price)}</td><td>${percent(ticker.changePercent)}</td><td>${rank(ticker.ivRank)}</td></tr>`).join('')
+  const rows = snapshot.tickers.map((ticker) => `<tr><th scope="row"><a href="${escapeHtml(symbolPagePath(ticker.symbol))}">${escapeHtml(ticker.symbol)}</a></th><td>${escapeHtml(ticker.name)}</td><td>${formatMarketPrice(ticker.price)}</td><td>${percent(ticker.changePercent)}</td><td>${rank(ticker.ivRank)}</td></tr>`).join('')
   return `<section class="watch-summary" aria-label="Market snapshot"><h1>Options Watch</h1><p>${marketStateLine(snapshot)}</p><table><thead><tr><th scope="col">Symbol</th><th scope="col">Name</th><th scope="col">Price</th><th scope="col">Change</th><th scope="col">IV rank</th></tr></thead><tbody>${rows}</tbody></table><p>Showing ${snapshot.tickers.length} of ${snapshot.tickers.length} symbols. Data may be delayed. Not investment advice: see <a href="/disclosures">risk disclosures</a>.</p></section>`
 }
 

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { publishDailyBrief, readDailyBriefBefore, readLatestDailyBrief, readLatestRecommendation } from '../src/server/daily-brief-store'
+import {
+  listDailyBriefs,
+  publishDailyBrief,
+  readAdjacentBriefDates,
+  readDailyBriefBefore,
+  readDailyBriefOn,
+  readLatestDailyBrief,
+  readLatestRecommendation,
+} from '../src/server/daily-brief-store'
 import { dailyBriefFixture } from './fixtures/market'
 import { migrationStore } from './sqlite-d1'
 
@@ -50,6 +58,37 @@ describe('daily brief store', () => {
       cursor = previous?.marketDate
     }
     expect(walked).toEqual(['brief-2026-08-12', 'brief-2026-08-11'])
+    store.close()
+  })
+
+  it('reads one market date exactly, its neighbours by date, and the whole archive newest first', async () => {
+    const store = await migrationStore()
+    const oldest = await publishDailyBrief(store.database, { ...submission, marketDate: '2026-08-11' }, new Date('2026-08-11T13:35:00.000Z'))
+    const latest = await publishDailyBrief(store.database, submission, new Date('2026-08-13T13:35:00.000Z'))
+    // Published last, for a date in between: order is by market date, never by instant.
+    const middle = await publishDailyBrief(store.database, { ...submission, marketDate: '2026-08-12', recommendations: [] }, new Date('2026-08-13T15:00:00.000Z'))
+
+    await expect(readDailyBriefOn(store.database, '2026-08-12')).resolves.toEqual(middle)
+    // A date between two briefs is no brief: the exact read never answers with a neighbour.
+    await expect(readDailyBriefOn(store.database, '2026-08-10')).resolves.toBeUndefined()
+    await expect(readDailyBriefOn(store.database, '2026-08-14')).resolves.toBeUndefined()
+    await expect(readDailyBriefOn(store.database, 'latest')).rejects.toThrow()
+
+    await expect(readAdjacentBriefDates(store.database, '2026-08-12')).resolves.toEqual({ newer: '2026-08-13', older: '2026-08-11' })
+    await expect(readAdjacentBriefDates(store.database, '2026-08-11')).resolves.toEqual({ newer: '2026-08-12', older: null })
+    await expect(readAdjacentBriefDates(store.database, '2026-08-13')).resolves.toEqual({ newer: null, older: '2026-08-12' })
+
+    await expect(listDailyBriefs(store.database)).resolves.toEqual([latest, middle, oldest])
+    store.close()
+  })
+
+  it('lists nothing from an empty archive, and fails the listing on a stored brief outside the contract', async () => {
+    const store = await migrationStore()
+    await expect(listDailyBriefs(store.database)).resolves.toEqual([])
+    await publishDailyBrief(store.database, submission, new Date('2026-08-13T13:35:00.000Z'))
+    store.sqlite.prepare("INSERT INTO daily_briefs (id, published_at, payload_json) VALUES ('brief-2026-08-12', 'x', '{\"marketDate\":\"2026-08-12\"}')").run()
+    // A row that no longer parses is not dropped from the list: the archive would silently lose a day.
+    await expect(listDailyBriefs(store.database)).rejects.toThrow()
     store.close()
   })
 

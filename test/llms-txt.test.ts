@@ -14,6 +14,12 @@ describe('llms.txt', () => {
     for (const link of links) expect(link).toMatch(/^- \[[^\]]+\]\(https:\/\/spicy\.trade\/[^)]*\)/)
   })
 
+  it('names the server-rendered brief archive and symbol pages', () => {
+    expect(llmsTxt()).toContain('(https://spicy.trade/briefs)')
+    expect(llmsTxt()).toContain('`/briefs/YYYY-MM-DD`')
+    expect(llmsTxt()).toContain('`/options/SYMBOL`')
+  })
+
   it('gives an existing agent a connector-only setup path and explicit refresh limits', () => {
     expect(llmsTxt()).toContain(CONNECT_GUIDE_URL)
     const guide = connectGuide()

@@ -143,6 +143,29 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .site-prose p { max-width: 68ch; color: var(--ink-muted); font-size: 14px; line-height: 1.7; }
 .site-prose a { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
 .site-prose .site-effective { margin: 0 0 32px; color: var(--ink-faint); font: 12px/1.4 var(--sans); }
+/* The server-rendered public pages (/options/$symbol, /briefs, /briefs/$date) inside the site frame. */
+.public-page-meta { color: var(--ink-faint); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.site-prose p.public-page-meta { color: var(--ink-faint); font-size: 12px; line-height: 1.5; }
+.public-readings { margin: 16px 0; border-top: 1px solid var(--hairline); font-variant-numeric: tabular-nums; }
+.public-readings > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 24px; padding: 8px 0; border-bottom: 1px solid var(--hairline); font-size: 14px; }
+.public-readings dt { color: var(--ink-muted); }
+.public-readings dd { margin: 0; text-align: right; }
+.public-catalysts > li { padding: 12px 0; border-top: 1px solid var(--hairline); }
+.public-catalysts h3 { margin: 4px 0; font-size: 14px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.site-prose .public-catalysts p { margin: 0; overflow-wrap: anywhere; }
+.site-prose p.public-catalyst-when { color: var(--ink-faint); font-size: 12px; }
+.public-brief-nav { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 12px; font-size: 14px; }
+.public-brief-trade .brief-card { padding-top: 0; border-top: 0; }
+.site-prose .trade-line { display: block; }
+.site-prose .thesis p { color: inherit; font-size: inherit; line-height: inherit; }
+.site-prose .thesis a { color: var(--text); }
+.site-prose > .brief-headlines-section { padding: 0 0 32px; margin: 0 0 32px; border-bottom: 1px solid var(--hairline); }
+.site-prose .brief-headlines a { color: inherit; text-decoration: none; }
+.public-brief-archive { margin: 0 0 24px; border-top: 1px solid var(--hairline); }
+.public-brief-archive > li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 24px; padding: 8px 0; border-bottom: 1px solid var(--hairline); font-size: 14px; }
+.public-brief-archive span { color: var(--ink-muted); overflow-wrap: anywhere; }
+.connect-footer.public-page-disclaimer { padding: 16px 0 0; }
+.site-prose .public-page-disclaimer a { color: inherit; text-decoration: none; }
 .site-footer { min-height: 72px; padding: 24px 0; border-top: 1px solid var(--hairline); display: flex; align-items: center; justify-content: space-between; gap: 24px; color: var(--ink-faint); font-size: 12px; }
 .site-footer a:hover { color: var(--text); }
 
