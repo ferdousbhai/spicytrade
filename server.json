@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ferdousbhai/spicytrade",
+  "title": "spicytrade",
+  "description": "Options quotes, IV rank and term structure, a catalyst calendar and a daily options brief.",
+  "websiteUrl": "https://spicy.trade",
+  "repository": {
+    "url": "https://github.com/ferdousbhai/spicytrade",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://spicy.trade/mcp"
+    }
+  ]
+}
