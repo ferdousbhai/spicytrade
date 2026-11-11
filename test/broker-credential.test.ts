@@ -177,7 +177,7 @@ describe('request-scoped broker credential', () => {
     ))
     expect(called.error).toBeUndefined()
     expect(called.result.content).toEqual([{
-      text: 'No brokerage is connected. Connect Spicytrade in your current agent conversation using https://spicy.trade/connect/guide. Account access needs the local Linux connector; research can use the remote MCP server.',
+      text: 'No brokerage is connected. Connect Spicytrade in your current agent conversation using https://spicy.trade/connect/guide. Account access needs the local connector (Linux or macOS); research can use the remote MCP server.',
       type: 'text',
     }])
     expect(fetchMock).not.toHaveBeenCalled()

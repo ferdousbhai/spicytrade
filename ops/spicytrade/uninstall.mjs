@@ -7,7 +7,7 @@ import {
   AGENT_TOKEN_SERVICE, CLI_PATH, LEGACY_AGENT_TOKEN_SERVICE, LEGACY_MCP_SERVER_NAME, MCP_SERVER_NAME, MCP_TOKEN_KEY, ORIGIN,
 } from './config.mjs'
 import {
-  agentToken, APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, keyringClear, REFRESH_TOKEN_KEY, secretToolInstalled, TASTYTRADE,
+  agentToken, APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, keyringClear, keyringClearCommand, keyringHelperInstalled, keyringHelperMissing, REFRESH_TOKEN_KEY, TASTYTRADE,
   tastytradeCredentialKind,
 } from './keyring.mjs'
 import { removeLegacyUnits } from './legacy-proxy.mjs'
@@ -91,18 +91,18 @@ export async function uninstall(out = process.stdout) {
   ]
   // A missing helper says nothing about whether credentials are still stored. Removal failures
   // do not stop the rest: these commands finish cleanup even after the CLI itself is removed.
-  const helperInstalled = await secretToolInstalled()
+  const helperInstalled = await keyringHelperInstalled()
   // Name only what was there: a member who never connected tastytrade is not told it was removed.
   // A keyring that cannot be read says nothing either way, so both are named.
   const tastytradeSaved = !helperInstalled || await tastytradeCredentialKind().then(({ kind }) => kind !== 'none', () => true)
   const saved = tastytradeSaved ? 'spicytrade sign-in and tastytrade connection' : 'spicytrade sign-in'
   const left = []
   for (const [service, key] of entries) {
-    if (!helperInstalled || !await keyringClear(service, key)) left.push(`secret-tool clear service ${service} key ${key}`)
+    if (!helperInstalled || !await keyringClear(service, key)) left.push(keyringClearCommand(service, key))
   }
   out.write(left.length
     ? `✗ could not remove this computer's ${saved} from password storage.\n`
-      + (helperInstalled ? '    Restore access to your keyring, then run:\n' : '    Install secret-tool (libsecret-tools on Debian/Ubuntu; libsecret on Arch/Fedora), then run:\n')
+      + (helperInstalled ? '    Restore access to your keyring, then run:\n' : `    ${keyringHelperMissing().name} is missing. ${keyringHelperMissing().install}, then run:\n`)
       + left.map((command) => `      ${command}\n`).join('')
     : `✓ removed this computer's ${saved} from the keyring\n`)
 

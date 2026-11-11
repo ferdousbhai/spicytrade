@@ -5,7 +5,7 @@ import { AppGrantRefusalSchema, transportCode } from './broker-grants.mjs'
 import { cliCommand, ORIGIN } from './config.mjs'
 import { keyringEnvironment } from './keyring-environment.mjs'
 import {
-  agentToken, APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, keyringClear, keyringSecret, keyringStore, KeyringUnavailable, REFRESH_TOKEN_KEY, TASTYTRADE,
+  agentToken, APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, keyringClear, keyringPrompt, keyringSecret, keyringStore, KeyringUnavailable, REFRESH_TOKEN_KEY, TASTYTRADE,
   tastytradeCredentialKind,
 } from './keyring.mjs'
 import { awaitReturn, CliFailure, loopbackListener, openBrowser, remoteNote, unexpectedTail } from './loopback.mjs'
@@ -169,7 +169,7 @@ export async function connectTastytrade(out = process.stdout) {
 /**
  * `spicytrade store-personal-grant`: keep a personal grant from the member's own tastytrade OAuth
  * app (my.tastytrade.com > OAuth Applications > Manage > Create Grant) instead of connecting
- * through spicytrade's. `secret-tool store` prompts for each value on the terminal itself, so
+ * through spicytrade's. The password-storage helper prompts for each value on the terminal itself, so
  * neither reaches this process, the shell history, or any argument list.
  */
 export async function storePersonalGrant(out = process.stdout) {
@@ -180,8 +180,9 @@ export async function storePersonalGrant(out = process.stdout) {
       + `  ${cliCommand('disconnect-tastytrade')}\nthen run this again.`)
   }
   for (const [key, label] of [[CLIENT_SECRET_KEY, 'tastytrade OAuth client secret'], [REFRESH_TOKEN_KEY, 'tastytrade refresh token']]) {
-    out.write(`Paste your ${label} at the Password prompt (it is not shown as you type):\n`)
-    spawnSync('secret-tool', ['store', `--label=${label}`, 'service', BROKER, 'key', key], { stdio: 'inherit', env: await keyringEnvironment() })
+    const prompt = keyringPrompt(BROKER, key, label)
+    out.write(`Paste your ${label} ${prompt.note}:\n`)
+    spawnSync(prompt.bin, prompt.args, { stdio: 'inherit', env: await keyringEnvironment() })
     if (!await keyringSecret(BROKER, key)) {
       // Cancelled at the prompt. Half a grant cannot trade, so none is kept.
       for (const partial of [CLIENT_SECRET_KEY, REFRESH_TOKEN_KEY]) await keyringClear(BROKER, partial)

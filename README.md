@@ -31,7 +31,7 @@ spicytrade has no confirmation step of its own; any prompt before an order comes
 
 Use the market data and research with no install: point your MCP client at `https://spicy.trade/mcp`.
 
-To connect your tastytrade account (Linux, Node.js 22+, `secret-tool` for the keyring):
+To connect your tastytrade account (macOS or Linux, Node.js 22+; Linux also needs `secret-tool` for the keyring):
 
 ```sh
 curl -fsSL https://spicy.trade/install.sh | bash

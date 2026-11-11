@@ -707,7 +707,7 @@ describe('spicytrade uninstall', () => {
     expect(await cli.exited).toBe(0)
     const { stdout } = cli.output()
     expect(stdout).toContain('could not remove this computer\'s spicytrade sign-in and tastytrade connection from password storage.')
-    expect(stdout).toContain('Install secret-tool')
+    expect(stdout).toContain('secret-tool is missing. Install it')
     expect(stdout).toContain('secret-tool clear service spicytrade key mcp-token')
     expect(stdout).not.toContain('✓ removed this computer\'s')
     expect(await readFile(join(machine.bin, 'store', 'spicytrade_mcp-token'), 'utf8')).toBe(OLD_TOKEN)

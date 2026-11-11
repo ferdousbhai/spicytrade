@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { grantMinter, grantRefused, TastytradeAuthError } from './broker-grants.mjs'
 import { CLIENTS, EXPECTED_TARGET, namesSpicytrade } from './clients.mjs'
 import { CLI_PATH, cliCommand, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME } from './config.mjs'
-import { agentToken, keyringWritable, secretToolInstalled, tastytradeCredentialKind } from './keyring.mjs'
+import { agentToken, keyringHelperInstalled, keyringHelperMissing, keyringWritable, requireSupportedPlatform, tastytradeCredentialKind } from './keyring.mjs'
 import { login } from './login.mjs'
 import { CliFailure } from './loopback.mjs'
 import { connectTastytrade } from './tastytrade-connect.mjs'
@@ -102,8 +102,8 @@ function closingLine() {
 
 /** Explicit account connection, callable from an existing agent's shell without a terminal questionnaire. */
 export async function connect(out = process.stdout) {
-  if (process.platform !== 'linux') throw new CliFailure('Local account access currently needs Linux. Use https://spicy.trade/mcp for research on other platforms.')
-  if (!await secretToolInstalled()) throw new CliFailure('Install secret-tool for your system, then connect again. Your agent can help install the missing dependency.')
+  requireSupportedPlatform()
+  if (!await keyringHelperInstalled()) throw new CliFailure(`${keyringHelperMissing().name} is missing. ${keyringHelperMissing().install}, then connect again. Your agent can help with that.`)
   out.write('Checking password storage. Approve any desktop unlock dialog.\n')
   if (!await keyringWritable(out)) throw new CliFailure('Password storage is unavailable. Connect from a signed-in desktop session with a working system keyring.')
   let token = await agentToken()
