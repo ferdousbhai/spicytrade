@@ -45,7 +45,8 @@ if [[ $1 == -i ]]; then
   [[ $1 == add-generic-password ]] || exit 2
   shift
   attributes "$@"
-  [[ -n $hex ]] && password=$(printf '%s' "$hex" | xxd -r -p)
+  # Decoded by bash itself: a build image need not have xxd.
+  [[ -n $hex ]] && password=$(printf "$(printf '%s' "$hex" | sed 's/../\\\\x&/g')")
   printf '%s' "$password" > "$store/\${service}_$account"
 elif [[ $1 == find-generic-password ]]; then
   shift
