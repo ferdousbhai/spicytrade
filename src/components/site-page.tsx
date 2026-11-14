@@ -31,7 +31,9 @@ export function SitePage({
         <Link aria-label={HOME_LINK_LABEL} className="site-brand" to="/watch">
           <BrandMark />
         </Link>
-        <nav aria-label="Information">
+        <nav aria-label="Site">
+          <Link to="/briefs">Briefs</Link>
+          <Link to="/positions">Positions</Link>
           <LegalLinks />
         </nav>
       </header>
