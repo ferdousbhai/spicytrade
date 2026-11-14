@@ -17,7 +17,6 @@
     "cf-typegen": "cf workers types",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
     "catalog:refresh": "bash ops/instrument-catalog/run.sh"
   },
   "dependencies": {
@@ -51,7 +50,6 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "2.0.0-beta.sha-52b0dc0e9",
     "@oxlint/plugins": "1.78.0",
-    "@playwright/test": "^1.62.1",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.10.2",

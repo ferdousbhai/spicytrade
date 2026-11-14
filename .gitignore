@@ -8,8 +8,6 @@ dist
 .dev.vars
 .tanstack
 .wrangler
-playwright-report/
-test-results/
 work/
 ops/**/runs/
 *.out

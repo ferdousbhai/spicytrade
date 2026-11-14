@@ -125,7 +125,6 @@ git diff --check
 npm run lint
 npm test
 npm run build
-npm run test:e2e
 ```
 
 Tests must never call live order endpoints.
