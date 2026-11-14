@@ -31,6 +31,9 @@ export const WATCH_SUMMARY_ID = 'watch-summary'
 /** The archive of published daily briefs, one server-rendered page per market date under it. */
 export const BRIEF_ARCHIVE_PATH = '/briefs'
 
+/** The brief's book: every open position and the ones it has closed. */
+export const POSITIONS_PATH = '/positions'
+
 /** One published brief's own address, keyed by its market date (`YYYY-MM-DD`). */
 export function briefPagePath(marketDate: string): string {
   return `${BRIEF_ARCHIVE_PATH}/${marketDate}`

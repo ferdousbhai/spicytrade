@@ -15,6 +15,7 @@ import { Route as AuthorizeRouteImport } from './routes/authorize'
 import { Route as DisclosuresRouteImport } from './routes/disclosures'
 import { Route as LlmsFullDottxtRouteImport } from './routes/llms-full[.]txt'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
+import { Route as PositionsRouteImport } from './routes/positions'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
@@ -78,6 +79,11 @@ const LlmsFullDottxtRoute = LlmsFullDottxtRouteImport.update({
 const LlmsDottxtRoute = LlmsDottxtRouteImport.update({
   id: '/llms.txt',
   path: '/llms.txt',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PositionsRoute = PositionsRouteImport.update({
+  id: '/positions',
+  path: '/positions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -268,6 +274,7 @@ export interface FileRoutesByFullPath {
   '/disclosures': typeof DisclosuresRoute
   '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
+  '/positions': typeof PositionsRoute
   '/privacy': typeof PrivacyRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -309,6 +316,7 @@ export interface FileRoutesByTo {
   '/disclosures': typeof DisclosuresRoute
   '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
+  '/positions': typeof PositionsRoute
   '/privacy': typeof PrivacyRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -353,6 +361,7 @@ export interface FileRoutesById {
   '/disclosures': typeof DisclosuresRoute
   '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
+  '/positions': typeof PositionsRoute
   '/privacy': typeof PrivacyRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -397,6 +406,7 @@ export interface FileRouteTypes {
     | '/disclosures'
     | '/llms-full.txt'
     | '/llms.txt'
+    | '/positions'
     | '/privacy'
     | '/robots.txt'
     | '/sitemap.xml'
@@ -438,6 +448,7 @@ export interface FileRouteTypes {
     | '/disclosures'
     | '/llms-full.txt'
     | '/llms.txt'
+    | '/positions'
     | '/privacy'
     | '/robots.txt'
     | '/sitemap.xml'
@@ -481,6 +492,7 @@ export interface FileRouteTypes {
     | '/disclosures'
     | '/llms-full.txt'
     | '/llms.txt'
+    | '/positions'
     | '/privacy'
     | '/robots.txt'
     | '/sitemap.xml'
@@ -525,6 +537,7 @@ export interface RootRouteChildren {
   DisclosuresRoute: typeof DisclosuresRoute
   LlmsFullDottxtRoute: typeof LlmsFullDottxtRoute
   LlmsDottxtRoute: typeof LlmsDottxtRoute
+  PositionsRoute: typeof PositionsRoute
   PrivacyRoute: typeof PrivacyRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
@@ -598,6 +611,13 @@ declare module '@tanstack/react-router' {
       path: '/llms.txt'
       fullPath: '/llms.txt'
       preLoaderRoute: typeof LlmsDottxtRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/positions': {
+      id: '/positions'
+      path: '/positions'
+      fullPath: '/positions'
+      preLoaderRoute: typeof PositionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -895,6 +915,7 @@ const rootRouteChildren: RootRouteChildren = {
   DisclosuresRoute: DisclosuresRoute,
   LlmsFullDottxtRoute: LlmsFullDottxtRoute,
   LlmsDottxtRoute: LlmsDottxtRoute,
+  PositionsRoute: PositionsRoute,
   PrivacyRoute: PrivacyRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,

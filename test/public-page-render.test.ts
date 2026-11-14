@@ -7,9 +7,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { BriefArchivePage, BriefPage } from '../src/components/brief-page'
 import { briefArchiveHead, briefPageHead, symbolPageHead } from '../src/components/public-page-head'
+import { PositionsPage } from '../src/components/positions-page'
 import { SymbolPage } from '../src/components/symbol-page'
 import { PublicTickerSchema } from '../src/domain/market'
-import { type SymbolPageData } from '../src/domain/public-page'
+import { positionMove } from '../src/domain/brief'
+import { type PositionsPageData, type SymbolPageData } from '../src/domain/public-page'
 import { dailyBriefFixture, marketSnapshotFixture } from './fixtures/market'
 
 afterEach(cleanup)
@@ -22,7 +24,7 @@ async function renderPage(page: ReactElement): Promise<HTMLElement> {
   // The router scrolls to the top after a load; jsdom has no viewport to scroll.
   vi.stubGlobal('scrollTo', () => undefined)
   const root = createRootRoute()
-  const paths = ['/watch', '/recommendations', '/terms', '/privacy', '/disclosures', '/briefs', '/briefs/$date', '/options/$symbol']
+  const paths = ['/watch', '/recommendations', '/terms', '/privacy', '/disclosures', '/briefs', '/briefs/$date', '/options/$symbol', '/positions']
   const routes = [
     createRoute({ component: () => page, getParentRoute: () => root, path: '/' }),
     ...paths.map((path) => createRoute({ getParentRoute: () => root, path })),
@@ -149,6 +151,53 @@ describe('brief pages', () => {
     expect(hrefs(container)).toEqual(expect.arrayContaining(['/briefs/2026-08-13', '/briefs/2026-08-12', '/recommendations']))
     const empty = await renderPage(createElement(BriefArchivePage, { briefs: [] }))
     expect(empty.textContent).toContain('No brief has been published yet.')
+  })
+})
+
+describe('positions page', () => {
+  const page: PositionsPageData = {
+    marketDate: '2026-11-16',
+    positions: {
+      open: [{
+        symbol: 'NVDA', direction: 'bullish', trade: 'Buy NVDA 250c 1/15/27', premise: `Orders keep rising ${HOSTILE}`,
+        openedOn: '2026-11-02', model: 'claude-fable-5-2', entryPrice: 201.5, hold: { date: '2026-11-16', reason: 'Still true.' },
+      }],
+      closed: [
+        { symbol: 'NKE', direction: 'bearish', trade: 'Buy NKE 30p 6/17/27', openedOn: '2026-10-06', closedOn: '2026-11-13', reason: 'The bounce happened.', entryPrice: 32, exitPrice: 36 },
+        { symbol: 'AAPL', direction: 'bullish', trade: 'Buy AAPL', openedOn: '2026-08-03', closedOn: '2026-08-20' },
+      ],
+    },
+    symbolsWithPages: ['NVDA'],
+  }
+
+  it('lists what is open with its premise and latest hold, and what is closed with what changed and the stock\'s move', async () => {
+    const container = await renderPage(createElement(PositionsPage, { page }))
+    const text = container.textContent ?? ''
+    expect(text).toContain('Buy NVDA 250c 1/15/27')
+    expect(text).toContain('Orders keep rising')
+    expect(text).toContain('Still true.')
+    expect(text).toContain('Opened Nov 2, 2026 at $201.50 · claude-fable-5-2')
+    expect(text).toContain('The bounce happened.')
+    expect(text).toContain('Oct 6, 2026 to Nov 13, 2026 · $32.00 to $36.00')
+    expect(container.querySelector('[data-favour="against"]')?.textContent).toBe('-12.5%')
+    // Only a name with a symbol page is linked; the brief the book came from always is.
+    expect(hrefs(container)).toContain('/options/NVDA')
+    expect(hrefs(container)).not.toContain('/options/NKE')
+    expect(hrefs(container)).toContain('/briefs/2026-11-16')
+    expect(container.querySelector('script')).toBeNull()
+  })
+
+  it('says so when no brief has carried positions yet', async () => {
+    const container = await renderPage(createElement(PositionsPage, { page: { marketDate: null, positions: null, symbolsWithPages: [] } }))
+    expect(container.textContent).toContain('No positions have been published yet.')
+    expect(container.querySelector('.public-positions')).toBeNull()
+  })
+
+  it('signs the stock\'s move in the position\'s favour, and leaves it out without both prices', () => {
+    expect(positionMove({ direction: 'bullish', entryPrice: 100, exitPrice: 110 })).toEqual({ change: expect.closeTo(0.1), favour: 'with' })
+    expect(positionMove({ direction: 'bearish', entryPrice: 100, exitPrice: 110 })).toEqual({ change: expect.closeTo(-0.1), favour: 'against' })
+    expect(positionMove({ direction: 'neutral', entryPrice: 100, exitPrice: 90 })).toEqual({ change: expect.closeTo(-0.1), favour: null })
+    expect(positionMove({ direction: 'bullish', entryPrice: 100 })).toBeUndefined()
   })
 })
 

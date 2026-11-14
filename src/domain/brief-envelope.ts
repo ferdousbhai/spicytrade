@@ -7,4 +7,6 @@ export const BRIEF_ENVELOPE = {
   linkSnippet: 500,
   recommendations: 10,
   model: 80,
+  positions: 50,
+  positionText: 500,
 } as const

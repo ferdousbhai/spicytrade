@@ -143,7 +143,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .site-prose p { max-width: 68ch; color: var(--ink-muted); font-size: 14px; line-height: 1.7; }
 .site-prose a { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
 .site-prose .site-effective { margin: 0 0 32px; color: var(--ink-faint); font: 12px/1.4 var(--sans); }
-/* The server-rendered public pages (/options/$symbol, /briefs, /briefs/$date) inside the site frame. */
+/* The server-rendered public pages (/options/$symbol, /briefs, /briefs/$date, /positions) inside the site frame. */
 .public-page-meta { color: var(--ink-faint); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .site-prose p.public-page-meta { color: var(--ink-faint); font-size: 12px; line-height: 1.5; }
 .public-readings { margin: 16px 0; border-top: 1px solid var(--hairline); font-variant-numeric: tabular-nums; }
@@ -164,6 +164,18 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .public-brief-archive { margin: 0 0 24px; border-top: 1px solid var(--hairline); }
 .public-brief-archive > li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 24px; padding: 8px 0; border-bottom: 1px solid var(--hairline); font-size: 14px; }
 .public-brief-archive span { color: var(--ink-muted); overflow-wrap: anywhere; }
+.public-position-count { margin-left: 4px; color: var(--ink-faint); font-weight: 400; font-variant-numeric: tabular-nums; }
+.public-positions { margin: 12px 0 0; border-top: 1px solid var(--hairline); }
+.public-positions > li { padding: 16px 0; border-bottom: 1px solid var(--hairline); }
+.public-position-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 24px; margin-bottom: 4px; }
+.public-position-head h3 { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.35; }
+.public-position-head h3 span { margin-left: 8px; color: var(--ink-faint); font-size: 12px; font-weight: 400; }
+.public-position-move { color: var(--ink-muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.public-position-move[data-favour="with"] { color: var(--up); }
+.public-position-move[data-favour="against"] { color: var(--down); }
+.site-prose .public-positions p { margin: 6px 0 0; overflow-wrap: anywhere; }
+.site-prose p.public-position-premise { color: var(--ink-soft); }
+.public-position-label { margin-right: 4px; color: var(--ink-faint); font-size: 12px; }
 .connect-footer.public-page-disclaimer { padding: 16px 0 0; }
 .site-prose .public-page-disclaimer a { color: inherit; text-decoration: none; }
 .site-footer { min-height: 72px; padding: 24px 0; border-top: 1px solid var(--hairline); display: flex; align-items: center; justify-content: space-between; gap: 24px; color: var(--ink-faint); font-size: 12px; }

@@ -177,6 +177,7 @@ describe('sitemap', () => {
     expect(locations).toEqual([
       'https://spicy.trade/watch',
       'https://spicy.trade/briefs',
+      'https://spicy.trade/positions',
       'https://spicy.trade/disclosures',
       'https://spicy.trade/terms',
       'https://spicy.trade/privacy',

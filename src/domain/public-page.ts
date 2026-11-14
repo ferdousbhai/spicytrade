@@ -1,4 +1,4 @@
-import { type DailyBrief, type DatedRecommendation } from './brief'
+import { type BriefPositions, type DailyBrief, type DatedRecommendation } from './brief'
 import { type Catalyst } from './catalyst'
 import { EquitySymbolSchema } from './instrument'
 import { IsoDateSchema } from './iso-date'
@@ -33,6 +33,18 @@ export type BriefPageData = {
    * Which of the brief's names have a symbol page today. A brief keeps a name the public
    * snapshot has since dropped, and its page would be a 404, so only these are linked.
    */
+  symbolsWithPages: string[]
+}
+
+/**
+ * The book as the latest brief that carried one left it, with the market date of that brief.
+ * `positions` is `null` until a brief has carried one, which is a page with nothing to list yet,
+ * not a missing page.
+ */
+export type PositionsPageData = {
+  marketDate: string | null
+  positions: BriefPositions | null
+  /** Which of the positions' names have a symbol page today; only these are linked. */
   symbolsWithPages: string[]
 }
 

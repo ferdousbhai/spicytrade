@@ -1,7 +1,7 @@
 import { upcomingCatalystsForSymbol } from '../domain/catalyst'
-import { type BriefArchiveEntry, type BriefPageData, type SymbolPageData } from '../domain/public-page'
+import { type BriefArchiveEntry, type BriefPageData, type PositionsPageData, type SymbolPageData } from '../domain/public-page'
 import { CallerVisibleError } from './caller-visible-error'
-import { listDailyBriefs, readAdjacentBriefDates, readDailyBriefOn, readLatestRecommendation } from './daily-brief-store'
+import { listDailyBriefs, readAdjacentBriefDates, readDailyBriefOn, readLatestDailyBrief, readLatestRecommendation } from './daily-brief-store'
 import { type AppEnv } from './env'
 import { loadStoredPublicMarketUniverse } from './public-market-universe'
 import { brokerApi, loadStoredPublicSymbol } from './tastytrade'
@@ -48,6 +48,14 @@ export async function readBriefPage(env: AppEnv, marketDate: string): Promise<Br
     olderMarketDate: adjacent.older,
     symbolsWithPages: await symbolsWithPages(env, brief.recommendations.map((recommendation) => recommendation.symbol)),
   }
+}
+
+/** The book the latest brief carried; a brief stored before positions were sent carries none. */
+export async function readPositionsPage(env: AppEnv): Promise<PositionsPageData> {
+  const brief = await readLatestDailyBrief(database(env))
+  const positions = brief?.positions ?? null
+  const symbols = positions ? [...positions.open, ...positions.closed].map((position) => position.symbol) : []
+  return { marketDate: brief?.marketDate ?? null, positions, symbolsWithPages: await symbolsWithPages(env, symbols) }
 }
 
 /**

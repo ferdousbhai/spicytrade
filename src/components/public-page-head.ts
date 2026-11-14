@@ -1,6 +1,6 @@
 import { type DailyBrief } from '../domain/brief'
 import { issuerName, type PublicTicker } from '../domain/market'
-import { BRIEF_ARCHIVE_PATH, briefPagePath, pageTitle, SITE_NAME, SITE_ORIGIN, symbolPagePath } from '../domain/site'
+import { BRIEF_ARCHIVE_PATH, briefPagePath, pageTitle, POSITIONS_PATH, SITE_NAME, SITE_ORIGIN, symbolPagePath } from '../domain/site'
 import { formatCalendarDay } from './ny-time'
 
 /**
@@ -49,6 +49,14 @@ export function briefPageHead(brief: Pick<DailyBrief, 'marketDate' | 'recommenda
       : `The ${SITE_NAME} daily options brief for ${day}: no trades, with the morning's headlines.`,
     path: briefPagePath(brief.marketDate),
     title: symbols.length ? `Options brief for ${day}: ${symbols.join(', ')}` : `Options brief for ${day}`,
+  })
+}
+
+export function positionsHead() {
+  return publicPageHead({
+    description: `Every position the ${SITE_NAME} daily options brief has open, with the premise each rests on, and the ones it has closed, with what changed.`,
+    path: POSITIONS_PATH,
+    title: 'Open and closed positions',
   })
 }
 

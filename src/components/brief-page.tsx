@@ -46,6 +46,7 @@ export function BriefPage({ page }: { page: BriefPageData }) {
           {page.olderMarketDate ? <BriefDayLink label="Previous" marketDate={page.olderMarketDate} /> : null}
           {page.newerMarketDate ? <BriefDayLink label="Next" marketDate={page.newerMarketDate} /> : null}
           <Link to="/briefs">All briefs</Link>
+          <Link to="/positions">Positions</Link>
         </nav>
       </section>
       {brief.recommendations.length === 0 && <section><h2>No trades</h2></section>}
@@ -89,7 +90,10 @@ export function BriefArchivePage({ briefs }: { briefs: BriefArchiveEntry[] }) {
             </ol>
           )
           : <p>No brief has been published yet.</p>}
-        <p>The latest brief is also in the app under <Link to="/recommendations">Recommendations</Link>.</p>
+        <p>
+          The latest brief is also in the app under <Link to="/recommendations">Recommendations</Link>, and what it has open
+          and closed is under <Link to="/positions">Positions</Link>.
+        </p>
       </section>
       <Disclaimer className="public-page-disclaimer" />
     </SitePage>

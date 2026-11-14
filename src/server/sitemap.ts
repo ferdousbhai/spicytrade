@@ -1,5 +1,5 @@
 import { errorName, toError } from '../domain/failure'
-import { BRIEF_ARCHIVE_PATH, briefPagePath, SITE_ORIGIN, symbolPagePath } from '../domain/site'
+import { BRIEF_ARCHIVE_PATH, briefPagePath, POSITIONS_PATH, SITE_ORIGIN, symbolPagePath } from '../domain/site'
 import { type AppEnv } from './env'
 import { readBriefArchive, readSymbolPageSymbols } from './public-pages'
 
@@ -8,7 +8,7 @@ import { readBriefArchive, readSymbolPageSymbols } from './public-pages'
  * `/recommendations` is left out on purpose: it is the client-rendered view of the same briefs,
  * and each brief's own server-rendered page under `/briefs` is the address to index.
  */
-const STATIC_PUBLIC_PAGES = ['/watch', BRIEF_ARCHIVE_PATH, '/disclosures', '/terms', '/privacy'] as const
+const STATIC_PUBLIC_PAGES = ['/watch', BRIEF_ARCHIVE_PATH, POSITIONS_PATH, '/disclosures', '/terms', '/privacy'] as const
 
 /**
  * How long a client may reuse the sitemap. Building it reads the whole stored snapshot and every

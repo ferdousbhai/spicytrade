@@ -3,7 +3,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { errorName, toError } from '../domain/failure'
 import { EquitySymbolSchema } from '../domain/instrument'
 import { IsoDateSchema } from '../domain/iso-date'
-import { readBriefArchive, readBriefPage, readSymbolPage } from './public-pages'
+import { readBriefArchive, readBriefPage, readPositionsPage, readSymbolPage } from './public-pages'
 import { appEnv } from './worker-env'
 
 /*
@@ -36,3 +36,6 @@ export const loadBriefPage = createServerFn({ method: 'GET' })
 
 export const loadBriefArchive = createServerFn({ method: 'GET' })
   .handler(() => publicPageRead('BriefArchiveUnavailable', () => readBriefArchive(appEnv)))
+
+export const loadPositionsPage = createServerFn({ method: 'GET' })
+  .handler(() => publicPageRead('PositionsPageUnavailable', () => readPositionsPage(appEnv)))

@@ -168,6 +168,111 @@
           }
         ]
       }
+    },
+    {
+      "name": "positions snapshot",
+      "input": {
+        "marketDate": "2026-10-15",
+        "model": "fixture-model",
+        "links": [],
+        "previews": {},
+        "recommendations": [],
+        "openTickers": [],
+        "positions": {
+          "open": [
+            {
+              "symbol": "AAPL",
+              "direction": "bullish",
+              "trade": "Buy AAPL",
+              "premise": "A one-line premise.",
+              "openedOn": "2026-10-01",
+              "model": "fixture-model",
+              "entryPrice": 201.5,
+              "hold": {
+                "date": "2026-10-15",
+                "reason": "Why it is still held."
+              }
+            },
+            {
+              "symbol": "MSFT",
+              "direction": "bearish",
+              "trade": "Buy MSFT 400p 1/15/27",
+              "openedOn": "2026-09-25"
+            }
+          ],
+          "closed": [
+            {
+              "symbol": "NVDA",
+              "direction": "bullish",
+              "trade": "NVDA 1/15/27: Buy 150c Sell 170c",
+              "premise": "A premise.",
+              "openedOn": "2026-09-01",
+              "model": "fixture-model",
+              "entryPrice": 150,
+              "closedOn": "2026-10-10",
+              "reason": "What changed.",
+              "exitPrice": 141.25
+            },
+            {
+              "symbol": "TSLA",
+              "direction": "neutral",
+              "trade": "TSLA 1/15/27: Buy 300c Buy 300p",
+              "openedOn": "2026-08-03",
+              "closedOn": "2026-08-20"
+            }
+          ]
+        }
+      },
+      "submission": {
+        "marketDate": "2026-10-15",
+        "model": "fixture-model",
+        "links": [],
+        "recommendations": [],
+        "positions": {
+          "open": [
+            {
+              "symbol": "AAPL",
+              "direction": "bullish",
+              "trade": "Buy AAPL",
+              "premise": "A one-line premise.",
+              "openedOn": "2026-10-01",
+              "model": "fixture-model",
+              "entryPrice": 201.5,
+              "hold": {
+                "date": "2026-10-15",
+                "reason": "Why it is still held."
+              }
+            },
+            {
+              "symbol": "MSFT",
+              "direction": "bearish",
+              "trade": "Buy MSFT 400p 1/15/27",
+              "openedOn": "2026-09-25"
+            }
+          ],
+          "closed": [
+            {
+              "symbol": "NVDA",
+              "direction": "bullish",
+              "trade": "NVDA 1/15/27: Buy 150c Sell 170c",
+              "premise": "A premise.",
+              "openedOn": "2026-09-01",
+              "model": "fixture-model",
+              "entryPrice": 150,
+              "closedOn": "2026-10-10",
+              "reason": "What changed.",
+              "exitPrice": 141.25
+            },
+            {
+              "symbol": "TSLA",
+              "direction": "neutral",
+              "trade": "TSLA 1/15/27: Buy 300c Buy 300p",
+              "openedOn": "2026-08-03",
+              "closedOn": "2026-08-20"
+            }
+          ]
+        }
+      }
     }
   ],
   "envelope": {
@@ -177,7 +282,9 @@
     "linkTitle": 200,
     "linkSnippet": 500,
     "recommendations": 10,
-    "model": 80
+    "model": 80,
+    "positions": 50,
+    "positionText": 500
   },
   "symbols": {
     "accepted": [

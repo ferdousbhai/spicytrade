@@ -73,6 +73,45 @@ export const BriefLinkSchema = z.strictObject({
   snippet: BriefLinkTextSchema(MAX_BRIEF_LINK_SNIPPET_LENGTH).optional(),
 })
 
+/*
+ * The producer's book after a brief: every open position and the most recently closed, each one
+ * ticker's calls folded together. Like the trade line, these are the producer's own rendering of
+ * what its ledger holds; the site shows them and derives nothing but the stock's move from the
+ * two prices. Every text is untrusted model text held to one line.
+ */
+const PositionTextSchema = BriefLinkTextSchema(BRIEF_ENVELOPE.positionText)
+const PositionPriceSchema = z.number().positive().finite()
+const positionFields = {
+  symbol: EquitySymbolSchema,
+  direction: z.enum(BRIEF_DIRECTIONS),
+  /** The position's latest trade line. */
+  trade: z.string().min(1).max(MAX_TRADE_LABEL_LENGTH),
+  /** The one line the position rests on. Absent on a position opened before premises were kept. */
+  premise: PositionTextSchema.optional(),
+  openedOn: IsoDateSchema,
+  /** The model that made the call, as the producer's runtime names it. */
+  model: z.string().min(1).max(MAX_BRIEF_MODEL_LENGTH).optional(),
+  /** The underlying's price when the position was opened. */
+  entryPrice: PositionPriceSchema.optional(),
+}
+const OpenPositionSchema = z.strictObject({
+  ...positionFields,
+  /** The latest daily decision to keep it, with the reason given. */
+  hold: z.strictObject({ date: IsoDateSchema, reason: PositionTextSchema }).optional(),
+})
+const ClosedPositionSchema = z.strictObject({
+  ...positionFields,
+  closedOn: IsoDateSchema,
+  /** What changed. Absent when the position ended without an exit being argued, as on an expiry. */
+  reason: PositionTextSchema.optional(),
+  /** The underlying's price when the position was closed. */
+  exitPrice: PositionPriceSchema.optional(),
+})
+export const BriefPositionsSchema = z.strictObject({
+  open: z.array(OpenPositionSchema).max(BRIEF_ENVELOPE.positions),
+  closed: z.array(ClosedPositionSchema).max(BRIEF_ENVELOPE.positions),
+})
+
 /** What the producer submits. The id and the instant are assigned at the publish boundary. */
 export const DailyBriefSubmissionSchema = z.strictObject({
   marketDate: IsoDateSchema,
@@ -80,6 +119,8 @@ export const DailyBriefSubmissionSchema = z.strictObject({
   model: z.string().min(1).max(MAX_BRIEF_MODEL_LENGTH),
   links: z.array(BriefLinkSchema).max(MAX_BRIEF_LINKS),
   recommendations: z.array(BriefRecommendationSchema).max(MAX_BRIEF_RECOMMENDATIONS),
+  /** Absent on every brief stored before positions were sent. */
+  positions: BriefPositionsSchema.optional(),
 })
 
 export const DailyBriefSchema = DailyBriefSubmissionSchema.extend({
@@ -110,4 +151,20 @@ export const SymbolRecommendationResponseSchema = z.strictObject({
 export type DatedRecommendation = z.infer<typeof DatedRecommendationSchema>
 export type BriefRecommendation = z.infer<typeof BriefRecommendationSchema>
 export type DailyBriefSubmission = z.infer<typeof DailyBriefSubmissionSchema>
+/**
+ * How the underlying moved between a closed position's two prices, and whether that was with or
+ * against the way the position leaned. `change` is signed in the position's favour; a neutral
+ * position has no favour, so its change is the stock's own. Absent without both prices.
+ */
+export function positionMove(position: Pick<ClosedPosition, 'direction' | 'entryPrice' | 'exitPrice'>): { change: number; favour: 'with' | 'against' | null } | undefined {
+  if (position.entryPrice === undefined || position.exitPrice === undefined) return undefined
+  const stock = position.exitPrice / position.entryPrice - 1
+  if (position.direction === 'neutral') return { change: stock, favour: null }
+  const change = position.direction === 'bullish' ? stock : -stock
+  return { change, favour: change >= 0 ? 'with' : 'against' }
+}
+
 export type DailyBrief = z.infer<typeof DailyBriefSchema>
+export type BriefPositions = z.infer<typeof BriefPositionsSchema>
+export type OpenPosition = BriefPositions['open'][number]
+export type ClosedPosition = BriefPositions['closed'][number]
