@@ -6,6 +6,7 @@ import { DIRECTION_LABELS } from './brief-page'
 import { Disclaimer } from './disclaimer'
 import { formatCalendarDay } from './ny-time'
 import { SitePage } from './site-page'
+import { ThesisMarkdown } from './thesis-markdown'
 
 const dollars = new Intl.NumberFormat('en-US', { currency: 'USD', style: 'currency' })
 const percent = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1, minimumFractionDigits: 1, signDisplay: 'exceptZero', style: 'percent' })
@@ -23,6 +24,17 @@ function PositionName({ linked, position }: { linked: ReadonlySet<string>; posit
         : position.symbol}
       <span>{DIRECTION_LABELS[position.direction]}</span>
     </h3>
+  )
+}
+
+/** A call's full write-up, folded away under its one line so the list stays a list. */
+function Reasoning({ label, text }: { label: string; text: string | undefined }) {
+  if (!text) return null
+  return (
+    <details className="public-position-reasoning">
+      <summary>{label}</summary>
+      <ThesisMarkdown text={text} />
+    </details>
   )
 }
 
@@ -76,8 +88,9 @@ export function PositionsPage({ page }: { page: PositionsPageData }) {
                   <p className="public-page-meta">
                     Opened <Day date={position.openedOn} />
                     {position.entryPrice !== undefined && ` at ${dollars.format(position.entryPrice)}`}
-                    {position.model && ` · ${position.model}`}
+                    {position.model && ` by ${position.model}`}
                   </p>
+                  <Reasoning label="Why it was opened" text={position.reasoning} />
                 </li>
               ))}
             </ol>
@@ -96,8 +109,16 @@ export function PositionsPage({ page }: { page: PositionsPageData }) {
                   <p className="public-page-meta">
                     <Day date={position.openedOn} /> to <Day date={position.closedOn} />
                     {position.entryPrice !== undefined && position.exitPrice !== undefined && ` · ${dollars.format(position.entryPrice)} to ${dollars.format(position.exitPrice)}`}
-                    {position.model && ` · ${position.model}`}
                   </p>
+                  {(position.model || position.closedBy) && (
+                    <p className="public-page-meta">
+                      {position.model && `Opened by ${position.model}`}
+                      {position.model && position.closedBy && ', '}
+                      {position.closedBy && `${position.model ? 'closed' : 'Closed'} by ${position.closedBy}`}
+                    </p>
+                  )}
+                  <Reasoning label="Why it was opened" text={position.reasoning} />
+                  <Reasoning label="Why it was closed" text={position.closeReasoning} />
                 </li>
               ))}
             </ol>

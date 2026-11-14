@@ -161,9 +161,11 @@ describe('positions page', () => {
       open: [{
         symbol: 'NVDA', direction: 'bullish', trade: 'Buy NVDA 250c 1/15/27', premise: `Orders keep rising ${HOSTILE}`,
         openedOn: '2026-11-02', model: 'claude-fable-5-2', entryPrice: 201.5, hold: { date: '2026-11-16', reason: 'Still true.' },
+        reasoning: `**Catalyst:** orders. ${HOSTILE}`,
       }],
       closed: [
-        { symbol: 'NKE', direction: 'bearish', trade: 'Buy NKE 30p 6/17/27', openedOn: '2026-10-06', closedOn: '2026-11-13', reason: 'The bounce happened.', entryPrice: 32, exitPrice: 36 },
+        { symbol: 'NKE', direction: 'bearish', trade: 'Buy NKE 30p 6/17/27', openedOn: '2026-10-06', closedOn: '2026-11-13', reason: 'The bounce happened.', entryPrice: 32, exitPrice: 36,
+          model: '@cf/zai-org/glm-5.3', closedBy: 'claude-fable-5-2', reasoning: 'Guidance fell.', closeReasoning: 'The stock bounced.' },
         { symbol: 'AAPL', direction: 'bullish', trade: 'Buy AAPL', openedOn: '2026-08-03', closedOn: '2026-08-20' },
       ],
     },
@@ -176,7 +178,11 @@ describe('positions page', () => {
     expect(text).toContain('Buy NVDA 250c 1/15/27')
     expect(text).toContain('Orders keep rising')
     expect(text).toContain('Still true.')
-    expect(text).toContain('Opened Nov 2, 2026 at $201.50 · claude-fable-5-2')
+    expect(text).toContain('Opened Nov 2, 2026 at $201.50 by claude-fable-5-2')
+    expect(text).toContain('Opened by @cf/zai-org/glm-5.3, closed by claude-fable-5-2')
+    // Each write-up is folded under its own label, rendered as the site's Markdown subset.
+    expect([...container.querySelectorAll('details summary')].map((summary) => summary.textContent)).toEqual(['Why it was opened', 'Why it was opened', 'Why it was closed'])
+    expect(container.querySelector('details strong')?.textContent).toBe('Catalyst:')
     expect(text).toContain('The bounce happened.')
     expect(text).toContain('Oct 6, 2026 to Nov 13, 2026 · $32.00 to $36.00')
     expect(container.querySelector('[data-favour="against"]')?.textContent).toBe('-12.5%')

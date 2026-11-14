@@ -191,7 +191,8 @@
               "hold": {
                 "date": "2026-10-15",
                 "reason": "Why it is still held."
-              }
+              },
+              "reasoning": "**Why** it was opened."
             },
             {
               "symbol": "MSFT",
@@ -211,7 +212,10 @@
               "entryPrice": 150,
               "closedOn": "2026-10-10",
               "reason": "What changed.",
-              "exitPrice": 141.25
+              "exitPrice": 141.25,
+              "reasoning": "**Why** it was opened.",
+              "closeReasoning": "**Why** it was closed.",
+              "closedBy": "fixture-model-2"
             },
             {
               "symbol": "TSLA",
@@ -241,7 +245,8 @@
               "hold": {
                 "date": "2026-10-15",
                 "reason": "Why it is still held."
-              }
+              },
+              "reasoning": "**Why** it was opened."
             },
             {
               "symbol": "MSFT",
@@ -261,7 +266,10 @@
               "entryPrice": 150,
               "closedOn": "2026-10-10",
               "reason": "What changed.",
-              "exitPrice": 141.25
+              "exitPrice": 141.25,
+              "reasoning": "**Why** it was opened.",
+              "closeReasoning": "**Why** it was closed.",
+              "closedBy": "fixture-model-2"
             },
             {
               "symbol": "TSLA",

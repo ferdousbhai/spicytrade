@@ -88,8 +88,10 @@ const positionFields = {
   trade: z.string().min(1).max(MAX_TRADE_LABEL_LENGTH),
   /** The one line the position rests on. Absent on a position opened before premises were kept. */
   premise: PositionTextSchema.optional(),
+  /** Why it was opened: the opening call's write-up. Markdown, rendered by the site's own subset renderer. */
+  reasoning: z.string().min(1).max(MAX_THESIS_LENGTH).optional(),
   openedOn: IsoDateSchema,
-  /** The model that made the call, as the producer's runtime names it. */
+  /** The model that opened it, as the producer's runtime names it, version included. */
   model: z.string().min(1).max(MAX_BRIEF_MODEL_LENGTH).optional(),
   /** The underlying's price when the position was opened. */
   entryPrice: PositionPriceSchema.optional(),
@@ -104,6 +106,10 @@ const ClosedPositionSchema = z.strictObject({
   closedOn: IsoDateSchema,
   /** What changed. Absent when the position ended without an exit being argued, as on an expiry. */
   reason: PositionTextSchema.optional(),
+  /** Why it was closed: the exit's write-up, as Markdown. */
+  closeReasoning: z.string().min(1).max(MAX_THESIS_LENGTH).optional(),
+  /** The model that closed it, which a position held across a model change does not share with its opener. */
+  closedBy: z.string().min(1).max(MAX_BRIEF_MODEL_LENGTH).optional(),
   /** The underlying's price when the position was closed. */
   exitPrice: PositionPriceSchema.optional(),
 })
