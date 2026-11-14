@@ -255,8 +255,7 @@ export function ConnectScreen({ authError, owner, signedIn }: { authError?: stri
         <p>Once connected, ask “How is my account doing?”</p>
         <p className="connect-note">
           Account access needs an agent running on your own Linux or macOS computer, with shell access and local MCP support.
-          It is not available on Windows. There, and in any other agent, market data and research below work without installing. Some agents need a reconnect to load new tools;
-          your agent will guide that step when needed.
+          It is not available on Windows. There, and in any other agent, market data and research below work without installing.
         </p>
       </section>
 
@@ -425,7 +424,7 @@ function IssuedToken({ token }: { token: string }) {
         </AlertDescription>
       </Alert>
       <CopyBlock label="Your token" value={token} />
-      <p>Both blocks below already carry the token you just created. Copy either one.</p>
+      <p>Both blocks below already carry the token you just created.</p>
       <CopyBlock label="Claude Code" value={headlessCommand} />
       <CopyBlock label=".mcp.json" value={mcpConfig} />
     </>

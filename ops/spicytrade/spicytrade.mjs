@@ -29,7 +29,7 @@ const USAGE = `Usage: spicytrade <command>
 Advanced:
   setup                   Manual setup and repair for installed agent clients.
   integration             Print the credential-free local MCP configuration.
-  start                   Optional: open a trading agent.
+  start                   Open a trading agent.
   doctor                  Check everything without changing anything.
   login                   Sign this computer in again.
   connect-tastytrade      Reconnect tastytrade.

@@ -52,7 +52,7 @@ async function verifyAccount() {
     const snapshot = z.object({ asOf: z.iso.datetime(), source: z.literal('tastytrade'), balances: z.object({ netLiquidatingValue: z.number() }) })
     // A successful transport is insufficient: only a real account snapshot completes onboarding.
     if (reply.error || reply.result?.isError || !content
-      || !snapshot.safeParse(JSON.parse(content)).success) throw new CliFailure('The account snapshot could not be verified. Ask your agent to check the connection; no order was submitted.')
+      || !snapshot.safeParse(JSON.parse(content)).success) throw new CliFailure('The account snapshot could not be verified. Ask your agent to check the connection.')
   } catch (error) {
     if (error instanceof CliFailure) throw error
     throw new CliFailure('The account connection did not finish answering. Try connecting again.')
