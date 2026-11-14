@@ -13,9 +13,7 @@ import { BriefHeadlines } from './brief-headlines'
 import { Disclaimer } from './disclaimer'
 import { formatCalendarDay, nyDateTime, nyTime } from './ny-time'
 
-function BriefNavigation({ index, loading, onNewer, onOlder, olderDisabled, positions }: {
-  /** The book the latest brief carried, for the counts beside the way to its page. */
-  positions: DailyBrief['positions']
+function BriefNavigation({ index, loading, onNewer, onOlder, olderDisabled }: {
   index: number
   loading: boolean
   onNewer: () => void
@@ -40,15 +38,11 @@ function BriefNavigation({ index, loading, onNewer, onOlder, olderDisabled, posi
         Previous
       </Button>
       {/* Between the two ways through the archive: the way to what the briefs add up to, the
-          book's own page, at its open list or its closed one. */}
+          book's own page, whole or at its open list or its closed one. */}
       <span className="brief-positions">
-        <span>Positions</span>
-        <Button nativeButton={false} render={<a href={`${POSITIONS_PATH}#open-positions`} />} size="sm" variant="ghost">
-          {positions ? `${positions.open.length} open` : 'Open'}
-        </Button>
-        <Button nativeButton={false} render={<a href={`${POSITIONS_PATH}#closed-positions`} />} size="sm" variant="ghost">
-          {positions ? `${positions.closed.length} closed` : 'Closed'}
-        </Button>
+        <Button nativeButton={false} render={<a href={POSITIONS_PATH} />} size="sm" variant="ghost">Positions</Button>
+        <Button nativeButton={false} render={<a href={`${POSITIONS_PATH}#open-positions`} />} size="sm" variant="ghost">Open</Button>
+        <Button nativeButton={false} render={<a href={`${POSITIONS_PATH}#closed-positions`} />} size="sm" variant="ghost">Closed</Button>
       </span>
       <Button disabled={index === 0 || loading} focusableWhenDisabled onClick={onNewer} size="sm" type="button" variant="ghost">
         Next<CaretRight data-icon="inline-end" />
@@ -154,7 +148,6 @@ export function BriefScreen({ latest, onSymbol }: { latest?: DailyBrief; onSymbo
           onNewer={() => { setArchiveFailed(false); setIndex(Math.max(0, index - 1)); setMoved(true) }}
           onOlder={() => void openOlder()}
           olderDisabled={archiveEnd && !history[index + 1]}
-          positions={latest.positions}
         />
       )}
       {archiveFailed && (

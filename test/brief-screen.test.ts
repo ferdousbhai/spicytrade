@@ -44,14 +44,11 @@ describe('the brief screen', () => {
     expect(html).toContain('rel="noreferrer" target="_blank"')
   })
 
-  it('links the book beside the archive controls, at its open list and its closed one, with the latest counts', () => {
-    const bare = render(dailyBriefFixture)
-    expect(bare).toMatch(/<a[^>]*href="\/positions#open-positions"[^>]*>Open<\/a>/)
-    expect(bare).toMatch(/<a[^>]*href="\/positions#closed-positions"[^>]*>Closed<\/a>/)
-    const position = { symbol: 'NVDA', direction: 'bullish' as const, trade: 'Buy NVDA', openedOn: '2026-08-03' }
-    const counted = render({ ...dailyBriefFixture, positions: { open: [position], closed: [{ ...position, closedOn: '2026-08-10' }, { ...position, symbol: 'AAPL', closedOn: '2026-08-11' }] } })
-    expect(counted).toMatch(/<a[^>]*href="\/positions#open-positions"[^>]*>1 open<\/a>/)
-    expect(counted).toMatch(/<a[^>]*href="\/positions#closed-positions"[^>]*>2 closed<\/a>/)
+  it('links the book beside the archive controls: all of it, its open list, and its closed one', () => {
+    const html = render(dailyBriefFixture)
+    expect(html).toMatch(/<a[^>]*href="\/positions"[^>]*>Positions<\/a>/)
+    expect(html).toMatch(/<a[^>]*href="\/positions#open-positions"[^>]*>Open<\/a>/)
+    expect(html).toMatch(/<a[^>]*href="\/positions#closed-positions"[^>]*>Closed<\/a>/)
   })
 
   it('says so when nothing has been published', () => {
