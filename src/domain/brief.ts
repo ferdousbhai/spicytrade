@@ -44,7 +44,8 @@ const MAX_BRIEF_MODEL_LENGTH = BRIEF_ENVELOPE.model
 
 export const BriefRecommendationSchema = z.strictObject({
   symbol: EquitySymbolSchema,
-  direction: z.enum(BRIEF_DIRECTIONS),
+  /** Absent on an exit: closing a position is not a view on where the stock goes. */
+  direction: z.enum(BRIEF_DIRECTIONS).optional(),
   /** The brief's one-line trade, as the producer rendered it from the legs it keeps. */
   trade: z.string().min(1).max(MAX_TRADE_LABEL_LENGTH),
   /** Markdown, rendered by the site's own subset renderer; never HTML. */

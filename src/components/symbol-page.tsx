@@ -105,7 +105,7 @@ export function SymbolPage({ page }: { page: SymbolPageData }) {
           ? (
             <>
               <p className="public-page-meta">
-                {DIRECTION_LABELS[recommendation.recommendation.direction]} · argued on{' '}
+                {recommendation.recommendation.direction ? `${DIRECTION_LABELS[recommendation.recommendation.direction]} · argued on ` : 'Exit argued on '}
                 <Link params={{ date: recommendation.marketDate }} to="/briefs/$date">
                   <time dateTime={recommendation.marketDate}>{formatCalendarDay(recommendation.marketDate)}</time>
                 </Link>

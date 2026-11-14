@@ -100,6 +100,74 @@
         "links": [],
         "recommendations": []
       }
+    },
+    {
+      "name": "exits carry no direction",
+      "input": {
+        "marketDate": "2026-10-15",
+        "model": "fixture-model",
+        "links": [],
+        "previews": {},
+        "recommendations": [
+          {
+            "ticker": "AAPL",
+            "thesis": "A stock exit thesis.",
+            "legs": [
+              {
+                "action": "SELL"
+              }
+            ]
+          },
+          {
+            "ticker": "NVDA",
+            "thesis": "An option exit thesis.",
+            "legs": [
+              {
+                "action": "SELL_TO_CLOSE",
+                "option_type": "C",
+                "strike": 150,
+                "expiry": "2027-01-15"
+              }
+            ]
+          },
+          {
+            "ticker": "TSLA",
+            "thesis": "A short thesis.",
+            "legs": [
+              {
+                "action": "SELL"
+              }
+            ]
+          }
+        ],
+        "openTickers": [
+          "AAPL",
+          "NVDA"
+        ]
+      },
+      "submission": {
+        "marketDate": "2026-10-15",
+        "model": "fixture-model",
+        "links": [],
+        "recommendations": [
+          {
+            "symbol": "AAPL",
+            "trade": "Exit AAPL",
+            "thesis": "A stock exit thesis."
+          },
+          {
+            "symbol": "NVDA",
+            "trade": "Exit NVDA 150c 1/15/27",
+            "thesis": "An option exit thesis."
+          },
+          {
+            "symbol": "TSLA",
+            "direction": "bearish",
+            "trade": "Short TSLA",
+            "thesis": "A short thesis."
+          }
+        ]
+      }
     }
   ],
   "envelope": {

@@ -12,7 +12,7 @@ export const DIRECTION_LABELS = {
   bullish: 'Bullish',
   bearish: 'Bearish',
   neutral: 'Neutral',
-} as const satisfies Record<BriefRecommendation['direction'], string>
+} as const satisfies Record<NonNullable<BriefRecommendation['direction']>, string>
 
 function BriefDayLink({ marketDate, label }: { label: string; marketDate: string }) {
   return (
@@ -55,7 +55,7 @@ export function BriefPage({ page }: { page: BriefPageData }) {
             {linked.has(recommendation.symbol)
               ? <Link params={{ symbol: recommendation.symbol }} to="/options/$symbol">{recommendation.symbol}</Link>
               : recommendation.symbol}
-            {` · ${DIRECTION_LABELS[recommendation.direction]}`}
+            {recommendation.direction && ` · ${DIRECTION_LABELS[recommendation.direction]}`}
           </h2>
           <RecommendationCard recommendation={recommendation} />
         </section>
