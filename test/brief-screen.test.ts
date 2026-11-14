@@ -44,6 +44,16 @@ describe('the brief screen', () => {
     expect(html).toContain('rel="noreferrer" target="_blank"')
   })
 
+  it('links the book from the cover, at its open list and its closed one, with counts when the brief carries them', () => {
+    const bare = render(dailyBriefFixture)
+    expect(bare).toContain('<a href="/positions#open-positions">open</a>')
+    expect(bare).toContain('<a href="/positions#closed-positions">closed</a>')
+    const position = { symbol: 'NVDA', direction: 'bullish' as const, trade: 'Buy NVDA', openedOn: '2026-08-03' }
+    const counted = render({ ...dailyBriefFixture, positions: { open: [position], closed: [{ ...position, closedOn: '2026-08-10' }, { ...position, symbol: 'AAPL', closedOn: '2026-08-11' }] } })
+    expect(counted).toContain('<a href="/positions#open-positions">1 open</a>')
+    expect(counted).toContain('<a href="/positions#closed-positions">2 closed</a>')
+  })
+
   it('says so when nothing has been published', () => {
     const html = render(undefined)
     expect(html).toContain('No brief yet')
