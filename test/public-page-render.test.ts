@@ -178,10 +178,11 @@ describe('positions page', () => {
     expect(text).toContain('Buy NVDA 250c 1/15/27')
     expect(text).toContain('Orders keep rising')
     expect(text).toContain('Still true.')
-    expect(text).toContain('Opened Nov 2, 2026 at $201.50 by claude-fable-5-2')
-    expect(text).toContain('Opened by @cf/zai-org/glm-5.3, closed by claude-fable-5-2')
-    // Each write-up is folded under its own label, rendered as the site's Markdown subset.
-    expect([...container.querySelectorAll('details summary')].map((summary) => summary.textContent)).toEqual(['Why it was opened', 'Why it was opened', 'Why it was closed'])
+    expect(text).toContain('Opened Nov 2, 2026 at $201.50 · claude-fable-5-2')
+    expect(text).toContain('$32.00 to $36.00 · @cf/zai-org/glm-5.3, closed by claude-fable-5-2')
+    // The write-ups are folded under one label per position, rendered as the site's Markdown subset.
+    expect([...container.querySelectorAll('details summary')].map((summary) => summary.textContent)).toEqual(['Reasoning', 'Reasoning'])
+    expect(container.querySelectorAll('details')[1]?.textContent).toBe('ReasoningGuidance fell.ClosingThe stock bounced.')
     expect(container.querySelector('details strong')?.textContent).toBe('Catalyst:')
     expect(text).toContain('The bounce happened.')
     expect(text).toContain('Oct 6, 2026 to Nov 13, 2026 · $32.00 to $36.00')
@@ -195,7 +196,7 @@ describe('positions page', () => {
 
   it('says so when no brief has carried positions yet', async () => {
     const container = await renderPage(createElement(PositionsPage, { page: { marketDate: null, positions: null, symbolsWithPages: [] } }))
-    expect(container.textContent).toContain('No positions have been published yet.')
+    expect(container.textContent).toContain('No positions yet.')
     expect(container.querySelector('.public-positions')).toBeNull()
   })
 

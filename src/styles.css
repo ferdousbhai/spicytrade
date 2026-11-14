@@ -181,6 +181,7 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .public-position-reasoning > summary:hover { color: var(--text); }
 .public-position-reasoning[open] > summary { margin-bottom: 8px; }
 .public-position-reasoning .thesis { max-width: 68ch; color: var(--ink-muted); }
+.site-prose .public-position-reasoning p.public-position-label { margin: 12px 0 4px; }
 .connect-footer.public-page-disclaimer { padding: 16px 0 0; }
 .site-prose .public-page-disclaimer a { color: inherit; text-decoration: none; }
 .site-footer { min-height: 72px; padding: 24px 0; border-top: 1px solid var(--hairline); display: flex; align-items: center; justify-content: space-between; gap: 24px; color: var(--ink-faint); font-size: 12px; }

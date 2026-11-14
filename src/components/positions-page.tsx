@@ -27,13 +27,19 @@ function PositionName({ linked, position }: { linked: ReadonlySet<string>; posit
   )
 }
 
-/** A call's full write-up, folded away under its one line so the list stays a list. */
-function Reasoning({ label, text }: { label: string; text: string | undefined }) {
-  if (!text) return null
+/** The full write-ups, folded away under one label so the list stays a list. */
+function Reasoning({ closing, opening }: { closing?: string | undefined; opening: string | undefined }) {
+  if (!opening && !closing) return null
   return (
     <details className="public-position-reasoning">
-      <summary>{label}</summary>
-      <ThesisMarkdown text={text} />
+      <summary>Reasoning</summary>
+      {opening && <ThesisMarkdown text={opening} />}
+      {closing && (
+        <>
+          <p className="public-position-label">Closing</p>
+          <ThesisMarkdown text={closing} />
+        </>
+      )}
     </details>
   )
 }
@@ -52,6 +58,13 @@ function Move({ position }: { position: ClosedPosition }) {
   return <span aria-label={label} className="public-position-move" data-favour={move.favour ?? undefined} role="img" title={label}>{percent.format(move.change)}</span>
 }
 
+/** Who opened it and who closed it, said once when one model did both. */
+function models({ closedBy, model }: ClosedPosition): string {
+  if (model && closedBy) return model === closedBy ? ` · ${model}` : ` · ${model}, closed by ${closedBy}`
+  if (model) return ` · ${model}`
+  return closedBy ? ` · closed by ${closedBy}` : ''
+}
+
 /**
  * The book (`/positions`): every position the daily brief has open, with the one line it rests on
  * and the latest reason it was kept, then the ones it has closed, with what changed. Every string
@@ -62,13 +75,13 @@ export function PositionsPage({ page }: { page: PositionsPageData }) {
   const linked = new Set(page.symbolsWithPages)
   return (
     <SitePage
-      intro="Every position the daily brief has open, with the premise it rests on, and the ones it has closed, with what changed."
+      intro="What the daily brief has open and why, and what it has closed and why."
       title="Positions"
     >
       <section aria-label="About these positions">
         {positions && marketDate
-          ? <p className="public-page-meta">As of the brief for <Link params={{ date: marketDate }} to="/briefs/$date"><Day date={marketDate} /></Link></p>
-          : <p>No positions have been published yet. They arrive with the next brief.</p>}
+          ? <p className="public-page-meta">As of <Link params={{ date: marketDate }} to="/briefs/$date"><Day date={marketDate} /></Link></p>
+          : <p>No positions yet. They arrive with the next brief.</p>}
         <nav aria-label="Briefs" className="public-brief-nav">
           <Link to="/briefs">All briefs</Link>
         </nav>
@@ -77,7 +90,7 @@ export function PositionsPage({ page }: { page: PositionsPageData }) {
         <>
           <section aria-labelledby="open-positions">
             <h2 id="open-positions">Open <span className="public-position-count">{positions.open.length}</span></h2>
-            {positions.open.length === 0 && <p>Nothing is open. No position is the brief's default.</p>}
+            {positions.open.length === 0 && <p>Nothing is open.</p>}
             <ol className="public-positions">
               {positions.open.map((position) => (
                 <li key={position.symbol}>
@@ -88,9 +101,9 @@ export function PositionsPage({ page }: { page: PositionsPageData }) {
                   <p className="public-page-meta">
                     Opened <Day date={position.openedOn} />
                     {position.entryPrice !== undefined && ` at ${dollars.format(position.entryPrice)}`}
-                    {position.model && ` by ${position.model}`}
+                    {position.model && ` · ${position.model}`}
                   </p>
-                  <Reasoning label="Why it was opened" text={position.reasoning} />
+                  <Reasoning opening={position.reasoning} />
                 </li>
               ))}
             </ol>
@@ -98,27 +111,20 @@ export function PositionsPage({ page }: { page: PositionsPageData }) {
           <section aria-labelledby="closed-positions">
             <h2 id="closed-positions">Closed <span className="public-position-count">{positions.closed.length}</span></h2>
             {positions.closed.length === 0
-              ? <p>Nothing has been closed yet.</p>
-              : <p className="public-page-meta">The percentage is the stock's move while the position was open, counted in the position's favour. It is not the option's return.</p>}
+              ? <p>Nothing is closed.</p>
+              : <p className="public-page-meta">Percentages are the stock's move in the position's favour, not the option's return.</p>}
             <ol className="public-positions">
               {positions.closed.map((position) => (
                 <li key={`${position.symbol}-${position.openedOn}`}>
                   <div className="public-position-head"><PositionName linked={linked} position={position} /><Move position={position} /></div>
                   <strong className="trade-line">{position.trade}</strong>
-                  {position.reason && <p><span className="public-position-label">Closed</span> {position.reason}</p>}
+                  {position.reason && <p>{position.reason}</p>}
                   <p className="public-page-meta">
                     <Day date={position.openedOn} /> to <Day date={position.closedOn} />
                     {position.entryPrice !== undefined && position.exitPrice !== undefined && ` · ${dollars.format(position.entryPrice)} to ${dollars.format(position.exitPrice)}`}
+                    {models(position)}
                   </p>
-                  {(position.model || position.closedBy) && (
-                    <p className="public-page-meta">
-                      {position.model && `Opened by ${position.model}`}
-                      {position.model && position.closedBy && ', '}
-                      {position.closedBy && `${position.model ? 'closed' : 'Closed'} by ${position.closedBy}`}
-                    </p>
-                  )}
-                  <Reasoning label="Why it was opened" text={position.reasoning} />
-                  <Reasoning label="Why it was closed" text={position.closeReasoning} />
+                  <Reasoning closing={position.closeReasoning} opening={position.reasoning} />
                 </li>
               ))}
             </ol>

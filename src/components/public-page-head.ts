@@ -54,9 +54,9 @@ export function briefPageHead(brief: Pick<DailyBrief, 'marketDate' | 'recommenda
 
 export function positionsHead() {
   return publicPageHead({
-    description: `Every position the ${SITE_NAME} daily options brief has open, with the premise each rests on, and the ones it has closed, with what changed.`,
+    description: `What the ${SITE_NAME} daily options brief has open and why, and what it has closed and why.`,
     path: POSITIONS_PATH,
-    title: 'Open and closed positions',
+    title: 'Positions',
   })
 }
 
