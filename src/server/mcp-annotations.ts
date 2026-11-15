@@ -38,6 +38,9 @@ const ANNOTATIONS = {
   read_catalysts: read('Read catalysts', false),
   read_daily_brief: read('Read the daily brief', false),
   read_watchlist: read('Read the watchlist', false),
+  // Answered with an authorization challenge at the HTTP layer; it changes nothing here. Its
+  // effect is the client's sign-in, which happens in the user's browser.
+  sign_in: read('Sign in', false),
 
   // Writes.
   search_symbols: {

@@ -23,6 +23,7 @@ import { createPublicMarketReadTools } from './public-market-tools'
 import { noteSymbolAttention, readsSymbols, type SymbolNamingCall } from './symbol-attention'
 import { createExactOptionGreeksReadTool } from './option-greeks-tool'
 import { createResearchReadTools } from './research-read-tools'
+import { SIGN_IN_CHALLENGE_DESCRIPTION, callsSignIn, createSignInTool } from './sign-in-tool'
 import {
   PLACE_BROKERAGE_ORDER_DESCRIPTION,
   PORTFOLIO_REVIEW_PROMPT,
@@ -117,7 +118,9 @@ function createSpiceMcpServer(
         // ever refuse -- the same reason the owner tools are absent from a member's list.
         ...createOrderTools(env, credential, waitUntil),
       ]
-      : createPublicMarketReadTools(env, waitUntil)),
+      // `sign_in` is the public tier's way to ask for more, so it leaves the list once a caller
+      // has signed in: there is nothing left for it to start.
+      : [...createPublicMarketReadTools(env, waitUntil), createSignInTool()]),
     // Removing a name from the shared watchlist is an owner act. A member is not shown a surface
     // they cannot use, so it is absent from their tool list rather than present and refused.
     ...(caller.owner ? [createWatchlistManageTool(env)] : []),
@@ -399,7 +402,13 @@ export async function handleMcpRequest(request: Request, env: AppEnv, ctx: McpEx
   // not need more than a visitor does. A credential that is *present* and does not verify still
   // gets the challenge below: that is a caller trying to authenticate and failing, which they can
   // act on, rather than one who never claimed to be anybody.
-  if (!request.headers.get('Authorization')) return serveMcp(request, env, ctx, ANONYMOUS_CALLER)
+  //
+  // The one exception is a call to `sign_in`, which exists to be refused this way: a public-tier
+  // caller is never challenged otherwise, so without it a client has no reason to offer sign-in.
+  if (!request.headers.get('Authorization')) {
+    if (await callsSignIn(request)) return authChallenge(request, SIGN_IN_CHALLENGE_DESCRIPTION)
+    return serveMcp(request, env, ctx, ANONYMOUS_CALLER)
+  }
 
   const presented = presentedBearer(request)
   if (!presented) {

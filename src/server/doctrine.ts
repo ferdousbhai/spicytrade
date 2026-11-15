@@ -30,7 +30,8 @@ export function spiceMcpInstructions(signedIn: boolean): string {
   usual case. A name that already has a live order is replaced or waited on, not doubled.
 - Resize with the live quote and available buying power. Planned size is not a fill quantity.`
     : `- You are on the public tier: quotes are the website's cached snapshot, priced as of its last
-  refresh. Signing in adds live broker quotes, chains and Greeks.`
+  refresh. Signing in adds live broker quotes, chains and Greeks; when the user wants those, call
+  \`sign_in\`, which asks their client to start it.`
   return `
 ${SITE_NAME} is market data${signedIn ? ', research, and guarded order placement for a trader\'s own account' : ' and research for an options trader'}. Read the
 \`spicytrade://guide\` resource for what it can answer that you would not guess.
@@ -148,6 +149,8 @@ What is not obvious from the tool list:
   quotes are a snapshot price, not a live bid and ask -- and a search that admits names. Signed
   in: live broker quotes, chains and Greeks, \`remember_symbols\`, and the research writes below.
   The account tools answer only to a broker credential on the request, never to a sign-in.
+  With no credential, \`sign_in\` asks the client to start signing in; it is not listed once
+  signed in.
 - That credential is held on the user's own machine and never here, and it reaches only the
   account it resolves to. Placement runs its guards server-side and its refusal is authoritative.
 - \`read_account_snapshot\` is the current account: balances, positions, and working orders. Omit

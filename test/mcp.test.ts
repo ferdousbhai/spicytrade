@@ -121,6 +121,53 @@ describe('MCP bearer authentication', () => {
     }
   })
 
+  it('offers sign_in to a caller who presented nothing, and only to them', async () => {
+    const { env, store, token } = await harness('member@example.com')
+    try {
+      expect(await listToolNames(env)).toContain('sign_in')
+      // Signed in, there is nothing left for it to start.
+      expect(await listToolNames(env, token)).not.toContain('sign_in')
+    } finally {
+      store.close()
+    }
+  })
+
+  it('answers sign_in with the challenge that starts a client\'s OAuth flow', async () => {
+    const { env, store } = await ownerHarness()
+    try {
+      const call = { id: 7, jsonrpc: '2.0' as const, method: 'tools/call', params: { arguments: {}, name: 'sign_in' } }
+      for (const body of [call, [call]]) {
+        // SAFETY: `mcpRequest` serialises whatever it is given; a batch is a valid JSON-RPC body.
+        const response = await handleMcpRequest(mcpRequest(body as typeof call), env, executionContext)
+        expect(response.status).toBe(401)
+        // The discovery document is what lets a client begin without any other configuration.
+        expect(response.headers.get('WWW-Authenticate')).toContain('resource_metadata="https://spicy.trade/.well-known/oauth-protected-resource/mcp"')
+      }
+      // Every other public-tier call is still served, unchallenged.
+      const other = await handleMcpRequest(mcpRequest({
+        id: 8, jsonrpc: '2.0', method: 'tools/call', params: { arguments: {}, name: 'sign_in_later' },
+      }), env, executionContext)
+      expect(other.status).toBe(200)
+      expect(other.headers.get('WWW-Authenticate')).toBeNull()
+    } finally {
+      store.close()
+    }
+  })
+
+  it('never challenges a signed-in caller who names sign_in', async () => {
+    const { env, store, token } = await harness('member@example.com')
+    try {
+      const response = await handleMcpRequest(mcpRequest({
+        id: 9, jsonrpc: '2.0', method: 'tools/call', params: { arguments: {}, name: 'sign_in' },
+      }, token), env, executionContext)
+      // Not registered for them, so it is an unknown tool -- not a reason to sign in again.
+      expect(response.status).toBe(200)
+      expect(response.headers.get('WWW-Authenticate')).toBeNull()
+    } finally {
+      store.close()
+    }
+  })
+
   it('still challenges a credential that is present and does not verify', async () => {
     // A caller trying to authenticate and failing can act on a challenge; one who never claimed
     // to be anybody cannot, which is why only this case is refused. The challenge must also say
@@ -369,9 +416,9 @@ describe('MCP tool annotations', () => {
         expect(ANNOTATED_TOOL_NAMES).toContain(tool.name)
       }
       // The other direction, which is what let annotations for deleted tools sit here unnoticed:
-      // the owner tier is the whole surface, so a name in the table that is listed nowhere is an
-      // orphan and the tool it described is gone.
-      const listedNames = new Set(tools.map((tool) => tool.name))
+      // the owner tier and the public tier together are the whole surface (`sign_in` is the
+      // public tier's alone), so a name in the table listed by neither is an orphan.
+      const listedNames = new Set([...tools.map((tool) => tool.name), ...await listToolNames(env)])
       for (const annotated of ANNOTATED_TOOL_NAMES) {
         expect(listedNames, `${annotated} is annotated but registered nowhere`).toContain(annotated)
       }
@@ -436,8 +483,10 @@ describe('the guide resource', () => {
 
       // An index that names something gone is worse than no index: it sends an agent looking for
       // a tool that will never answer. Every backticked name in the guide must be real.
+      // The guide is shared by every tier, so a name is real if any tier lists it.
       const known = new Set([
         ...await listToolNames(env, token),
+        ...await listToolNames(env),
         'portfolio_review',
         'evaluate_trade_idea',
       ])
