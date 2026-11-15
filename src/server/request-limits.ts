@@ -1,4 +1,5 @@
 import { type AppEnv, type RequestLimiter } from './env'
+import { OAUTH_REGISTRATION_PATH } from './oauth-registration'
 import { MCP_PATH } from '../domain/site'
 
 /**
@@ -7,8 +8,6 @@ import { MCP_PATH } from '../domain/site'
  * where the reason for each number is recorded; this only decides which requests each one counts.
  * A missing binding closes the path it guards rather than leaving it unlimited.
  */
-const OAUTH_REGISTRATION_PATH = '/api/auth/oauth2/register'
-
 function limiterFor(request: Request, env: AppEnv): [RequestLimiter | undefined, string] | null {
   const { pathname } = new URL(request.url)
   if (pathname === '/api/public-symbol-search' || (pathname === MCP_PATH && !request.headers.has('Authorization'))) {

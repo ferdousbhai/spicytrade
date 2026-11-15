@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 import { AUTHORIZATION_REQUEST_LIFETIME_SECONDS, configureAuth } from '../src/server/auth'
 import { sweepUnconsentedOAuthClients } from '../src/server/oauth-client-sweep'
+import { prepareOAuthRegistration } from '../src/server/oauth-registration'
 import { limitRequest } from '../src/server/request-limits'
 import { migrationStore, seedMember, type SqliteD1Store } from './sqlite-d1'
 
@@ -87,5 +88,45 @@ describe('request limits', () => {
     expect(await limitRequest(new Request(`${BASE_URL}/api/auth/oauth2/token`, { method: 'POST' }), { OAUTH_REGISTRATION_LIMITER: { limit } })).toBeNull()
     expect(await limitRequest(new Request(`${BASE_URL}/api/auth/oauth2/register`), { OAUTH_REGISTRATION_LIMITER: { limit } })).toBeNull()
     expect(limit).not.toHaveBeenCalled()
+  })
+})
+
+describe('registering a stock MCP client', () => {
+  // What every MCP SDK sends: no `application_type`, and a loopback callback.
+  const stockRegistration = (extra: { application_type?: string; redirect_uris?: string[] } = {}) => new Request(`${BASE_URL}/api/auth/oauth2/register`, {
+    body: JSON.stringify({ client_name: 'agent', redirect_uris: ['http://127.0.0.1:33418/callback'], token_endpoint_auth_method: 'none', ...extra }),
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  })
+
+  async function registerThroughRoute(request: Request) {
+    const store = await migrationStore()
+    try {
+      const auth = configureAuth(store.database, BASE_URL, 'test-secret-that-is-long-enough-32', 'g', 'g-secret')
+      return await auth.handler(await prepareOAuthRegistration(request))
+    } finally {
+      store.close()
+    }
+  }
+
+  it('is registered as the native app RFC 8252 says it is', async () => {
+    const response = await registerThroughRoute(stockRegistration())
+    expect(response.status).toBe(201)
+    expect(z.object({ application_type: z.literal('native') }).parse(await response.json()).application_type).toBe('native')
+  })
+
+  it('leaves an explicit application_type for the provider to judge', async () => {
+    const response = await registerThroughRoute(stockRegistration({ application_type: 'web' }))
+    expect(response.status).toBe(400)
+  })
+
+  it('leaves a registration with a website redirect under the provider default', async () => {
+    const prepared = await prepareOAuthRegistration(stockRegistration({ redirect_uris: ['http://127.0.0.1:1/cb', 'https://agent.example/cb'] }))
+    expect(JSON.parse(await prepared.text())).not.toHaveProperty('application_type')
+  })
+
+  it('passes a body that is not JSON through for the provider to refuse', async () => {
+    const prepared = await prepareOAuthRegistration(new Request(`${BASE_URL}/api/auth/oauth2/register`, { body: 'nope', method: 'POST' }))
+    expect(await prepared.text()).toBe('nope')
   })
 })
