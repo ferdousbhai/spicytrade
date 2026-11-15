@@ -602,6 +602,9 @@ body { font-size: var(--type-body); min-width: 320px; min-height: 100vh; min-hei
 .authorize-page h1 { font-size: 18px; font-weight: 700; }
 .authorize-page p { color: var(--ink-muted); line-height: 1.5; }
 .authorize-page .authorize-error { color: var(--rich); }
+/* Where an approval goes when it is not this computer: the one fact a phishing link cannot fake. */
+.authorize-page .authorize-warning { color: var(--text); }
+.authorize-page .authorize-warning strong { overflow-wrap: anywhere; }
 .authorize-page a { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
 .authorize-actions { margin-top: 8px; display: flex; gap: 12px; }
 .authorize-actions button { flex: 1; min-height: var(--touch-target); }

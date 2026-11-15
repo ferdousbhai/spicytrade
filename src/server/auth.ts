@@ -18,6 +18,14 @@ export const OWNER_EMAIL = 'ferdousbd@gmail.com'
 export const MCP_LOGIN_PAGE = '/authorize'
 export const MCP_CONSENT_PAGE = '/authorize/consent'
 
+/**
+ * How long an authorization request stays answerable: the provider signs the consent page's query
+ * and the authorization code with this lifetime. It is better-auth's own default, named here
+ * because the sweep of abandoned client registrations (`oauth-client-sweep.ts`) must never drop a
+ * client whose first authorization could still be in flight.
+ */
+export const AUTHORIZATION_REQUEST_LIFETIME_SECONDS = 600
+
 export function isOwnerEmail(email: string): boolean {
   return email.toLowerCase() === OWNER_EMAIL
 }
@@ -88,6 +96,7 @@ export function configureAuth(
       mcp({
         allowDynamicClientRegistration: true,
         allowUnauthenticatedClientRegistration: true,
+        codeExpiresIn: AUTHORIZATION_REQUEST_LIFETIME_SECONDS,
         consentPage: MCP_CONSENT_PAGE,
         loginPage: MCP_LOGIN_PAGE,
         // Audience-binds every issued token to this endpoint (RFC 8707), so a token minted for

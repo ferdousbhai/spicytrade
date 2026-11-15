@@ -44,6 +44,12 @@ export default defineConfig({
     env: {
       // Public HTTP and MCP requests: a burst allowance for shared networks.
       PUBLIC_READ_LIMITER: bindings.rateLimit({ namespace: "1001", simple: { limit: 120, period: 60 } }),
+      // Unauthenticated OAuth client registration (`src/server/request-limits.ts`). A person
+      // connecting registers one client per agent, and an MCP client registers again after a
+      // failed or abandoned attempt, so ten a minute covers a household or office setting up
+      // several agents behind one address while bounding how fast one address can add rows. Rows
+      // that never earn a consent are swept on the scheduled tick (`oauth-client-sweep.ts`).
+      OAUTH_REGISTRATION_LIMITER: bindings.rateLimit({ namespace: "1002", simple: { limit: 10, period: 60 } }),
       BROKER_GATE: bindings.durableObject({ worker: 'spicytrade', exportName: 'BrokerGate' }),
       MARKET_FEED: bindings.durableObject({ worker: 'spicytrade', exportName: 'MarketFeed' }),
       // Cited pages are read through Browser Run so a recorded catalyst or evidence card is bound

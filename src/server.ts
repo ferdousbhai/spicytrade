@@ -5,6 +5,7 @@ import { type AppEnv } from './server/env'
 import { finalizeDocumentResponse } from './server/http'
 import { createNonce } from './server/security-headers'
 import { mcpEndpointRedirect } from './server/mcp-endpoint-redirect'
+import { limitRequest } from './server/request-limits'
 import { injectWatchSummary, isWatchDocument, readPublicSnapshotForDocument } from './server/watch-summary'
 import { configureTypeboxRuntime } from './server/typebox-runtime'
 import { MCP_PATH } from './domain/site'
@@ -31,11 +32,8 @@ export { MarketFeed } from './server/market-feed'
 export default {
   async fetch(request: Request, env: AppEnv, ctx: ExecutionContext) {
     const url = new URL(request.url)
-    if (url.pathname === '/api/public-symbol-search' || (url.pathname === MCP_PATH && !request.headers.has('Authorization'))) {
-      if (!env.PUBLIC_READ_LIMITER) return Response.json({ error: 'Public request limiter unavailable' }, { status: 503 })
-      const allowed = await env.PUBLIC_READ_LIMITER.limit({ key: request.headers.get('CF-Connecting-IP') ?? 'unknown' })
-      if (!allowed.success) return Response.json({ error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': '60', 'Cache-Control': 'no-store' } })
-    }
+    const limited = await limitRequest(request, env)
+    if (limited) return limited
     // OAuth discovery. An MCP client reads these before it can authenticate at all, and only
     // ever at the origin.
     if (url.pathname.startsWith('/.well-known/')) {
@@ -118,6 +116,12 @@ export default {
     sweep(
       import('./server/agent-logins').then(({ sweepExpiredAgentLogins }) => sweepExpiredAgentLogins(env, scheduledAt)),
       'AgentLoginsSwept', 'loginCount', 'AgentLoginSweepFailed',
+    )
+    // Anyone may register an OAuth client, and each registration is a row; one no member ever
+    // approved holds nothing, so the tick drops it once its first authorization has lapsed.
+    sweep(
+      import('./server/oauth-client-sweep').then(({ sweepUnconsentedOAuthClients }) => sweepUnconsentedOAuthClients(env, scheduledAt)),
+      'OAuthClientsSwept', 'clientCount', 'OAuthClientSweepFailed',
     )
   },
 }

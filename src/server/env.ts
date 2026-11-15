@@ -22,8 +22,13 @@ interface MarketFeedNamespace {
   getByName(name: string): MarketFeedRpcStub
 }
 
+export interface RequestLimiter {
+  limit(options: { key: string }): Promise<{ success: boolean }>
+}
+
 export interface AppEnv {
-  PUBLIC_READ_LIMITER?: { limit(options: { key: string }): Promise<{ success: boolean }> }
+  PUBLIC_READ_LIMITER?: RequestLimiter
+  OAUTH_REGISTRATION_LIMITER?: RequestLimiter
   AUTH_BASE_URL?: string
   BETTER_AUTH_SECRET?: string
   BROKER_GATE?: BrokerGateNamespace

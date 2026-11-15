@@ -4,7 +4,8 @@ import { z } from 'zod'
 
 import { Button } from '#/components/ui/button'
 import { Spinner } from '#/components/ui/spinner'
-import { AuthorizeFrame, useViewer } from '../components/auth-gate'
+import { AuthorizeFrame, useRawQuery, useViewer } from '../components/auth-gate'
+import { type ConsentDestination, readConsentDestination } from '../domain/consent-destination'
 import { SUPPORT_EMAIL, pageTitle } from '../domain/site'
 import { toError } from '../domain/failure'
 
@@ -18,6 +19,10 @@ import { toError } from '../domain/failure'
  *
  * The provider owns the decision and the outcome. This page reports the member's answer and
  * follows the redirect it is given; it never constructs a redirect back to the client itself.
+ *
+ * It does say where the approval goes (`domain/consent-destination.ts`): with registration open,
+ * that destination is the only thing separating the member's own agent from a client someone else
+ * registered and sent them a link for.
  */
 export const Route = createFileRoute('/authorize/consent')({
   component: ConsentPage,
@@ -33,8 +38,35 @@ const ConsentResponseSchema = z.object({ redirect: z.boolean(), url: z.string().
 const FailureSchema = z.object({ error_description: z.string().min(1) })
 const ANSWER_NOT_RECORDED = 'spicytrade could not record that answer.'
 
+function DestinationNotice({ destination }: { destination: ConsentDestination }) {
+  switch (destination.kind) {
+    case 'this-computer':
+      return (
+        <p>
+          Approving sends access to an agent running on this computer
+          {destination.port ? <> (port {destination.port})</> : null}.
+        </p>
+      )
+    case 'app':
+      return (
+        <p className="authorize-warning">
+          Approving sends access to whichever app on this computer opens{' '}
+          <strong>{destination.scheme}:</strong> links.
+        </p>
+      )
+    case 'website':
+      return (
+        <p className="authorize-warning">
+          Approving sends access to <strong>{destination.host}</strong>, not to this computer. Deny
+          unless that is your agent and you started this yourself.
+        </p>
+      )
+  }
+}
+
 function ConsentPage() {
   const viewer = useViewer()
+  const destination = readConsentDestination(useRawQuery())
   /** The answer in flight, so the spinner is in the button that was pressed, never in Approve on a Deny. */
   const [submitting, setSubmitting] = useState<'approve' | 'deny'>()
   const [failure, setFailure] = useState<string>()
@@ -79,7 +111,13 @@ function ConsentPage() {
       {viewer.phase === 'ready' && viewer.user === null && (
         <p>You are not signed in. Start the connection again from your agent.</p>
       )}
-      {viewer.phase === 'ready' && viewer.user !== null && (
+      {viewer.phase === 'ready' && viewer.user !== null && destination === null && (
+        <p className="authorize-error">
+          This request does not say where access would be sent, so it cannot be approved. Start the
+          connection again from your agent.
+        </p>
+      )}
+      {viewer.phase === 'ready' && viewer.user !== null && destination !== null && (
         <>
           <p>
             An agent is asking to connect to your spicytrade account, signed in as{' '}
@@ -87,6 +125,7 @@ function ConsentPage() {
             chains and Greeks, and the shared research, to add symbols to the watchlist, and to record
             catalysts and evidence that every spicytrade reader sees.
           </p>
+          <DestinationNotice destination={destination} />
           <p>
             It cannot reach your brokerage this way. Balances, positions and order placement need a
             broker credential that stays on your own machine and is sent with each request.
