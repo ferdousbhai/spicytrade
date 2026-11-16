@@ -11,7 +11,7 @@
  * deciding whether to call it and is most likely to honour them.
  */
 
-import { SITE_NAME } from '../domain/site'
+import { CONNECT_GUIDE_URL, SITE_NAME } from '../domain/site'
 
 /**
  * Assembled for the tier that asked, because this is the one piece of doctrine every caller
@@ -23,15 +23,17 @@ import { SITE_NAME } from '../domain/site'
 export function spiceMcpInstructions(signedIn: boolean): string {
   const tier = signedIn
     ? `- Account tools need a broker credential supplied per request from the user's own machine.
-  Without it they say so: a setup step for the user, not an error to retry.
+  Without it they say so: a setup step, not an error to retry. If you can run commands on that
+  machine, do the setup yourself (${CONNECT_GUIDE_URL}) rather than hand it back.
 - Place from a live quote at tick-aligned mid (sell at mid or higher, buy at mid or lower). If
   still working after a short wait, replace one tick toward the market until it fills.
 - Parallel is fine when the tickets do not depend on each other — several sells at once is the
   usual case. A name that already has a live order is replaced or waited on, not doubled.
 - Resize with the live quote and available buying power. Planned size is not a fill quantity.`
     : `- You are on the public tier: quotes are the website's cached snapshot, priced as of its last
-  refresh. Signing in adds live broker quotes, chains and Greeks; when the user wants those, call
-  \`sign_in\`, which asks their client to start it.`
+  refresh. For balances, positions, orders or live data, the best path is the local connector: if
+  you can run commands on the user's Linux or macOS computer, set it up yourself from
+  ${CONNECT_GUIDE_URL}. Otherwise \`sign_in\` adds live quotes, chains and Greeks.`
   return `
 ${SITE_NAME} is market data${signedIn ? ', research, and guarded order placement for a trader\'s own account' : ' and research for an options trader'}. Read the
 \`spicytrade://guide\` resource for what it can answer that you would not guess.

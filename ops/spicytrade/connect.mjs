@@ -4,9 +4,10 @@ import { z } from 'zod'
 
 import { grantMinter, grantRefused, TastytradeAuthError } from './broker-grants.mjs'
 import { CLIENTS, EXPECTED_TARGET, namesSpicytrade } from './clients.mjs'
-import { CLI_PATH, cliCommand, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME } from './config.mjs'
+import { CLI_PATH, cliCommand, LEGACY_MCP_SERVER_NAME, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME } from './config.mjs'
 import { agentToken, keyringHelperInstalled, keyringHelperMissing, keyringWritable, requireSupportedPlatform, tastytradeCredentialKind } from './keyring.mjs'
 import { login } from './login.mjs'
+import { register, removeStale } from './setup.mjs'
 import { CliFailure } from './loopback.mjs'
 import { connectTastytrade } from './tastytrade-connect.mjs'
 import { TOKEN_REQUEST_TIMEOUT_MS, UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
@@ -73,31 +74,42 @@ function callingClient() {
 }
 
 /**
- * The closing line. "Continue in your conversation" is true only if the agent that ran this has the
- * server in its workspace: an account connected to no agent's server looks finished and is not, so
- * that case says what is still missing and how to add it. It is read only -- `connect` never
- * registers an agent; the agent does that through its own mechanism, as the connect guide has it.
+ * The closing step, run from inside the agent that asked to connect. An account connected to no
+ * agent's server looks finished and is not, so when Claude Code ran this and its workspace does
+ * not start spicytrade, this registers it there -- replacing spicytrade's own older entry, such as
+ * an HTTP one pointing at the website, which can never carry a broker credential -- and removes a
+ * pre-rename `spicy-trade` entry that would otherwise load a second copy of the tools. It is the
+ * rest of what the user asked for by connecting from that agent, and it touches only entries
+ * `namesSpicytrade` recognises: a different server under the name is someone's own, so it is left
+ * alone and the line says how to fix it. Agents this cannot identify register through their own
+ * mechanism, as the connect guide has it.
  */
-function closingLine() {
+function finish(out) {
   const verified = 'Account connected and live snapshot verified.'
   const client = callingClient()
   if (!client) return `${verified} Continue in your existing agent conversation.\n`
   const configured = client.configured()
-  if (configured.state === 'configured' && configured.target === EXPECTED_TARGET) {
-    return `${verified} ${client.name} starts ${MCP_SERVER_NAME} in ${client.where}. Continue in your existing agent conversation;`
-      + ' if its tools are not loaded yet, run /mcp and reconnect it, or restart Claude Code with claude --continue.\n'
-  }
   if (configured.state === 'failed') {
     return `${verified} ${client.name} did not answer when asked for its ${MCP_SERVER_NAME} server; check it with: ${cliCommand('doctor')}\n`
   }
-  const problem = configured.state !== 'configured'
-    ? `${client.name} has no ${MCP_SERVER_NAME} server in ${client.where}`
-    : namesSpicytrade(configured.target)
-      ? `${client.name} starts ${MCP_SERVER_NAME} from an older install in ${client.where}`
-      : `${client.name} has a different server named "${MCP_SERVER_NAME}" in ${client.where}`
+  const alreadyInPlace = configured.state === 'configured' && configured.target === EXPECTED_TARGET
+  const inPlace = alreadyInPlace || register(out, client, configured)
+  removeStale(out, client.name, LEGACY_MCP_SERVER_NAME, client, inPlace)
+  if (alreadyInPlace) {
+    return `${verified} ${client.name} starts ${MCP_SERVER_NAME} in ${client.where}. Continue in your existing agent conversation;`
+      + ' if its tools are not loaded yet, run /mcp and reconnect it, or restart Claude Code with claude --continue.\n'
+  }
+  if (inPlace) {
+    // Claude Code reads its servers when it starts, so one restart is the one step left.
+    return `${verified} ${client.name} now starts ${MCP_SERVER_NAME} in ${client.where}. Restart Claude Code in that folder`
+      + ' to load it: exit, then run claude --continue to resume this conversation.\n'
+  }
+  const problem = namesSpicytrade(configured.target ?? '')
+    ? `${client.name} could not replace its older ${MCP_SERVER_NAME} entry in ${client.where}`
+    : `${client.name} has a different server named "${MCP_SERVER_NAME}" in ${client.where}`
   const fix = configured.state === 'configured' ? `${client.removeCommand()} && ${client.addCommand}` : client.addCommand
   return `${verified} But ${problem}, so this conversation cannot use it yet.\n`
-    + `Add it with: ${fix}\nThen restart Claude Code in that folder; claude --continue resumes this conversation.\n`
+    + `Fix it with: ${fix}\nThen restart Claude Code in that folder; claude --continue resumes this conversation.\n`
 }
 
 /** Explicit account connection, callable from an existing agent's shell without a terminal questionnaire. */
@@ -132,5 +144,5 @@ export async function connect(out = process.stdout) {
   if (needsConnection) await connectTastytrade(out)
   out.write('Verifying live account access…\n')
   await verifyAccount()
-  out.write(closingLine())
+  out.write(finish(out))
 }

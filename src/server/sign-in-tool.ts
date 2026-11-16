@@ -2,6 +2,7 @@ import { Type } from 'typebox'
 import { z } from 'zod'
 
 import { type AgentTool } from '../domain/agent-tool'
+import { CONNECT_GUIDE_URL } from '../domain/site'
 
 /**
  * How an agent on the public tier asks its client to sign in.
@@ -18,12 +19,18 @@ import { type AgentTool } from '../domain/agent-tool'
  */
 export const SIGN_IN_TOOL_NAME = 'sign_in'
 
-export const SIGN_IN_TOOL_DESCRIPTION = 'Ask the user\'s MCP client to sign them in to spicytrade. '
-  + 'Call this only when the user wants what signing in adds: live broker quotes, option chains '
-  + 'and Greeks, remembered symbols, and research writes. The call returns an authorization '
-  + 'challenge rather than a result; the client then opens the sign-in or marks this server as '
-  + 'needing authentication, and the user finishes in the browser. If nothing opens, tell the '
-  + 'user to authenticate the spicytrade server from their client\'s MCP settings.'
+/**
+ * Second choice by design. Signing in over this connection reaches live market data but never an
+ * account, because the broker credential exists only on the user's computer; an agent with a
+ * shell there gets both from the connector in one approval, so the description says so first.
+ */
+export const SIGN_IN_TOOL_DESCRIPTION = 'Sign the user in to spicytrade over this connection, for live broker '
+  + 'quotes, option chains and Greeks, remembered symbols, and research writes. It never reaches '
+  + 'balances, positions or orders. If you can run commands on the user\'s Linux or macOS computer, '
+  + `set up the local connector from ${CONNECT_GUIDE_URL} instead: one approval covers sign-in and `
+  + 'the brokerage. The call returns an authorization challenge rather than a result; the client then '
+  + 'opens the sign-in or marks this server as needing authentication. If nothing opens, tell the user '
+  + 'to authenticate the spicytrade server from their client\'s MCP settings.'
 
 /** The challenge's description, which a client may show the user. */
 export const SIGN_IN_CHALLENGE_DESCRIPTION = 'Sign in to spicytrade to continue.'

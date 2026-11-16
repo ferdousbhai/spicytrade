@@ -884,17 +884,43 @@ describe('connecting from the current agent without a terminal', () => {
     expect(cli.output().stderr).toContain('could not be verified')
   })
 
-  it('says from Claude Code when the workspace it runs in has no server, without adding one', async () => {
+  it('adds the server to the Claude Code workspace it runs in, and says to restart once', async () => {
     const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN }, { claude: {} })
     const cli = run(machine, await snapshotWorker(), ['connect'], { env: { CLAUDECODE: '1' } })
     expect(await cli.exited).toBe(0)
     const { stdout } = cli.output()
-    expect(stdout).toContain('Account connected and live snapshot verified. But Claude Code has no spicytrade server in ~/workspace,'
-      + ' so this conversation cannot use it yet.\n'
-      + `Add it with: mkdir -p ${machine.workspace} && cd ${machine.workspace} && claude mcp add --scope local spicytrade -- ${MCP_TARGET}\n`)
-    expect(stdout).not.toContain('Continue in your existing agent conversation')
-    // It asked Claude Code, and only asked: registration is the agent's own step.
-    expect(await readFile(join(machine.state, 'claude-calls'), 'utf8')).not.toContain('mcp add')
+    expect(stdout).toContain('✓ Claude Code: added spicytrade in ~/workspace\n')
+    expect(stdout).toContain('Account connected and live snapshot verified. Claude Code now starts spicytrade in ~/workspace.'
+      + ' Restart Claude Code in that folder to load it: exit, then run claude --continue to resume this conversation.\n')
+    expect(await readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).toBe(`${MCP_TARGET}\n`)
+  }, 30_000)
+
+  it('replaces an HTTP entry for the website, which can never carry a broker credential', async () => {
+    const port = await snapshotWorker()
+    const website = `http://127.0.0.1:${port}/mcp`
+    const machine = await fakeMachine(
+      { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN },
+      { claude: { 'local:spicytrade': website, 'local:spicy-trade': website } },
+    )
+    const cli = run(machine, port, ['connect'], { env: { CLAUDECODE: '1' } })
+    expect(await cli.exited).toBe(0)
+    const { stdout } = cli.output()
+    expect(stdout).toContain('Claude Code now starts spicytrade in ~/workspace.')
+    expect(stdout).toContain('✓ Claude Code: removed an old spicy-trade entry\n')
+    expect(await readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).toBe(`${MCP_TARGET}\n`)
+    expect(await readdir(machine.state)).not.toContain('claude-local-spicy-trade-target')
+  }, 30_000)
+
+  it('leaves a different server named spicytrade alone and says how to fix it', async () => {
+    const machine = await fakeMachine(
+      { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN },
+      { claude: { 'local:spicytrade': '/opt/someone-else/server --stdio' } },
+    )
+    const cli = run(machine, await snapshotWorker(), ['connect'], { env: { CLAUDECODE: '1' } })
+    expect(await cli.exited).toBe(0)
+    const { stdout } = cli.output()
+    expect(stdout).toContain('But Claude Code has a different server named "spicytrade" in ~/workspace, so this conversation cannot use it yet.\n')
+    expect(await readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).toBe('/opt/someone-else/server --stdio')
   }, 30_000)
 
   it('tells Claude Code to continue once its workspace starts the server', async () => {

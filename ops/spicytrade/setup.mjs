@@ -72,7 +72,7 @@ async function confirm(question) {
  * every folder -- once the current entry is in place, and only when it is spicytrade's: an entry
  * of that name pointing anywhere else is someone's own.
  */
-function removeStale(out, label, entry, scope, inPlace) {
+export function removeStale(out, label, entry, scope, inPlace) {
   const found = scope.configured(entry)
   if (found.state !== 'configured') return
   if (!namesSpicytrade(found.target)) {
@@ -87,7 +87,7 @@ function removeStale(out, label, entry, scope, inPlace) {
 }
 
 /** Registers `spicytrade mcp` with one client; true when its entry is in place afterwards. */
-function register(out, client, configured) {
+export function register(out, client, configured) {
   // Each way this can fail is reported once, by the check below, with its fix.
   if (configured.state === 'failed') {
     out.write(`· ${client.name} did not answer; see the check below\n`)

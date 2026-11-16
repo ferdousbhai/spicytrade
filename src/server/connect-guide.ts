@@ -19,8 +19,20 @@ needs Linux or macOS, and offer research through ${MCP_ENDPOINT} instead.
 If the harness has no local shell or no stdio MCP support, explain that account access needs
 the local connector; offer research through ${MCP_ENDPOINT} instead. Do not claim a cloud shell is the user's local computer.
 
-1. Inspect the install script before running it. Install the connector without configuring any
-   agent or starting terminal setup:
+Do every step yourself. The user's part is approving in the browser, and in Claude Code one
+restart; do not hand them commands to run.
+
+Fastest path in Claude Code: if ~/.local/bin/spicytrade is missing, install it (step 1). Then
+run ~/.local/bin/spicytrade connect from the user's current workspace. It signs in, connects the
+brokerage, verifies a live snapshot, and registers spicytrade in this workspace, replacing
+spicytrade's own older entry, including an HTTP one for ${MCP_ENDPOINT}. Keep it running while
+the user approves. Its closing line says what is left: usually that the user restarts Claude
+Code with claude --continue, which resumes this conversation. Tell them that once. Steps 2 to 4
+are for other harnesses, and for repair.
+
+1. If ~/.local/bin/spicytrade already exists, skip this step. Otherwise inspect the install
+   script before running it, then install the connector without configuring any agent or
+   starting terminal setup:
 
    curl -fsSL ${INSTALL_SCRIPT_URL} | bash -s -- --connector-only
 
@@ -30,6 +42,8 @@ the local connector; offer research through ${MCP_ENDPOINT} instead. Do not clai
    settings. Do not configure every agent, store tokens in configuration, or add environment
    variables for credentials. If an existing spicytrade entry points somewhere else, inspect
    it before changing it; do not replace an unrelated server merely because its name matches.
+   An HTTP entry for ${MCP_ENDPOINT}, under any name, is replaced by the connector: remove it
+   once the connector is registered, or the tools load twice.
 
    Claude Code: in the current workspace, use
    claude mcp add --scope local spicytrade -- <command from integration> mcp

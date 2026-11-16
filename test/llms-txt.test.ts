@@ -28,6 +28,10 @@ describe('llms.txt', () => {
     expect(guide).toContain('Configure only this harness')
     expect(guide).toContain('Do not promise that every harness supports hot reload')
     expect(guide).toContain('spicytrade integration')
+    // The agent does the setup; the user approves and, in Claude Code, restarts once.
+    expect(guide).toContain('run ~/.local/bin/spicytrade connect from the user\'s current workspace')
+    expect(guide).toContain('If ~/.local/bin/spicytrade already exists, skip this step')
+    expect(guide).toContain('is replaced by the connector')
   })
 
   it('carries the MCP guide in the full version, under the index rather than a second title', () => {

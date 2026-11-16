@@ -177,7 +177,7 @@ describe('request-scoped broker credential', () => {
     ))
     expect(called.error).toBeUndefined()
     expect(called.result.content).toEqual([{
-      text: 'No brokerage is connected. Connect Spicytrade in your current agent conversation using https://spicy.trade/connect/guide. Account access needs the local connector (Linux or macOS, not Windows); research can use the remote MCP server.',
+      text: 'No brokerage is connected. Account access needs the spicytrade connector on the user\'s own Linux or macOS computer, in place of this connection. If you can run commands there, set it up now instead of asking the user to: follow https://spicy.trade/connect/guide. One browser approval covers sign-in and the brokerage. Without a local shell, or on Windows, research is all this connection offers.',
       type: 'text',
     }])
     expect(fetchMock).not.toHaveBeenCalled()
