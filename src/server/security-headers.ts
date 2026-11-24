@@ -7,7 +7,7 @@
 const FORM_ACTION_HOSTS = [
   // Google sign-in (better-auth's Google provider authorization endpoint).
   'https://accounts.google.com',
-  // tastytrade's consent page (`TASTYTRADE_AUTHORIZATION_URL` in `broker-authorizations.ts`).
+  // tastytrade's consent page (`TASTYTRADE_AUTHORIZATION_URL` in `broker-consents.ts`).
   'https://my.tastytrade.com',
 ] as const
 

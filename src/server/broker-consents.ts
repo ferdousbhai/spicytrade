@@ -1,14 +1,14 @@
 import { type z } from 'zod'
 
 import {
-  BROKER_AUTHORIZATION_STATE_BYTES,
-  BROKER_AUTHORIZATION_TTL_MS,
-  BrokerAuthorizationStateSchema,
+  BROKER_CONSENT_STATE_BYTES,
+  BROKER_CONSENT_TTL_MS,
+  BrokerConsentStateSchema,
   BrokerConsentRefusalSchema,
   BrokerExchangeRequestSchema,
   BrokerTokenRequestSchema,
-  MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER,
-} from '../domain/broker-authorization'
+  MAX_PENDING_BROKER_CONSENTS_PER_USER,
+} from '../domain/broker-consent'
 import { type BrokerId } from '../domain/broker'
 import { errorName, toError } from '../domain/failure'
 import { requireProductionOrigin } from './auth'
@@ -146,7 +146,7 @@ export async function openTastytradeConsent(
 ): Promise<string | Response> {
   const config = connectConfig(env)
   if (!config) return unavailable()
-  const state = randomBase64Url(BROKER_AUTHORIZATION_STATE_BYTES)
+  const state = randomBase64Url(BROKER_CONSENT_STATE_BYTES)
   const nowIso = now.toISOString()
   // The member's lapsed attempts go first so they never count against the cap, and the cap is
   // checked inside the insert: two concurrent starts that each counted a free slot would
@@ -169,14 +169,14 @@ export async function openTastytradeConsent(
       userId,
       BROKER,
       nowIso,
-      new Date(now.getTime() + BROKER_AUTHORIZATION_TTL_MS).toISOString(),
+      new Date(now.getTime() + BROKER_CONSENT_TTL_MS).toISOString(),
       userId,
-      MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER,
+      MAX_PENDING_BROKER_CONSENTS_PER_USER,
     ),
   ])
   if (!inserted?.meta.changes) {
     return jsonNoStore({
-      error: `At most ${MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER} tastytrade connections may be pending at once. Finish one or wait for it to expire.`,
+      error: `At most ${MAX_PENDING_BROKER_CONSENTS_PER_USER} tastytrade connections may be pending at once. Finish one or wait for it to expire.`,
     }, { status: 409 })
   }
 
@@ -220,7 +220,7 @@ export async function tastytradeCallback(request: Request, env: AppEnv, now = ne
   const config = connectConfig(env)
   if (!config) return plainNoStore(CALLBACK_UNAVAILABLE, 503)
   const params = new URL(request.url).searchParams
-  const state = BrokerAuthorizationStateSchema.safeParse(params.get('state'))
+  const state = BrokerConsentStateSchema.safeParse(params.get('state'))
   const error = params.get('error')
   const code = error ? null : params.get('code')
   const expired = 'This tastytrade connection has expired or is unknown. Run spicytrade setup again.'
@@ -320,7 +320,7 @@ export async function tastytradeAccessToken(request: Request, env: AppEnv): Prom
  * start another; this catches the ones whose member never came back. A lapsed row can no longer
  * be redeemed or followed, so deleting it loses nothing.
  */
-export async function sweepExpiredBrokerAuthorizations(env: AppEnv, now = new Date()): Promise<number> {
+export async function sweepExpiredBrokerConsents(env: AppEnv, now = new Date()): Promise<number> {
   // Scheduled only: a missing binding is a misconfiguration to name, not a sweep of zero rows.
   if (!env.DB) throw new ConfigurationError('BindingMissing', 'DB')
   const result = await env.DB.prepare(

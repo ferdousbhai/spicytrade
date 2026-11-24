@@ -69,13 +69,6 @@ it('says a malformed link is malformed rather than offering an approval', async 
   expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
 })
 
-it('tells a link from an older install to update rather than approving into a wait that never ends', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => MEMBER.clone()))
-  open({ challenge: CHALLENGE, label: 'laptop', port: '43210', state: 's'.repeat(43) })
-  await screen.findByText(/This link came from an older spicytrade/)
-  expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
-})
-
 it('reports a refused approval in the server\'s words', async () => {
   memberFetch(() => Response.json({ error: 'At most 3 computer sign-ins may be pending at once.' }, { status: 409 }))
   open({ challenge: CHALLENGE, label: 'laptop' })

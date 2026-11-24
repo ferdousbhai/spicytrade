@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-import { exchangeTastytrade } from '../server/broker-authorizations'
+import { exchangeTastytrade } from '../server/broker-consents'
 import { appEnv } from '../server/worker-env'
 
 /** The CLI collecting an approved connection's refresh token, once, with its agent token and verifier. */

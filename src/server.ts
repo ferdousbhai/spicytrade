@@ -109,8 +109,8 @@ export default {
     // A member's lapsed brokerage connections are dropped whenever they start another; the tick
     // drops those of members who never came back.
     sweep(
-      import('./server/broker-authorizations').then(({ sweepExpiredBrokerAuthorizations }) => sweepExpiredBrokerAuthorizations(env, scheduledAt)),
-      'BrokerAuthorizationsSwept', 'authorizationCount', 'BrokerAuthorizationSweepFailed',
+      import('./server/broker-consents').then(({ sweepExpiredBrokerConsents }) => sweepExpiredBrokerConsents(env, scheduledAt)),
+      'BrokerConsentsSwept', 'consentCount', 'BrokerConsentSweepFailed',
     )
     // Likewise a member's lapsed terminal sign-ins, whose CLI never came back to redeem them.
     sweep(

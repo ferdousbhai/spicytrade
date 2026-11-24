@@ -6,7 +6,7 @@ import { Button } from '#/components/ui/button'
 import { Spinner } from '#/components/ui/spinner'
 import { AuthorizeFrame, GoogleSignInButton, useRawQuery, useViewer } from '../components/auth-gate'
 import { AgentLoginApproveResponseSchema, AgentLoginPageQuerySchema, connectCode } from '../domain/agent-login'
-import { INSTALL_SCRIPT_URL, pageTitle } from '../domain/site'
+import { pageTitle } from '../domain/site'
 import { toError } from '../domain/failure'
 
 /**
@@ -36,20 +36,11 @@ function parseQuery(rawSearch: string) {
   return AgentLoginPageQuerySchema.safeParse(Object.fromEntries(new URLSearchParams(rawSearch)))
 }
 
-/**
- * A link from a CLI installed before approvals were polled for: it names the port that CLI is
- * listening on and waits there for a return this page no longer makes.
- */
-function fromOlderCli(rawSearch: string): boolean {
-  return new URLSearchParams(rawSearch).has('port')
-}
-
 function ConnectAgentPage() {
   const viewer = useViewer()
   // Empty on the server pass; every use below waits for the viewer check, which resolves only in
   // the browser.
   const rawSearch = useRawQuery()
-  const outdated = fromOlderCli(rawSearch)
   const query = parseQuery(rawSearch)
   const [submitting, setSubmitting] = useState(false)
   const [approved, setApproved] = useState(false)
@@ -82,18 +73,12 @@ function ConnectAgentPage() {
 
   return (
     <AuthorizeFrame phase={viewer.phase} title="Connect a computer">
-      {viewer.phase === 'ready' && outdated && (
-        <p className="authorize-error">
-          This link came from an older spicytrade. Update it, then connect again:{' '}
-          <code>curl -fsSL {INSTALL_SCRIPT_URL} | bash</code>
-        </p>
-      )}
-      {viewer.phase === 'ready' && !outdated && !query.success && (
+      {viewer.phase === 'ready' && !query.success && (
         <p className="authorize-error">
           This link is incomplete. Run <code>spicytrade connect</code> again.
         </p>
       )}
-      {viewer.phase === 'ready' && !outdated && query.success && viewer.user === null && (
+      {viewer.phase === 'ready' && query.success && viewer.user === null && (
         <>
           <p>
             A computer named <strong>{query.data.label}</strong> is asking to connect to spicytrade as
@@ -102,10 +87,10 @@ function ConnectAgentPage() {
           <GoogleSignInButton callbackURL={`/connect/agent${rawSearch}`} />
         </>
       )}
-      {viewer.phase === 'ready' && !outdated && query.success && viewer.user !== null && approved && (
+      {viewer.phase === 'ready' && query.success && viewer.user !== null && approved && (
         <p>Approved. Return to your terminal or agent; you can close this tab.</p>
       )}
-      {viewer.phase === 'ready' && !outdated && query.success && viewer.user !== null && !approved && (
+      {viewer.phase === 'ready' && query.success && viewer.user !== null && !approved && (
         <>
           <p>
             Connect <strong>{query.data.label}</strong> to spicytrade as <strong>{viewer.user.name}</strong>?

@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-import { tastytradeAccessToken } from '../server/broker-authorizations'
+import { tastytradeAccessToken } from '../server/broker-consents'
 import { appEnv } from '../server/worker-env'
 
 /** Mints `spicytrade mcp`'s 15-minute access token from the member's refresh token. */

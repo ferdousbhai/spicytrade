@@ -20,22 +20,22 @@ import { ConnectVerifierSchema } from './agent-login'
  * to sign in to tastytrade with two-factor authentication, short enough that an abandoned attempt
  * does not linger. A product judgment, not a provider figure.
  */
-export const BROKER_AUTHORIZATION_TTL_MS = 10 * 60_000
+export const BROKER_CONSENT_TTL_MS = 10 * 60_000
 
 /**
  * Outstanding connection attempts one member may hold at once. A member connects one computer
  * at a time; a few leaves room to restart a run while an abandoned consent page is still
  * open. The bound exists so that a stolen session cannot grow the table without limit.
  */
-export const MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER = 3
+export const MAX_PENDING_BROKER_CONSENTS_PER_USER = 3
 
 /**
  * The `state` value is 32 random bytes in base64url: unguessable, and the only thing the
  * unauthenticated callback can look a pending row up by. Its shape follows from the byte count.
  */
-export const BROKER_AUTHORIZATION_STATE_BYTES = 32
-const STATE_LENGTH = Math.ceil(BROKER_AUTHORIZATION_STATE_BYTES * 4 / 3)
-export const BrokerAuthorizationStateSchema = z.string().regex(new RegExp(`^[A-Za-z0-9_-]{${STATE_LENGTH}}$`))
+export const BROKER_CONSENT_STATE_BYTES = 32
+const STATE_LENGTH = Math.ceil(BROKER_CONSENT_STATE_BYTES * 4 / 3)
+export const BrokerConsentStateSchema = z.string().regex(new RegExp(`^[A-Za-z0-9_-]{${STATE_LENGTH}}$`))
 
 /**
  * The refusals a consent may record: the codes RFC 6749 §4.1.2.1 defines for a refused

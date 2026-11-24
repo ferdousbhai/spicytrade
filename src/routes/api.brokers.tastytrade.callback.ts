@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-import { tastytradeCallback } from '../server/broker-authorizations'
+import { tastytradeCallback } from '../server/broker-consents'
 import { appEnv } from '../server/worker-env'
 
 /**

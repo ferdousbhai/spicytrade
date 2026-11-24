@@ -5,7 +5,7 @@ import {
   MAX_PENDING_AGENT_LOGINS_PER_USER,
 } from '../domain/agent-login'
 import { getAuthenticatedIdentity } from './auth'
-import { openTastytradeConsent } from './broker-authorizations'
+import { openTastytradeConsent } from './broker-consents'
 import { sha256Base64Url } from './digest'
 import { type AppEnv } from './env'
 import { authenticateRequest, jsonNoStore } from './http'

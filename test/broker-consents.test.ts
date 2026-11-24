@@ -2,19 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
 import {
-  BROKER_AUTHORIZATION_TTL_MS,
-  MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER,
-} from '../src/domain/broker-authorization'
+  BROKER_CONSENT_TTL_MS,
+  MAX_PENDING_BROKER_CONSENTS_PER_USER,
+} from '../src/domain/broker-consent'
 import { type JsonValue } from '../src/domain/json-payload'
 import { approveAgentLogin } from '../src/server/agent-logins'
 import {
   exchangeTastytrade,
   openTastytradeConsent,
-  sweepExpiredBrokerAuthorizations,
+  sweepExpiredBrokerConsents,
   tastytradeAccessToken,
   tastytradeCallback,
   TASTYTRADE_CALLBACK_PATH,
-} from '../src/server/broker-authorizations'
+} from '../src/server/broker-consents'
 import { base64Url, sha256Base64Url } from '../src/server/digest'
 import { type AppEnv } from '../src/server/env'
 import { issueMcpToken } from '../src/server/mcp-tokens'
@@ -134,7 +134,7 @@ describe('tastytrade connect: consent', () => {
       challenge: consent.codeChallenge,
       code: null,
       created_at: NOW.toISOString(),
-      expires_at: new Date(NOW.getTime() + BROKER_AUTHORIZATION_TTL_MS).toISOString(),
+      expires_at: new Date(NOW.getTime() + BROKER_CONSENT_TTL_MS).toISOString(),
       refusal: null,
       state_digest: await sha256Base64Url(consent.state),
       user_id: 'member-a',
@@ -161,14 +161,14 @@ describe('tastytrade connect: consent', () => {
   })
 
   it('caps pending connections per member, counting only live ones', async () => {
-    for (let index = 0; index < MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER; index += 1) await start()
+    for (let index = 0; index < MAX_PENDING_BROKER_CONSENTS_PER_USER; index += 1) await start()
     const refused = await openTastytradeConsent(env, 'member-a', (await pkce()).codeChallenge, NOW)
     expect(refused).toBeInstanceOf(Response)
     expect(refused).toMatchObject({ status: 409 })
     // The cap is the member's own.
     await start('member-b')
     // Once those lapse, a new start clears them rather than counting them.
-    await start('member-a', new Date(NOW.getTime() + BROKER_AUTHORIZATION_TTL_MS))
+    await start('member-a', new Date(NOW.getTime() + BROKER_CONSENT_TTL_MS))
     expect(pendingRows().filter((row) => row.user_id === 'member-a')).toHaveLength(1)
   })
 
@@ -220,7 +220,7 @@ describe('tastytrade connect: callback', () => {
   it('refuses an unknown, malformed, or expired state with a no-store page', async () => {
     const consent = await start()
     const unknown = 'A'.repeat(consent.state.length)
-    const expired = new Date(NOW.getTime() + BROKER_AUTHORIZATION_TTL_MS)
+    const expired = new Date(NOW.getTime() + BROKER_CONSENT_TTL_MS)
     for (const response of [
       await callback({ code: CODE, state: unknown }),
       await callback({ code: CODE, state: 'short' }),
@@ -304,7 +304,7 @@ describe('tastytrade connect: exchange', () => {
 
   it('refuses an expired consent', async () => {
     const consent = await returned()
-    const expired = new Date(NOW.getTime() + BROKER_AUTHORIZATION_TTL_MS)
+    const expired = new Date(NOW.getTime() + BROKER_CONSENT_TTL_MS)
     expect((await exchange({ codeVerifier: consent.codeVerifier }, memberToken, expired)).status).toBe(404)
     expect(tokenCalls).toEqual([])
   })
@@ -444,10 +444,10 @@ describe('tastytrade connect: configuration', () => {
 
 describe('tastytrade connect: sweep', () => {
   it('drops only lapsed pending connections, and names a missing binding', async () => {
-    await start('member-a', new Date(NOW.getTime() - BROKER_AUTHORIZATION_TTL_MS))
+    await start('member-a', new Date(NOW.getTime() - BROKER_CONSENT_TTL_MS))
     await start('member-b')
-    await expect(sweepExpiredBrokerAuthorizations(env, NOW)).resolves.toBe(1)
+    await expect(sweepExpiredBrokerConsents(env, NOW)).resolves.toBe(1)
     expect(pendingRows()).toEqual([expect.objectContaining({ user_id: 'member-b' })])
-    await expect(sweepExpiredBrokerAuthorizations({}, NOW)).rejects.toMatchObject({ name: 'BindingMissing' })
+    await expect(sweepExpiredBrokerConsents({}, NOW)).rejects.toMatchObject({ name: 'BindingMissing' })
   })
 })
