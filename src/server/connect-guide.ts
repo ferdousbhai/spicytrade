@@ -29,8 +29,9 @@ to run. There is nothing to register with the agent and nothing to restart.
    curl -fsSL ${INSTALL_SCRIPT_URL} | bash -s -- --connector-only
 
 2. Run ~/.local/bin/spicytrade connect from the user's current workspace and keep it running.
-   It prints one link and a short code: give the user both, and tell them to approve only if
-   the page shows that code. The one approval signs in and continues to tastytrade. Browser
+   It prints one link and a short code: give the user both. The page asks them to type the
+   code. The one approval signs in and continues to tastytrade, which they approve in that same
+   browser. Browser
    consent, never an agent-supplied answer, authorizes the brokerage connection. Do not collect
    passwords, tokens or authorization codes in chat. Over SSH nothing more is needed: the link
    is approved in whichever browser the user opens it in.

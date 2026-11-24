@@ -2,6 +2,7 @@ import {
   AGENT_LOGIN_TTL_MS,
   AgentLoginApproveRequestSchema,
   AgentLoginExchangeRequestSchema,
+  connectCodeCheck,
   MAX_PENDING_AGENT_LOGINS_PER_USER,
 } from '../domain/agent-login'
 import { getAuthenticatedIdentity } from './auth'
@@ -53,7 +54,11 @@ export async function approveAgentLogin(
   const parsed = AgentLoginApproveRequestSchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return jsonNoStore({ error: 'Invalid agent sign-in request' }, { status: 400 })
   const userId = authenticated.identity.id
-  const { broker, codeChallenge, label } = parsed.data
+  const { broker, code, codeChallenge, codeCheck, label } = parsed.data
+  // Refused before anything is opened or recorded: a link is not approved without its code.
+  if (await connectCodeCheck(codeChallenge, code) !== codeCheck) {
+    return jsonNoStore({ error: 'That is not the code this link\'s terminal shows. Check it and try again.' }, { status: 403 })
+  }
   try {
     const authorizationUrl = broker ? await openTastytradeConsent(env, userId, codeChallenge, now) : undefined
     if (authorizationUrl instanceof Response) return authorizationUrl

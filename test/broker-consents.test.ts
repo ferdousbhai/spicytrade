@@ -5,6 +5,7 @@ import {
   BROKER_CONSENT_TTL_MS,
   MAX_PENDING_BROKER_CONSENTS_PER_USER,
 } from '../src/domain/broker-consent'
+import { connectCodeCheck } from '../src/domain/agent-login'
 import { type JsonValue } from '../src/domain/json-payload'
 import { approveAgentLogin } from '../src/server/agent-logins'
 import {
@@ -101,15 +102,19 @@ async function start(member = 'member-a', now = NOW, link?: Awaited<ReturnType<t
   return { authorizationUrl: opened, codeChallenge, codeVerifier, state }
 }
 
-function callback(query: Record<string, string>, now = NOW): Promise<Response> {
+/** The browser's return from tastytrade, carrying `member`'s spicytrade session, or none for null. */
+function callback(query: Record<string, string>, now = NOW, member: string | null = 'member-a'): Promise<Response> {
   const url = new URL(`${BASE_URL}${TASTYTRADE_CALLBACK_PATH}`)
   for (const [name, value] of Object.entries(query)) url.searchParams.set(name, value)
-  return tastytradeCallback(new Request(url), env, now)
+  return tastytradeCallback(new Request(url), env, now, async () => (member === null ? null : { email: `${member}@example.com`, id: member, name: 'Member' }))
 }
 
 function exchange(body: JsonValue, bearer = memberToken, now = NOW): Promise<Response> {
   return exchangeTastytrade(post('/api/brokers/tastytrade/exchange', body, bearer), env, now)
 }
+
+/** The code a CLI prints beside its link, as the member types it. */
+const LINK_CODE = '6A26A884'
 
 function pendingRows() {
   return store.sqlite.prepare('SELECT * FROM broker_consents').all()
@@ -147,7 +152,7 @@ describe('tastytrade connect: consent', () => {
   it('is opened by the member\'s approval of a link that asks for it', async () => {
     const { codeChallenge } = await pkce()
     const request = new Request(`${BASE_URL}/api/agent-logins`, {
-      body: JSON.stringify({ broker: 'tastytrade', codeChallenge, label: 'laptop' }),
+      body: JSON.stringify({ broker: 'tastytrade', code: LINK_CODE, codeChallenge, codeCheck: await connectCodeCheck(codeChallenge, LINK_CODE), label: 'laptop' }),
       headers: { 'content-type': 'application/json', Origin: BASE_URL },
       method: 'POST',
     })
@@ -208,6 +213,21 @@ describe('tastytrade connect: callback', () => {
       { code: null, refusal: 'access_denied' },
       { code: null, refusal: 'unrecognized' },
     ])
+  })
+
+  it('records nothing for a return in another member\'s browser, or one signed in to no one', async () => {
+    // The consent address is an ordinary link: whoever opened it could send it to someone else,
+    // whose approval must not land in the row the sender\'s CLI is waiting to collect.
+    const consent = await start('member-a')
+    const stranger = await callback({ code: CODE, state: consent.state }, NOW, 'member-b')
+    expect(stranger.status).toBe(400)
+    const signedOut = await callback({ code: CODE, state: consent.state }, NOW, null)
+    expect(signedOut.status).toBe(403)
+    expect(await signedOut.text()).toContain('not signed in to spicytrade')
+    expect(pendingRows()).toEqual([expect.objectContaining({ code: null, refusal: null, user_id: 'member-a' })])
+    expect((await exchange({ codeVerifier: consent.codeVerifier })).status).toBe(202)
+    // The member\'s own browser still completes it.
+    expect((await callback({ code: CODE, state: consent.state })).status).toBe(200)
   })
 
   it('records one return, so a replayed address cannot swap the code', async () => {

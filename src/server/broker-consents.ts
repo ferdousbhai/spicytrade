@@ -11,7 +11,7 @@ import {
 } from '../domain/broker-consent'
 import { type BrokerId } from '../domain/broker'
 import { errorName, toError } from '../domain/failure'
-import { requireProductionOrigin } from './auth'
+import { getAuthenticatedIdentity, requireProductionOrigin } from './auth'
 import { randomBase64Url, sha256Base64Url } from './digest'
 import { type AppEnv } from './env'
 import { jsonNoStore } from './http'
@@ -43,7 +43,7 @@ import {
 const BROKER: BrokerId = 'tastytrade'
 /** tastytrade's consent page (developer.tastytrade.com, OAuth2 authorization). */
 const TASTYTRADE_AUTHORIZATION_URL = 'https://my.tastytrade.com/auth.html'
-/** Account reads and order placement: what the member's `spicytrade mcp` spends the token on. */
+/** Account reads and order placement: what the member's `spicytrade call` spends the token on. */
 const TASTYTRADE_SCOPES = 'read trade'
 /** Registered with tastytrade as the app's redirect URI, so it must match the route exactly. */
 export const TASTYTRADE_CALLBACK_PATH = '/api/brokers/tastytrade/callback'
@@ -87,6 +87,7 @@ function unconfigured(missing: string): undefined {
 /** What the browser is told when the callback cannot reach its configuration or its row. */
 const CALLBACK_UNAVAILABLE = 'Connecting tastytrade is unavailable right now. Go back to the terminal and press Ctrl-C to skip it, then run spicytrade setup later to connect.'
 const CALLBACK_APPROVED = 'tastytrade approved. Return to your terminal or agent; you can close this tab.'
+const CALLBACK_OTHER_BROWSER = 'This browser is not signed in to spicytrade, so nothing was connected. Run spicytrade connect again, and approve tastytrade in the same browser you approve the link in.'
 const CALLBACK_REFUSED = 'Not connected. You can close this tab.'
 
 const unavailable = () => jsonNoStore({ error: 'Connecting tastytrade is unavailable' }, { status: 503 })
@@ -203,8 +204,11 @@ function plainNoStore(text: string, status: number): Response {
 }
 
 /**
- * The browser returning from tastytrade. Unauthenticated, because nothing the browser carries
- * identifies the member to this endpoint; the state is what binds the return to a pending row.
+ * The browser returning from tastytrade. It must still carry the session of the member whose
+ * approval opened the consent, and the state must name a pending row of theirs. The state alone
+ * is not enough: tastytrade's consent address is an ordinary link, so a member who opened a
+ * consent could hand it to someone else, whose approval would otherwise land in the first
+ * member's row and be theirs to collect. A return in any other browser records nothing.
  *
  * It does not redeem the code. Redeeming here would leave the Worker holding the member's
  * refresh token with nowhere to put it but storage, which is exactly what must not happen. The
@@ -216,7 +220,12 @@ function plainNoStore(text: string, status: number): Response {
  * tastytrade's `error` is never rendered or stored as text: it is recorded only as one of this
  * repository's own refusal codes.
  */
-export async function tastytradeCallback(request: Request, env: AppEnv, now = new Date()): Promise<Response> {
+export async function tastytradeCallback(
+  request: Request,
+  env: AppEnv,
+  now = new Date(),
+  readIdentity: typeof getAuthenticatedIdentity = getAuthenticatedIdentity,
+): Promise<Response> {
   const config = connectConfig(env)
   if (!config) return plainNoStore(CALLBACK_UNAVAILABLE, 503)
   const params = new URL(request.url).searchParams
@@ -229,10 +238,12 @@ export async function tastytradeCallback(request: Request, env: AppEnv, now = ne
   const refusal = error ? BrokerConsentRefusalSchema.catch('unrecognized').parse(error) : null
 
   try {
+    const identity = await readIdentity(request, env)
+    if (!identity) return plainNoStore(CALLBACK_OTHER_BROWSER, 403)
     const recorded = await config.database.prepare(
       `UPDATE broker_consents SET code = ?, refusal = ?
-        WHERE state_digest = ? AND broker = ? AND expires_at > ? AND code IS NULL AND refusal IS NULL`,
-    ).bind(code, refusal, await sha256Base64Url(state.data), BROKER, now.toISOString()).run()
+        WHERE state_digest = ? AND user_id = ? AND broker = ? AND expires_at > ? AND code IS NULL AND refusal IS NULL`,
+    ).bind(code, refusal, await sha256Base64Url(state.data), identity.id, BROKER, now.toISOString()).run()
     if (!recorded.meta.changes) return plainNoStore(expired, 400)
   } catch (cause) {
     console.error('TastytradeCallbackFailed', errorName(toError(cause)))

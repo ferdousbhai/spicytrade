@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { AGENT_LOGIN_TTL_MS, connectCode, MAX_PENDING_AGENT_LOGINS_PER_USER } from '../src/domain/agent-login'
+import { z } from 'zod'
+
+import { AGENT_LOGIN_TTL_MS, connectCodeCheck, ConnectCodeSchema, MAX_PENDING_AGENT_LOGINS_PER_USER } from '../src/domain/agent-login'
 import { type JsonValue } from '../src/domain/json-payload'
 import { MAX_MCP_TOKENS_PER_USER, McpTokenIssuedResponseSchema } from '../src/domain/mcp-tokens'
 import { approveAgentLogin, exchangeAgentLogin, signOutAgentLogin, sweepExpiredAgentLogins } from '../src/server/agent-logins'
@@ -56,11 +58,22 @@ function post(path: string, body: JsonValue, origin: string | undefined = BASE_U
   return new Request(`${BASE_URL}${path}`, { body: JSON.stringify(body), headers, method: 'POST' })
 }
 
-function approve(
-  body: JsonValue,
+/** The code a CLI prints beside its link, as the member types it. */
+const LINK_CODE = '6A26A884'
+const NamesChallengeSchema = z.looseObject({ codeChallenge: z.string() })
+const TypesCodeSchema = z.looseObject({ code: z.string() })
+
+/**
+ * The member's approval. A body that names a challenge and no code is sent with the link's code
+ * typed correctly, so each test states only what it is about.
+ */
+async function approve(
+  sent: JsonValue,
   { member = 'member-a', now = NOW, origin = BASE_URL }: { member?: string | null; now?: Date; origin?: string } = {},
 ): Promise<Response> {
   const readIdentity = member === null ? async () => null : signedIn(member)
+  const link = TypesCodeSchema.safeParse(sent).success ? undefined : NamesChallengeSchema.safeParse(sent).data
+  const body = link ? { ...link, code: LINK_CODE, codeCheck: await connectCodeCheck(link.codeChallenge, LINK_CODE) } : sent
   return approveAgentLogin(post('/api/agent-logins', body, origin), env, now, readIdentity)
 }
 
@@ -297,9 +310,28 @@ describe('agent login: sweep', () => {
   })
 })
 
-describe('the code a member matches against their terminal', () => {
-  it('is the challenge\'s first four bytes in hex, as two groups', () => {
-    // 0xfb 0xff 0xbf 0x00 ... in base64url, the alphabet's two substituted characters included.
-    expect(connectCode(`-_-_${'A'.repeat(39)}`)).toBe('FBFF-BF00')
+describe('the code a member types from their terminal', () => {
+  it('is not approved without the code the terminal printed, which the link does not carry', async () => {
+    const { codeChallenge, codeVerifier } = await pkce()
+    const codeCheck = await connectCodeCheck(codeChallenge, LINK_CODE)
+    const wrong = await approve({ code: '00000000', codeChallenge, codeCheck, label: 'laptop' })
+    expect(wrong.status).toBe(403)
+    // A code that belongs to another link's check approves nothing either.
+    const other = await pkce()
+    expect((await approve({ code: LINK_CODE, codeChallenge: other.codeChallenge, codeCheck, label: 'laptop' })).status).toBe(403)
+    for (const code of ['', '6A26', 'not-a-code']) {
+      expect((await approve({ code, codeChallenge, codeCheck, label: 'laptop' })).status).toBe(400)
+    }
+    expect(pendingRows()).toEqual([])
+    expect((await exchange({ codeVerifier })).status).toBe(202)
+    // Typed as the terminal prints it, in any case: the dash and spaces do not matter.
+    expect((await approve({ code: ' 6a26-a884 ', codeChallenge, codeCheck, label: 'laptop' })).status).toBe(200)
+    expect((await exchange({ codeVerifier })).status).toBe(200)
+  })
+
+  it('reads a typed code whatever its case and spacing, and refuses anything that is not one', () => {
+    expect(ConnectCodeSchema.parse('6a26-a884')).toBe('6A26A884')
+    expect(ConnectCodeSchema.parse(' 6A26 A884 ')).toBe('6A26A884')
+    for (const typed of ['6A26A88', '6A26A8845', 'G0000000', '']) expect(ConnectCodeSchema.safeParse(typed).success).toBe(false)
   })
 })

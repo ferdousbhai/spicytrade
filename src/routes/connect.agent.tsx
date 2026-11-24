@@ -3,9 +3,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
 
 import { Button } from '#/components/ui/button'
+import { Input } from '#/components/ui/input'
 import { Spinner } from '#/components/ui/spinner'
 import { AuthorizeFrame, GoogleSignInButton, useRawQuery, useViewer } from '../components/auth-gate'
-import { AgentLoginApproveResponseSchema, AgentLoginPageQuerySchema, connectCode } from '../domain/agent-login'
+import { AgentLoginApproveResponseSchema, AgentLoginPageQuerySchema, ConnectCodeSchema } from '../domain/agent-login'
 import { pageTitle } from '../domain/site'
 import { toError } from '../domain/failure'
 
@@ -15,9 +16,9 @@ import { toError } from '../domain/failure'
  * approval goes straight on to that broker's own consent page. The flow is in
  * `src/domain/agent-login.ts`.
  *
- * Nothing here proves this browser belongs to the computer being approved, so the page shows the
- * code that computer's terminal printed, and the label, which the link's author chose, is never
- * the reason to approve.
+ * Nothing here proves this browser belongs to the computer being approved, so the link alone
+ * approves nothing: the member types the code that computer's terminal printed, which is not in
+ * the link. The label, which the link's author chose, is never the reason to approve.
  */
 export const Route = createFileRoute('/connect/agent')({
   component: ConnectAgentPage,
@@ -45,13 +46,15 @@ function ConnectAgentPage() {
   const [submitting, setSubmitting] = useState(false)
   const [approved, setApproved] = useState(false)
   const [failure, setFailure] = useState<string>()
+  const [typed, setTyped] = useState('')
+  const code = ConnectCodeSchema.safeParse(typed)
 
-  const approve = async ({ broker, challenge, label }: z.infer<typeof AgentLoginPageQuerySchema>) => {
+  const approve = async ({ broker, challenge, check, label }: z.infer<typeof AgentLoginPageQuerySchema>, entered: string) => {
     setSubmitting(true)
     setFailure(undefined)
     try {
       const response = await fetch('/api/agent-logins', {
-        body: JSON.stringify({ broker, codeChallenge: challenge, label }),
+        body: JSON.stringify({ broker, code: entered, codeChallenge: challenge, codeCheck: check, label }),
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
         method: 'POST',
@@ -96,12 +99,24 @@ function ConnectAgentPage() {
             Connect <strong>{query.data.label}</strong> to spicytrade as <strong>{viewer.user.name}</strong>?
           </p>
           <p>
-            Approve only if the terminal or agent you started this from shows the code{' '}
-            <strong>{connectCode(query.data.challenge)}</strong>.
+            Enter the code shown in the terminal or agent you started this from. If someone sent you
+            this link, or a code to type, do not continue: it would give them your account.
+          </p>
+          <p>
+            <Input
+              aria-label="Code from your terminal"
+              autoCapitalize="characters"
+              autoComplete="off"
+              inputMode="text"
+              onChange={(event) => setTyped(event.target.value)}
+              placeholder="XXXX-XXXX"
+              spellCheck={false}
+              value={typed}
+            />
           </p>
           {failure && <p className="authorize-error">{failure}</p>}
           <div className="authorize-actions">
-            <Button disabled={submitting} onClick={() => void approve(query.data)} type="button">
+            <Button disabled={submitting || !code.success} onClick={() => { if (code.success) void approve(query.data, code.data) }} type="button">
               {submitting ? <Spinner data-icon="inline-start" /> : null}
               <span>{query.data.broker ? 'Approve and continue to tastytrade' : 'Approve'}</span>
             </Button>

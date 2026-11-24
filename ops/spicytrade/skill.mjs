@@ -59,8 +59,7 @@ Run the \`spicytrade\` command in your shell. If it is not on PATH, use \`~/.loc
 
 If a command says this computer is not signed in, or tastytrade is not connected, run
 \`spicytrade connect\` and keep it running. It prints one link and a short code. Give the user
-both, and tell them to approve only if the page shows that code. Never ask for passwords, tokens
-or codes in chat. \`spicytrade doctor\` checks the connection without changing anything.
+both; the page asks them to type the code. Never ask for passwords or tokens in chat. \`spicytrade doctor\` checks the connection without changing anything.
 `
 
 function skillPath(agent) {

@@ -17,8 +17,8 @@ import { postWorker } from './worker.mjs'
  * computer or any other device; this process polls with the verifier and is handed the token
  * once they have. Nothing has to find its way back to this computer through the browser, so the
  * same link works over SSH and from a phone. In exchange, the page cannot know its browser is the
- * member's own, so it shows the code printed here, and the member approves only a code they see
- * in their own terminal.
+ * member's own, so the link approves nothing by itself: the member types the code printed here,
+ * which the link does not contain.
  *
  * With `tastytrade`, the same approval continues to tastytrade's consent page, and
  * `collectTastytrade` picks the grant up with the session this returns.
@@ -57,13 +57,16 @@ function machineLabel() {
   return hostname().trim().slice(0, MAX_LABEL_LENGTH).trim() || FALLBACK_LABEL
 }
 
+/** The code is this many random bytes in hex (`CONNECT_CODE_BYTES` in `src/domain/agent-login.ts`). */
+const CODE_BYTES = 4
+
 /**
- * The code the approval page shows beside this computer's name: the challenge's first four
- * bytes in hex, as two groups. `connectCode` in `src/domain/agent-login.ts` is the page's copy.
+ * What the link carries in place of the code, so the Worker can check what the member types
+ * without the link giving the code away; `connectCodeCheck` in `src/domain/agent-login.ts` is
+ * the Worker's copy.
  */
-function connectCode(challenge) {
-  const hex = challenge.subarray(0, 4).toString('hex').toUpperCase()
-  return `${hex.slice(0, 4)}-${hex.slice(4)}`
+function connectCodeCheck(challenge, code) {
+  return createHash('sha256').update(`${challenge}:${code}`).digest('base64url')
 }
 
 /**
@@ -95,14 +98,17 @@ export async function login(out = process.stdout, { tastytrade = false } = {}) {
   // it: signing in again replaces this machine's token instead of adding a second one.
   const previousToken = await agentToken()
   const codeVerifier = randomBytes(RANDOM_BYTES).toString('base64url')
-  const challenge = createHash('sha256').update(codeVerifier).digest()
+  const challenge = createHash('sha256').update(codeVerifier).digest('base64url')
+  // Printed here and typed into the page; it is never part of the link.
+  const code = randomBytes(CODE_BYTES).toString('hex').toUpperCase()
 
   const approval = new URL('/connect/agent', ORIGIN)
-  approval.searchParams.set('challenge', challenge.toString('base64url'))
+  approval.searchParams.set('challenge', challenge)
+  approval.searchParams.set('check', connectCodeCheck(challenge, code))
   approval.searchParams.set('label', machineLabel())
   if (tastytrade) approval.searchParams.set('broker', TASTYTRADE_BROKER_ID)
 
-  out.write(`Open this link in any browser, on this computer or another device, and approve code ${connectCode(challenge)}:\n  ${approval}\n\n`)
+  out.write(`Open this link in any browser, on this computer or another device, and enter code ${code.slice(0, CODE_BYTES)}-${code.slice(CODE_BYTES)} there:\n  ${approval}\n\n`)
   openBrowser(approval.toString())
 
   const collected = await pollUntil(async () => {

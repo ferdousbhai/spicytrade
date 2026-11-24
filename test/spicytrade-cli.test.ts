@@ -250,13 +250,16 @@ describe('signing in again', () => {
 
     expect(url.pathname).toBe('/connect/agent')
     // Nothing returns to this computer, so the link names no port and carries no state.
-    expect([...url.searchParams.keys()].sort()).toEqual(['challenge', 'label'])
+    expect([...url.searchParams.keys()].sort()).toEqual(['challenge', 'check', 'label'])
     const challenge = url.searchParams.get('challenge') ?? ''
     expect(challenge).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(url.searchParams.get('label')?.length).toBeGreaterThan(0)
-    // The code the page will show is the one printed beside the link.
-    const hex = Buffer.from(challenge, 'base64url').subarray(0, 4).toString('hex').toUpperCase()
-    expect(cli.output().stdout).toContain(`approve code ${hex.slice(0, 4)}-${hex.slice(4)}:`)
+    // The code is printed beside the link and is not in it: the link carries only a digest that
+    // ties the code to this challenge, for the page to check what the member types.
+    const printed = cli.output().stdout.match(/enter code ([0-9A-F]{4})-([0-9A-F]{4}) there:/)
+    const code = `${printed?.[1]}${printed?.[2]}`
+    expect(url.searchParams.get('check')).toBe(createHash('sha256').update(`${challenge}:${code}`).digest('base64url'))
+    expect(url.toString()).not.toContain(code)
 
     expect(await cli.exited).toBe(0)
     expect(await readFile(join(machine.bin, 'store', 'spicytrade_mcp-token'), 'utf8')).toBe(NEW_TOKEN)
