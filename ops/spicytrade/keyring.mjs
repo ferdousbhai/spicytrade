@@ -4,7 +4,7 @@ import { access, constants } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 import { promisify } from 'node:util'
 
-import { AGENT_TOKEN_SERVICE, cliCommand, LEGACY_AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY, ORIGIN } from './config.mjs'
+import { AGENT_TOKEN_SERVICE, cliCommand, MCP_TOKEN_KEY, ORIGIN } from './config.mjs'
 import { CliFailure } from './cli.mjs'
 import { keyringEnvironment } from './keyring-environment.mjs'
 
@@ -266,24 +266,14 @@ export async function keyringClear(service, key) {
   })
 }
 
-/**
- * The agent token: from its current entry, else from the one an install from before the rename
- * filed it under (see `config.mjs`), so that install keeps working until `login` moves it.
- */
+/** The agent token, from its keyring entry. */
 export async function agentToken() {
-  return await keyringSecret(AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY)
-    ?? await keyringSecret(LEGACY_AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY)
+  return keyringSecret(AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY)
 }
 
-/**
- * Store the agent token under its current entry and read it back, then drop the legacy entry so
- * a later read cannot fall back to a token this one replaced. False when the store did not take;
- * the legacy entry is then left, since it may be the only token this machine has.
- */
+/** Store the agent token and read it back. False when the store did not take. */
 export async function storeAgentToken(token) {
-  if (!await keyringStore(AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY, 'spicytrade agent token', token)) return false
-  await keyringClear(LEGACY_AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY)
-  return true
+  return keyringStore(AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY, 'spicytrade agent token', token)
 }
 
 /**
@@ -291,7 +281,7 @@ export async function storeAgentToken(token) {
  * present:
  *   personal grant  `client-secret` + `refresh-token`, from the member's own OAuth app; minted
  *                   directly against tastytrade.
- *   app grant       `app-refresh-token`, from `spicytrade connect-tastytrade` under spicytrade's OAuth app,
+ *   app grant       `app-refresh-token`, from `spicytrade connect` under spicytrade's OAuth app,
  *                   whose client secret only the Worker holds; minted through the Worker.
  * Every tool that looks at the grant needs to tell these apart the same way, so the key names and
  * the read live here rather than duplicated in each.

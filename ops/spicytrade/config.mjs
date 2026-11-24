@@ -9,13 +9,6 @@ import { fileURLToPath } from 'node:url'
  * the commands cannot drift apart on any of them.
  */
 
-/*
- * The local tools were named spicy-trade before they were spicytrade, and ran a background proxy
- * before agents launched `spicytrade mcp` themselves. Each `LEGACY_` name below is what such an
- * install still has -- a keyring entry, a systemd unit, a client entry -- and is read only so
- * `setup` can move it to the current shape. Nothing new is ever written under a legacy name.
- */
-
 /** The Worker's MCP endpoint; every other Worker path is resolved against its origin. */
 export const UPSTREAM = process.env.SPICYTRADE_MCP_URL ?? 'https://spicy.trade/mcp'
 export const ORIGIN = new URL(UPSTREAM).origin
@@ -38,19 +31,12 @@ export function workerFault(response) {
  */
 export const MCP_PROTOCOL_VERSION = '2025-06-18'
 
-/** The address the retired background proxy listened on, which older client entries still name. */
-export const LEGACY_PROXY_URL = 'http://127.0.0.1:8787/mcp'
-/** The retired proxy's systemd user units, current name and pre-rename name. */
-export const LEGACY_UNIT_NAMES = ['spicytrade-proxy.service', 'spicy-trade-proxy.service']
-
 /** The agent token is spicytrade's credential, so it is filed under spicytrade's service. */
 export const AGENT_TOKEN_SERVICE = 'spicytrade'
-export const LEGACY_AGENT_TOKEN_SERVICE = 'spicy-trade'
 export const MCP_TOKEN_KEY = 'mcp-token'
 
 /** The name agents' MCP configs know the server by. */
 export const MCP_SERVER_NAME = 'spicytrade'
-export const LEGACY_MCP_SERVER_NAME = 'spicy-trade'
 
 /** Codex keeps the server switched off, so a trading session turns it on for that session alone. */
 export const CODEX_START = `codex -c mcp_servers.${MCP_SERVER_NAME}.enabled=true`
@@ -93,8 +79,8 @@ export const CLI_PATH = fileURLToPath(new URL('./spicytrade.mjs', import.meta.ur
  * What an agent client launches: this CLI by absolute path, run through its own
  * `#!/usr/bin/env node` line. Naming the CLI rather than this node keeps the entry working across
  * Node upgrades -- a version manager's per-version path disappears with the version -- and the
- * client starts it with the member's own PATH. `doctor` compares a client's entry against this to
- * notice one left pointing at another install.
+ * client starts it with the member's own PATH. An entry is compared against this by `inPlace` in
+ * `clients.mjs`.
  */
 export const MCP_COMMAND = [CLI_PATH, 'mcp']
 

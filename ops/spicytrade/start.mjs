@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { createInterface } from 'node:readline/promises'
 
-import { CLIENTS, EXPECTED_TARGET } from './clients.mjs'
+import { CLIENTS, inPlace } from './clients.mjs'
 import { WORKSPACE_DIR, cliCommand } from './config.mjs'
 import { commandInstalled } from './keyring.mjs'
 import { CliFailure } from './cli.mjs'
@@ -40,7 +40,7 @@ export async function start() {
     }
   }
   const configured = client.configured()
-  if (configured.state !== 'configured' || configured.target !== EXPECTED_TARGET) throw new CliFailure(`Connect ${client.name} first: ${cliCommand('setup')}`)
+  if (configured.state !== 'configured' || !inPlace(configured.target)) throw new CliFailure(`Connect ${client.name} first: ${cliCommand('setup')}`)
   await mkdir(WORKSPACE_DIR, { recursive: true })
   await mkdir(preferenceDir, { recursive: true })
   await writeFile(preferencePath, `${JSON.stringify(client.id)}\n`)

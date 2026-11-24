@@ -11,10 +11,10 @@ import { closeLoopback, listenLoopback } from './loopback.ts'
 
 /*
  * `spicytrade` end to end against a stand-in Worker, with every tool it drives replaced on PATH:
- * a file-backed `secret-tool`, an `xdg-open` that records the URL, a `systemctl` that records its
- * calls, and `claude`/`codex` whose entries are files, Claude Code's by scope. PATH holds only
- * those and the system directories, so a run never reaches the real keyring, a real browser, the
- * real user session, or the agent clients installed on the machine running the tests.
+ * a file-backed `secret-tool`, an `xdg-open` that records the URL, and `claude`/`codex` whose
+ * entries are files, Claude Code's by scope. PATH holds only those and the system directories, so
+ * a run never reaches the real keyring, a real browser, or the agent clients installed on the
+ * machine running the tests.
  */
 
 const OLD_TOKEN = 'spice_0123456789abcdef_OLDOLDOLDOLDOLDOLDOL'
@@ -30,7 +30,8 @@ const TEST_PATH = (bin: string) => `${bin}:${dirname(process.execPath)}:/usr/bin
 
 /** The command line `setup` registers: this CLI by absolute path, run through its shebang. */
 const MCP_TARGET = `${resolve(CLI)} mcp`
-const LEGACY_PROXY_URL = 'http://127.0.0.1:8787/mcp'
+/** An entry for a copy of the CLI that is no longer on disk, as an older install leaves behind. */
+const GONE_TARGET = '/gone/spicytrade/spicytrade.mjs mcp'
 
 const ExchangeBodySchema = z.strictObject({
   codeVerifier: z.string(),
@@ -97,7 +98,7 @@ type Machine = {
 /**
  * A machine: the fake tools, a home directory, and the state the fakes keep. `clients` names which
  * agent CLIs are installed, each with the entries it already holds, by name to target -- a URL, or
- * a command line -- which is also how a test sets up a pre-rename `spicy-trade` entry. A Claude
+ * a command line. A Claude
  * Code entry's name carries its scope, `local:` for the workspace's or `user:` for every
  * folder's; the fake answers a local entry only from inside the workspace, and prefers it there
  * the way Claude Code does.
@@ -115,7 +116,6 @@ async function fakeMachine(
   await mkdir(state)
   await mkdir(config, { recursive: true })
   await writeFile(join(bin, 'xdg-open'), `#!/usr/bin/env bash\necho "$1" > '${state}/opened'\n`)
-  await writeFile(join(bin, 'systemctl'), `#!/usr/bin/env bash\nshift  # --user\necho "$*" >> '${state}/systemctl'\n`)
   for (const [client, entries] of Object.entries(clients)) {
     for (const [name, target] of Object.entries(entries)) {
       await writeFile(join(state, `${client}-${name.replace(':', '-')}-target`), target)
@@ -169,7 +169,7 @@ elif [[ $2 == remove ]]; then
 fi
 `)
   }
-  for (const tool of ['xdg-open', 'systemctl', ...Object.keys(clients)]) await chmod(join(bin, tool), 0o755)
+  for (const tool of ['xdg-open', ...Object.keys(clients)]) await chmod(join(bin, tool), 0o755)
   return { bin, config, home, state, workspace }
 }
 
@@ -215,13 +215,6 @@ async function approvalUrl(output: () => { stdout: string }): Promise<URL> {
   const printed = output().stdout.match(/^ {2}(http\S+)$/m)?.[1]
   if (!printed) throw new Error('the CLI printed no approval URL')
   return new URL(printed)
-}
-
-/** A unit the retired background proxy left behind. */
-async function legacyUnit(machine: Machine, name: string) {
-  await mkdir(join(machine.config, 'systemd', 'user'), { recursive: true })
-  await writeFile(join(machine.config, 'systemd', 'user', name), '[Service]\nExecStart=%h/checkout/ops/spicytrade/proxy.mjs\n')
-  return join(machine.config, 'systemd', 'user', name)
 }
 
 /*
@@ -284,19 +277,6 @@ describe('signing in again', () => {
     expect(cli.output().stdout).toContain('/connect/agent?')
     expect(cli.output().stdout).not.toContain('ssh -L')
     await expect(readFile(join(machine.state, 'opened'), 'utf8')).rejects.toThrow()
-  }, 60_000)
-
-  it('moves a token signed in before the rename to the current keyring entry', async () => {
-    const machine = await fakeMachine({ 'spicy-trade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN }, { claude: {} })
-    const worker = await fakeWorker([])
-    const cli = run(machine, worker.port, ['setup'])
-
-    expect(await cli.exited).toBe(0)
-    // The old token still rides along, so the Worker retires it.
-    const exchange = worker.calls.find((call) => call.path === '/api/agent-logins/exchange')
-    expect(ExchangeBodySchema.parse(JSON.parse(exchange!.body)).previousToken).toBe(OLD_TOKEN)
-    expect(await readFile(join(machine.bin, 'store', 'spicytrade_mcp-token'), 'utf8')).toBe(NEW_TOKEN)
-    await expect(readFile(join(machine.bin, 'store', 'spicy-trade_mcp-token'), 'utf8')).rejects.toThrow()
   }, 60_000)
 
   it.each([
@@ -398,30 +378,35 @@ describe('spicytrade doctor', () => {
     expect(stdout).toContain('3 problems found.')
   }, 30_000)
 
-  it('flags what an earlier install left behind', async () => {
+  it('counts another copy of the CLI still on disk as in place, and one that is gone as an older install', async () => {
     const machine = await fakeMachine(
-      { 'spicy-trade/mcp-token': OLD_TOKEN },
-      { claude: { 'local:spicytrade': LEGACY_PROXY_URL, 'user:spicytrade': LEGACY_PROXY_URL, 'user:spicy-trade': LEGACY_PROXY_URL } },
+      { 'spicytrade/mcp-token': OLD_TOKEN },
+      { claude: { 'local:spicytrade': GONE_TARGET, 'user:spicytrade': GONE_TARGET }, codex: { spicytrade: GONE_TARGET } },
     )
-    await legacyUnit(machine, 'spicytrade-proxy.service')
+    // A developer's folder starts a checkout while another copy, here the one under test, checks it.
+    const copy = join(machine.home, 'checkout', 'ops', 'spicytrade', 'spicytrade.mjs')
+    await mkdir(dirname(copy), { recursive: true })
+    await writeFile(copy, '')
+    const entry = join(machine.state, 'claude-local-spicytrade-target')
+    await writeFile(entry, `${copy} mcp`)
     const worker = await fakeWorker([OLD_TOKEN])
 
     const cli = run(machine, worker.port, ['doctor'])
     expect(await cli.exited).toBe(1)
     const { stdout } = cli.output()
-    // The old entry still works, and is read; it is flagged so setup moves it.
-    expect(stdout).toContain('✓ signed in to spicytrade')
-    expect(stdout).toMatch(/✗ the sign-in is still under its old keyring entry\n {4}Move it with: \S+ setup/)
-    expect(stdout).toMatch(/✗ the old background proxy is still installed \(spicytrade-proxy\.service\)\n {4}Remove it with: \S+ setup/)
-    // The entry is per folder, so the fix names this folder rather than a setup run from anywhere.
-    expect(stdout).toContain('✗ Claude Code starts spicytrade from an older install in ~/workspace\n'
-      + `    Replace it: cd ${machine.workspace} && claude mcp remove spicytrade --scope local && mkdir -p ${machine.workspace} && `
-      + `cd ${machine.workspace} && claude mcp add --scope local spicytrade -- ${MCP_TARGET}`)
-    // Under either name, an entry in every folder loads trading tools in this code's own checkout.
+    expect(stdout).toContain('✓ Claude Code starts spicytrade in ~/workspace\n')
+    expect(stdout).toMatch(/✗ Codex starts spicytrade from an older install\n {4}Update it with: \S+ setup/)
+    // An entry in every folder loads trading tools in this code's own checkout.
     expect(stdout).toMatch(/✗ Claude Code loads spicytrade in every folder, not only ~\/workspace\n {4}Move it with: \S+ setup/)
-    expect(stdout).toMatch(/✗ Claude Code loads spicy-trade in every folder, not only ~\/workspace\n {4}Move it with: \S+ setup/)
-    expect(stdout).toContain('5 problems found.')
-  }, 30_000)
+    expect(stdout).toContain('2 problems found.')
+
+    // Setup agrees: the copy on disk is left as the developer registered it, the gone one replaced.
+    const setup = run(machine, worker.port, ['setup'])
+    expect(await setup.exited).toBe(0)
+    expect(setup.output().stdout).toContain('✓ Claude Code already starts spicytrade; skipped')
+    expect(await readFile(entry, 'utf8')).toBe(`${copy} mcp`)
+    expect(await readFile(join(machine.state, 'codex-spicytrade-target'), 'utf8')).toBe(`${MCP_TARGET}\n`)
+  }, 60_000)
 })
 
 describe('the workspace an agent loads spicytrade in', () => {
@@ -487,8 +472,6 @@ describe('spicytrade setup', () => {
     expect(await readFile(join(machine.state, 'claude-calls'), 'utf8')).toContain(`mcp add --scope local spicytrade -- ${MCP_TARGET}`)
     expect(await readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).toBe(`${MCP_TARGET}\n`)
     await expect(readFile(join(machine.state, 'claude-user-spicytrade-target'), 'utf8')).rejects.toThrow()
-    // No background service any more: nothing is installed in systemd.
-    await expect(readFile(join(machine.state, 'systemctl'), 'utf8')).rejects.toThrow()
 
     const second = run(machine, worker.port, ['setup'])
     expect(await second.exited).toBe(0)
@@ -571,11 +554,11 @@ describe('spicytrade setup', () => {
     expect(await readFile(join(machine.state, 'codex-spicytrade-target'), 'utf8')).toBe('https://someone-elses.example/mcp')
   }, 60_000)
 
-  it('moves an entry in every folder into the workspace, and leaves one that is not spicytrade', async () => {
-    const machine = await fakeMachine(
-      { 'spicytrade/mcp-token': OLD_TOKEN },
-      { claude: { 'user:spicytrade': LEGACY_PROXY_URL, 'user:spicy-trade': 'https://someone-elses.example/mcp' } },
-    )
+  it.each([
+    [GONE_TARGET, '✓ Claude Code (every folder): removed an old spicytrade entry', false],
+    ['https://someone-elses.example/mcp', '! Claude Code (every folder) has a different server named "spicytrade"; left as it is', true],
+  ])('moves an entry in every folder into the workspace, and leaves one that is not spicytrade', async (everywhere, line, kept) => {
+    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN }, { claude: { 'user:spicytrade': everywhere } })
     const worker = await fakeWorker([OLD_TOKEN])
 
     const cli = run(machine, worker.port, ['setup'])
@@ -583,50 +566,10 @@ describe('spicytrade setup', () => {
     const { stdout } = cli.output()
     // The every-folder entry answers from the workspace too, but does not count as its entry.
     expect(stdout).toContain('✓ Claude Code: added spicytrade in ~/workspace\n')
-    expect(stdout).toContain('✓ Claude Code (every folder): removed an old spicytrade entry')
+    expect(stdout).toContain(line)
     expect(await readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).toBe(`${MCP_TARGET}\n`)
-    await expect(readFile(join(machine.state, 'claude-user-spicytrade-target'), 'utf8')).rejects.toThrow()
-    expect(stdout).toContain('! Claude Code (every folder) has a different server named "spicy-trade"; left as it is')
-    expect(await readFile(join(machine.state, 'claude-user-spicy-trade-target'), 'utf8')).toBe('https://someone-elses.example/mcp')
-    expect(stdout).not.toContain('someone-elses')
-    expect(stdout).toContain('Ready for market data and research.')
-  }, 60_000)
-
-  it('moves a background-proxy install onto the command agents start, under the current names', async () => {
-    const machine = await fakeMachine(
-      { 'spicy-trade/mcp-token': OLD_TOKEN },
-      {
-        claude: { 'local:spicytrade': LEGACY_PROXY_URL },
-        codex: { spicytrade: LEGACY_PROXY_URL, 'spicy-trade': 'https://someone-elses.example/mcp' },
-      },
-    )
-    const units = [await legacyUnit(machine, 'spicytrade-proxy.service'), await legacyUnit(machine, 'spicy-trade-proxy.service')]
-    const worker = await fakeWorker([OLD_TOKEN])
-
-    const cli = run(machine, worker.port, ['setup'])
-    expect(await cli.exited).toBe(0)
-    const { stdout } = cli.output()
-
-    expect(stdout).toContain('✓ already signed in; moved the token to its current keyring entry')
-    expect(await readFile(join(machine.bin, 'store', 'spicytrade_mcp-token'), 'utf8')).toBe(OLD_TOKEN)
-    await expect(readFile(join(machine.bin, 'store', 'spicy-trade_mcp-token'), 'utf8')).rejects.toThrow()
-
-    // The background proxy is stopped and its units are gone.
-    expect(stdout).toContain('✓ removed the old background proxy (spicytrade-proxy.service)')
-    expect(stdout).toContain('✓ removed the old background proxy (spicy-trade-proxy.service)')
-    for (const unit of units) await expect(readFile(unit, 'utf8')).rejects.toThrow()
-    const systemctlCalls = await readFile(join(machine.state, 'systemctl'), 'utf8')
-    expect(systemctlCalls).toContain('stop spicytrade-proxy.service')
-    expect(systemctlCalls).toContain('disable spicy-trade-proxy.service')
-
-    // Entries naming the proxy are replaced by the command; one naming somewhere else is someone's own.
-    expect(await readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).toBe(`${MCP_TARGET}\n`)
-    expect(await readFile(join(machine.state, 'codex-spicytrade-target'), 'utf8')).toBe(`${MCP_TARGET}\n`)
-    expect(stdout).toContain('✓ Codex: added spicytrade (on only when you start Codex with the command at the end)\n')
-    expect(await readFile(join(machine.home, '.codex', 'config.toml'), 'utf8'))
-      .toBe(`[mcp_servers.spicytrade]\nenabled = false\ncommand = "${resolve(CLI)}"\n`)
-    expect(stdout).toContain('! Codex has a different server named "spicy-trade"; left as it is')
-    expect(await readFile(join(machine.state, 'codex-spicy-trade-target'), 'utf8')).toBe('https://someone-elses.example/mcp')
+    expect(await readdir(machine.state)).toContain('claude-local-spicytrade-target')
+    expect((await readdir(machine.state)).includes('claude-user-spicytrade-target')).toBe(kept)
     expect(stdout).not.toContain('someone-elses')
     expect(stdout).toContain('Ready for market data and research.')
   }, 60_000)
@@ -754,7 +697,7 @@ describe('spicytrade uninstall', () => {
   it('removes spicytrade\'s agent entries and credentials, leaving others\' and a checkout alone', async () => {
     const machine = await fakeMachine(
       { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN },
-      { claude: { 'local:spicytrade': MCP_TARGET, 'user:spicy-trade': 'https://someone-elses.example/mcp' }, codex: { spicytrade: MCP_TARGET } },
+      { claude: { 'local:spicytrade': MCP_TARGET, 'user:spicytrade': 'https://someone-elses.example/mcp' }, codex: { spicytrade: MCP_TARGET } },
     )
     const worker = await fakeWorker([OLD_TOKEN])
     const cli = run(machine, worker.port, ['uninstall'])
@@ -764,7 +707,7 @@ describe('spicytrade uninstall', () => {
     expect(stdout).toContain('✓ Codex: removed spicytrade')
     await expect(readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).rejects.toThrow()
     await expect(readFile(join(machine.state, 'codex-spicytrade-target'), 'utf8')).rejects.toThrow()
-    expect(await readFile(join(machine.state, 'claude-user-spicy-trade-target'), 'utf8')).toBe('https://someone-elses.example/mcp')
+    expect(await readFile(join(machine.state, 'claude-user-spicytrade-target'), 'utf8')).toBe('https://someone-elses.example/mcp')
     for (const entry of ['spicytrade_mcp-token', 'tastytrade_app-refresh-token']) {
       await expect(readFile(join(machine.bin, 'store', entry), 'utf8')).rejects.toThrow()
     }
@@ -943,15 +886,13 @@ describe('connecting from the current agent without a terminal', () => {
     const website = `http://127.0.0.1:${port}/mcp`
     const machine = await fakeMachine(
       { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN },
-      { claude: { 'local:spicytrade': website, 'local:spicy-trade': website } },
+      { claude: { 'local:spicytrade': website } },
     )
     const cli = run(machine, port, ['connect'], { env: { CLAUDECODE: '1' } })
     expect(await cli.exited).toBe(0)
     const { stdout } = cli.output()
     expect(stdout).toContain('Claude Code now starts spicytrade in ~/workspace.')
-    expect(stdout).toContain('✓ Claude Code: removed an old spicy-trade entry\n')
     expect(await readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).toBe(`${MCP_TARGET}\n`)
-    expect(await readdir(machine.state)).not.toContain('claude-local-spicy-trade-target')
   }, 30_000)
 
   it('leaves a different server named spicytrade alone and says how to fix it', async () => {

@@ -1,17 +1,14 @@
 import { createInterface } from 'node:readline/promises'
 
 import { grantMinter, grantRefused, TastytradeAuthError } from './broker-grants.mjs'
-import { CLIENTS, EXPECTED_TARGET, namesSpicytrade } from './clients.mjs'
-import {
-  AGENT_TOKEN_SERVICE, cliCommand, LEGACY_AGENT_TOKEN_SERVICE, LEGACY_MCP_SERVER_NAME, MCP_SERVER_NAME, MCP_TOKEN_KEY,
-} from './config.mjs'
+import { CLIENTS, inPlace, namesSpicytrade } from './clients.mjs'
+import { cliCommand, MCP_SERVER_NAME } from './config.mjs'
 import { doctor } from './doctor.mjs'
 import {
-  agentToken, commandInstalled, keyringClear, keyringFix, keyringHelperInstalled, keyringHelperMissing, keyringSecret, KeyringUnavailable, keyringWritable,
-  requireSupportedPlatform, storeAgentToken,
+  agentToken, commandInstalled, keyringFix, keyringHelperInstalled, keyringHelperMissing, keyringWritable,
+  requireSupportedPlatform,
   tastytradeCredentialKind,
 } from './keyring.mjs'
-import { removeLegacyUnits } from './legacy-proxy.mjs'
 import { login } from './login.mjs'
 import { CliFailure, reconnectNote } from './cli.mjs'
 import { collectTastytrade, connectTastytrade, NotConnected } from './tastytrade-connect.mjs'
@@ -70,16 +67,15 @@ async function confirm(question) {
 }
 
 /**
- * Removes an entry setup no longer wants -- the pre-rename name, or one that loads the server in
- * every folder -- once the current entry is in place, and only when it is spicytrade's: an entry
- * of that name pointing anywhere else is someone's own.
+ * Removes an entry that loads the server in every folder once the workspace's entry is in place,
+ * and only when it is spicytrade's: an entry of that name pointing anywhere else is someone's own.
  */
-export function removeStale(out, label, entry, scope, inPlace) {
+function removeStale(out, label, entry, scope, registered) {
   const found = scope.configured(entry)
   if (found.state !== 'configured') return
   if (!namesSpicytrade(found.target)) {
     out.write(`! ${label} has a different server named "${entry}"; left as it is\n`)
-  } else if (!inPlace) {
+  } else if (!registered) {
     out.write(`· ${label} keeps its old ${entry} entry until ${MCP_SERVER_NAME} is in place\n`)
   } else if (scope.remove(entry).ok) {
     out.write(`✓ ${label}: removed an old ${entry} entry\n`)
@@ -95,7 +91,7 @@ export function register(out, client, configured) {
     out.write(`· ${client.name} did not answer; see the check below\n`)
     return false
   }
-  if (configured.state === 'configured' && configured.target === EXPECTED_TARGET) {
+  if (configured.state === 'configured' && inPlace(configured.target)) {
     out.write(`✓ ${client.name} already starts spicytrade; skipped\n`)
     return true
   }
@@ -104,8 +100,8 @@ export function register(out, client, configured) {
     out.write(`· ${client.name} already has a different server named "${MCP_SERVER_NAME}"; left as it is, see the check below\n`)
     return false
   }
-  // Spicytrade's own entry from an older install -- the retired proxy, another copy of this CLI,
-  // a node that has moved -- is replaced.
+  // Spicytrade's own entry from an older install -- a copy of this CLI that is gone, a node that
+  // has moved, the website's address -- is replaced.
   if (configured.state === 'configured' && !client.remove(MCP_SERVER_NAME).ok) {
     out.write(`· ${client.name}: the old ${MCP_SERVER_NAME} entry was not replaced; see the check below\n`)
     return false
@@ -164,14 +160,7 @@ export async function setup(out = process.stdout) {
   const token = await agentToken()
   const check = token ? await checkAgentToken(token) : undefined
   if (check?.status === 'accepted') {
-    if (await keyringSecret(AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY) === token) {
-      await keyringClear(LEGACY_AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY)
-      out.write('✓ already signed in; skipped\n')
-    } else {
-      // Signed in before the rename: the token is good, only its keyring entry is old.
-      if (!await storeAgentToken(token)) throw new KeyringUnavailable()
-      out.write('✓ already signed in; moved the token to its current keyring entry\n')
-    }
+    out.write('✓ already signed in; skipped\n')
   } else if (check?.status === 'unanswered' || check?.status === 'unreachable') {
     throw new CliFailure(check.status === 'unreachable'
       ? `${describeTokenCheck(check)}. Check your internet connection, then run: ${cliCommand('setup')}`
@@ -189,7 +178,6 @@ export async function setup(out = process.stdout) {
   // which would otherwise pass with nothing on screen.
   const agents = underHeading(out, 'Agents')
   if (agentInstalled) agents.write('')
-  for (const name of await removeLegacyUnits()) agents.write(`✓ removed the old background proxy (${name})\n`)
   const ready = []
   let alreadyInPlace = false
   /** Clients that did not answer here; the check below reports them without asking again. */
@@ -198,17 +186,12 @@ export async function setup(out = process.stdout) {
     const configured = client.configured()
     if (configured.state === 'uninstalled') continue
     if (configured.state === 'failed') unanswered.add(client.name)
-    const inPlace = register(agents, client, configured)
+    const registered = register(agents, client, configured)
     // A client that did not answer would only make each lookup below wait out its timeout again.
     if (configured.state === 'failed') continue
-    if (inPlace) ready.push(client)
-    if (configured.state === 'configured' && configured.target === EXPECTED_TARGET) alreadyInPlace = true
-    removeStale(agents, client.name, LEGACY_MCP_SERVER_NAME, client, inPlace)
-    if (client.everywhere) {
-      for (const entry of [MCP_SERVER_NAME, LEGACY_MCP_SERVER_NAME]) {
-        removeStale(agents, `${client.name} (every folder)`, entry, client.everywhere, inPlace)
-      }
-    }
+    if (registered) ready.push(client)
+    if (configured.state === 'configured' && inPlace(configured.target)) alreadyInPlace = true
+    if (client.everywhere) removeStale(agents, `${client.name} (every folder)`, MCP_SERVER_NAME, client.everywhere, registered)
   }
 
   step(out, 'tastytrade')

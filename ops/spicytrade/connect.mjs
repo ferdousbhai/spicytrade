@@ -3,11 +3,11 @@ import { createInterface } from 'node:readline'
 import { z } from 'zod'
 
 import { grantMinter, grantRefused, TastytradeAuthError } from './broker-grants.mjs'
-import { CLIENTS, EXPECTED_TARGET, namesSpicytrade } from './clients.mjs'
-import { CLI_PATH, cliCommand, LEGACY_MCP_SERVER_NAME, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME } from './config.mjs'
+import { CLIENTS, inPlace, namesSpicytrade } from './clients.mjs'
+import { CLI_PATH, cliCommand, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME } from './config.mjs'
 import { agentToken, keyringHelperInstalled, keyringHelperMissing, keyringWritable, requireSupportedPlatform, tastytradeCredentialKind } from './keyring.mjs'
 import { login } from './login.mjs'
-import { register, removeStale } from './setup.mjs'
+import { register } from './setup.mjs'
 import { CliFailure } from './cli.mjs'
 import { connectTastytrade } from './tastytrade-connect.mjs'
 import { TOKEN_REQUEST_TIMEOUT_MS, UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
@@ -77,8 +77,7 @@ function callingClient() {
  * The closing step, run from inside the agent that asked to connect. An account connected to no
  * agent's server looks finished and is not, so when Claude Code ran this and its workspace does
  * not start spicytrade, this registers it there -- replacing spicytrade's own older entry, such as
- * an HTTP one pointing at the website, which can never carry a broker credential -- and removes a
- * pre-rename `spicy-trade` entry that would otherwise load a second copy of the tools. It is the
+ * an HTTP one pointing at the website, which can never carry a broker credential. It is the
  * rest of what the user asked for by connecting from that agent, and it touches only entries
  * `namesSpicytrade` recognises: a different server under the name is someone's own, so it is left
  * alone and the line says how to fix it. Agents this cannot identify register through their own
@@ -92,14 +91,13 @@ function finish(out) {
   if (configured.state === 'failed') {
     return `${verified} ${client.name} did not answer when asked for its ${MCP_SERVER_NAME} server; check it with: ${cliCommand('doctor')}\n`
   }
-  const alreadyInPlace = configured.state === 'configured' && configured.target === EXPECTED_TARGET
-  const inPlace = alreadyInPlace || register(out, client, configured)
-  removeStale(out, client.name, LEGACY_MCP_SERVER_NAME, client, inPlace)
+  const alreadyInPlace = configured.state === 'configured' && inPlace(configured.target)
+  const registered = alreadyInPlace || register(out, client, configured)
   if (alreadyInPlace) {
     return `${verified} ${client.name} starts ${MCP_SERVER_NAME} in ${client.where}. Continue in your existing agent conversation;`
       + ' if its tools are not loaded yet, run /mcp and reconnect it, or restart Claude Code with claude --continue.\n'
   }
-  if (inPlace) {
+  if (registered) {
     // Claude Code reads its servers when it starts, so one restart is the one step left.
     return `${verified} ${client.name} now starts ${MCP_SERVER_NAME} in ${client.where}. Restart Claude Code in that folder`
       + ' to load it: exit, then run claude --continue to resume this conversation.\n'

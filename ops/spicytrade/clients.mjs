@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 
-import { CODEX_START, homeRelative, LEGACY_PROXY_URL, MCP_COMMAND, MCP_SERVER_NAME, ORIGIN, WORKSPACE_DIR } from './config.mjs'
+import { CODEX_START, homeRelative, MCP_COMMAND, MCP_SERVER_NAME, ORIGIN, WORKSPACE_DIR } from './config.mjs'
 
 /**
  * The agent clients `setup` registers `spicytrade mcp` with, through each client's own CLI rather
@@ -29,7 +29,7 @@ import { CODEX_START, homeRelative, LEGACY_PROXY_URL, MCP_COMMAND, MCP_SERVER_NA
  */
 const CLIENT_COMMAND_TIMEOUT_MS = 120_000
 
-export const EXPECTED_TARGET = MCP_COMMAND.join(' ')
+const EXPECTED_TARGET = MCP_COMMAND.join(' ')
 const shellWord = (word) => (/^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`)
 const MCP_COMMAND_LINE = MCP_COMMAND.map(shellWord).join(' ')
 /** The workspace as a pasted command names it: any folder the member chose, spaces and all. */
@@ -122,18 +122,32 @@ function disableCodexEntry(name) {
   return true
 }
 
+/** How every copy of this CLI's `mcp` command ends, whichever install or checkout it is. */
+const MCP_COMMAND_TAIL = 'spicytrade.mjs mcp'
+
 /**
  * Whether an entry is spicytrade's, so it is ours to replace: this CLI's `mcp` command from any
- * install, the retired proxy's address, or spicytrade itself.
+ * install, or spicytrade itself.
  */
 export function namesSpicytrade(target) {
-  return target.endsWith('spicytrade.mjs mcp') || target === LEGACY_PROXY_URL || target.startsWith(`${ORIGIN}/`)
+  return target.endsWith(MCP_COMMAND_TAIL) || target.startsWith(`${ORIGIN}/`)
 }
 
 /**
- * Each client, with its lookup and removal taking the entry name: `setup` asks about both the
- * current name and the one an install from before the rename added (see `config.mjs`), and
- * replaces the old entry once the current one is in place. Only the current name is ever added.
+ * Whether an entry already starts spicytrade, so there is nothing to report or replace: the CLI
+ * that is running, or another copy of it that is still on disk. A developer's folder starts a
+ * checkout's entry script while the installed command checks that folder, or the reverse, and
+ * neither copy is older for being somewhere else; calling it so failed `doctor` on a working
+ * entry and had `setup` and `connect` rewrite it. A copy that is gone, or the command behind
+ * some other launcher, is still spicytrade's older entry.
+ */
+export function inPlace(target) {
+  if (target === EXPECTED_TARGET) return true
+  return target.endsWith(`/${MCP_COMMAND_TAIL}`) && existsSync(target.slice(0, -' mcp'.length))
+}
+
+/**
+ * Each client, with its lookup and removal taking the entry name.
  *
  * `everywhere` is the entry a client loads in every directory where that is not where the server
  * belongs: Claude Code's user scope, which earlier installs wrote. `setup` removes it once the

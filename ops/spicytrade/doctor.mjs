@@ -3,15 +3,13 @@ import { createInterface } from 'node:readline'
 import { z } from 'zod'
 
 import { grantMinter, grantRefused, mintUnavailable, TastytradeAuthError, tastytradeUnavailable } from './broker-grants.mjs'
-import { CLIENTS, EXPECTED_TARGET, namesSpicytrade } from './clients.mjs'
+import { CLIENTS, inPlace, namesSpicytrade } from './clients.mjs'
 import {
-  AGENT_TOKEN_SERVICE, cliCommand, LEGACY_MCP_SERVER_NAME, MCP_COMMAND, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
-  MCP_TOKEN_KEY,
+  cliCommand, MCP_COMMAND, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
 } from './config.mjs'
 import {
-  agentToken, keyringHelperInstalled, keyringHelperMissing, keyringSecret, tastytradeCredentialKind,
+  agentToken, keyringHelperInstalled, keyringHelperMissing, tastytradeCredentialKind,
 } from './keyring.mjs'
-import { legacyUnits } from './legacy-proxy.mjs'
 import { unexpectedTail } from './cli.mjs'
 import { NOT_READY } from './mcp.mjs'
 import { TOKEN_REQUEST_TIMEOUT_MS, UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
@@ -169,9 +167,6 @@ export async function doctor(out = process.stdout, { quiet = false, settled = ne
         ? `Try again in a minute: ${setup}`
         : `Check your internet connection, then run: ${setup}`)
     }
-    if (await keyringSecret(AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY) !== token) {
-      checks.fail('the sign-in is still under its old keyring entry', `Move it with: ${setup}`)
-    }
   }
 
   const credential = await tastytradeCredentialKind()
@@ -193,10 +188,6 @@ export async function doctor(out = process.stdout, { quiet = false, settled = ne
       // A refused agent token fails the app-grant mint too; signing in again fixes both.
       checks.fail(brokerFailure(error, credential.kind), brokerFix(error, credential.kind, setup))
     }
-  }
-
-  for (const name of await legacyUnits()) {
-    checks.fail(`the old background proxy is still installed (${name})`, `Remove it with: ${setup}`)
   }
 
   let agentsFound = 0
@@ -222,7 +213,7 @@ export async function doctor(out = process.stdout, { quiet = false, settled = ne
       checks.fail(`${client.name} has no ${MCP_SERVER_NAME} server${inWhere}`, quiet || client.where
         ? `Add it${quiet ? ' yourself' : ''} with: ${client.addCommand}${client.afterAdd ?? ''}`
         : `Add it with: ${setup}`)
-    } else if (configured.target !== EXPECTED_TARGET) {
+    } else if (!inPlace(configured.target)) {
       // The configured target is not printed: a client entry may carry a credential in a URL.
       checks.fail(namesSpicytrade(configured.target)
         ? `${client.name} starts spicytrade from an older install${inWhere}`
@@ -233,15 +224,9 @@ export async function doctor(out = process.stdout, { quiet = false, settled = ne
     } else {
       checks.pass(`${client.name} starts spicytrade${inWhere}`)
     }
-    const legacy = client.configured(LEGACY_MCP_SERVER_NAME)
-    if (legacy.state === 'configured' && namesSpicytrade(legacy.target)) {
-      checks.fail(`${client.name} still has the old ${LEGACY_MCP_SERVER_NAME} entry`, `Remove it with: ${setup}`)
-    }
-    for (const entry of [MCP_SERVER_NAME, LEGACY_MCP_SERVER_NAME]) {
-      const wide = client.everywhere?.configured(entry)
-      if (wide?.state === 'configured' && namesSpicytrade(wide.target)) {
-        checks.fail(`${client.name} loads ${entry} in every folder, not only ${client.where ?? 'your workspace'}`, `Move it with: ${setup}`)
-      }
+    const wide = client.everywhere?.configured(MCP_SERVER_NAME)
+    if (wide?.state === 'configured' && namesSpicytrade(wide.target)) {
+      checks.fail(`${client.name} loads ${MCP_SERVER_NAME} in every folder, not only ${client.where ?? 'your workspace'}`, `Move it with: ${setup}`)
     }
   }
 

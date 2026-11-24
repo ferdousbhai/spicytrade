@@ -310,14 +310,6 @@ describe('spicytrade mcp', () => {
     expect(await server.reply(1)).toEqual({ id: 2, jsonrpc: '2.0', result: { content: [{ text: workerText, type: 'text' }] } })
   }, 30_000)
 
-  it('still runs an install from before the rename: old keyring entry', async () => {
-    const { captured, port } = await worker()
-    const server = startServer(await fakeKeyring({ 'spicy-trade/mcp-token': AGENT_TOKEN }), port)
-    server.send(request(1))
-    await server.reply(0)
-    expect(captured[0]?.headers.authorization).toBe(`Bearer ${AGENT_TOKEN}`)
-  }, 30_000)
-
   it('keeps the session the Worker assigns and the protocol version it negotiates', async () => {
     const { captured, port } = await worker((_, body, response) => {
       const { id, method } = JSON.parse(body)

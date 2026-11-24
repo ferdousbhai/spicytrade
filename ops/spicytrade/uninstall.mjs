@@ -4,13 +4,12 @@ import { dirname, join, resolve } from 'node:path'
 
 import { CLIENTS, namesSpicytrade } from './clients.mjs'
 import {
-  AGENT_TOKEN_SERVICE, CLI_PATH, LEGACY_AGENT_TOKEN_SERVICE, LEGACY_MCP_SERVER_NAME, MCP_SERVER_NAME, MCP_TOKEN_KEY, ORIGIN,
+  AGENT_TOKEN_SERVICE, CLI_PATH, MCP_SERVER_NAME, MCP_TOKEN_KEY, ORIGIN,
 } from './config.mjs'
 import {
   agentToken, APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, keyringClear, keyringClearCommand, keyringHelperInstalled, keyringHelperMissing, REFRESH_TOKEN_KEY, TASTYTRADE,
   tastytradeCredentialKind,
 } from './keyring.mjs'
-import { removeLegacyUnits } from './legacy-proxy.mjs'
 import { UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
 
 /**
@@ -74,20 +73,17 @@ export async function uninstall(out = process.stdout) {
   for (const client of CLIENTS) {
     const scopes = [[client.name, client], ...(client.everywhere ? [[`${client.name} (every folder)`, client.everywhere]] : [])]
     for (const [label, scope] of scopes) {
-      for (const entry of [MCP_SERVER_NAME, LEGACY_MCP_SERVER_NAME]) {
-        const found = scope.configured(entry)
-        if (found.state !== 'configured' || !namesSpicytrade(found.target)) continue
-        out.write(scope.remove(entry).ok
-          ? `✓ ${label}: removed ${entry}\n`
-          : `✗ ${label} did not remove ${entry}; remove it yourself with: ${scope.removeCommand(entry)}\n`)
-      }
+      const found = scope.configured(MCP_SERVER_NAME)
+      if (found.state !== 'configured' || !namesSpicytrade(found.target)) continue
+      out.write(scope.remove(MCP_SERVER_NAME).ok
+        ? `✓ ${label}: removed ${MCP_SERVER_NAME}\n`
+        : `✗ ${label} did not remove ${MCP_SERVER_NAME}; remove it yourself with: ${scope.removeCommand(MCP_SERVER_NAME)}\n`)
     }
   }
-  for (const name of await removeLegacyUnits()) out.write(`✓ removed the old background proxy (${name})\n`)
 
   const entries = [
     [TASTYTRADE, APP_REFRESH_TOKEN_KEY], [TASTYTRADE, CLIENT_SECRET_KEY], [TASTYTRADE, REFRESH_TOKEN_KEY],
-    [AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY], [LEGACY_AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY],
+    [AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY],
   ]
   // A missing helper says nothing about whether credentials are still stored. Removal failures
   // do not stop the rest: these commands finish cleanup even after the CLI itself is removed.
