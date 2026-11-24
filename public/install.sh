@@ -8,8 +8,8 @@
 # is touched; setup then prints the one link you approve to connect. Run it again to update.
 set -euo pipefail
 
-# Agent-driven onboarding installs only the connector; the current harness handles its own
-# MCP registration and browser connection. No other installed agents are inspected or changed.
+# Agent-driven onboarding installs only the command; the agent then runs `spicytrade connect`
+# itself. Nothing is registered with any agent.
 connector_only=false
 case "${1:-}" in
   --connector-only) connector_only=true; shift ;;

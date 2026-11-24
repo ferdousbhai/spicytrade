@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 /**
  * What every local tool agrees on: where spicytrade is, which keyring entry holds the agent
- * token, how agents launch the MCP server, and how to name the CLI in a message. One module, so
+ * token, which folder is the member's workspace, and how to name the CLI in a message. One module, so
  * the commands cannot drift apart on any of them.
  */
 
@@ -26,8 +26,8 @@ export function workerFault(response) {
 }
 
 /**
- * The MCP revision this CLI speaks, both probing the Worker and answering `initialize` locally
- * when the client names none; any revision the Worker accepts would do.
+ * The MCP revision this CLI names when it asks the Worker for its instructions; any revision the
+ * Worker accepts would do.
  */
 export const MCP_PROTOCOL_VERSION = '2025-06-18'
 
@@ -35,36 +35,11 @@ export const MCP_PROTOCOL_VERSION = '2025-06-18'
 export const AGENT_TOKEN_SERVICE = 'spicytrade'
 export const MCP_TOKEN_KEY = 'mcp-token'
 
-/** The name agents' MCP configs know the server by. */
-export const MCP_SERVER_NAME = 'spicytrade'
-
-/** Codex keeps the server switched off, so a trading session turns it on for that session alone. */
-export const CODEX_START = `codex -c mcp_servers.${MCP_SERVER_NAME}.enabled=true`
 /**
- * How a running session picks up a changed credential: each session reads the keyring when it
- * starts `spicytrade mcp`, so Claude Code reconnects the server, and Codex is started again the one
- * way that loads it at all. Keyed by the client ids in `clients.mjs`.
- */
-const RECONNECT_STEPS = {
-  claude: `in Claude Code, run /mcp, pick ${MCP_SERVER_NAME} and choose Reconnect`,
-  // `resume --last` reopens the same conversation, so a fix does not cost the member what they were
-  // doing; `resume` takes the same `-c` that turns the server on.
-  codex: `in Codex, quit and run codex resume --last -c mcp_servers.${MCP_SERVER_NAME}.enabled=true`,
-}
-
-/** The reconnect step for each of `clients`; every client's when which one is in use is unknown. */
-export function reconnectHow(clients = Object.keys(RECONNECT_STEPS)) {
-  return clients.map((client) => RECONNECT_STEPS[client]).join('; or ')
-}
-
-/**
- * The folder whose Claude Code sessions load the server: the one this CLI runs in, which is the
- * agent's own workspace when the agent runs it, as the connect guide has it do. Trading tools act
- * on the member's own account, so they belong to the workspace the member chose for trading, not
- * to every session in every directory; Claude Code cannot add a server switched off everywhere,
- * so it is registered here at local scope. `setup`, `doctor`, `connect` and `start` must all mean
- * this one folder: a fixed folder of our own reported the member's actual workspace as missing,
- * and its "fix" registered the server somewhere the member never starts an agent.
+ * The member's workspace: the folder this CLI runs in, which is the agent's own folder when the
+ * agent runs it, as the connect guide has it do. Trading acts on the member's own account, so the
+ * skill that tells an agent about spicytrade is written here, not into every session in every
+ * directory. `setup`, `doctor`, `connect` and `uninstall` must all mean this one folder.
  */
 export const WORKSPACE_DIR = process.env.SPICYTRADE_WORKSPACE ?? process.cwd()
 
@@ -74,15 +49,6 @@ export const WORKSPACE_DIR = process.env.SPICYTRADE_WORKSPACE ?? process.cwd()
  * same name, so the same URL resolves to it.
  */
 export const CLI_PATH = fileURLToPath(new URL('./spicytrade.mjs', import.meta.url))
-
-/**
- * What an agent client launches: this CLI by absolute path, run through its own
- * `#!/usr/bin/env node` line. Naming the CLI rather than this node keeps the entry working across
- * Node upgrades -- a version manager's per-version path disappears with the version -- and the
- * client starts it with the member's own PATH. An entry is compared against this by `inPlace` in
- * `clients.mjs`.
- */
-export const MCP_COMMAND = [CLI_PATH, 'mcp']
 
 export function homeRelative(path) {
   const home = homedir()
@@ -114,8 +80,8 @@ function installedLink() {
 /**
  * How a message tells the member to run the CLI: `spicytrade` when that name reaches this CLI,
  * otherwise the installer's link or the script, by a path that works from any directory -- an
- * agent launches `mcp` from wherever it was started, so a relative path would be wrong exactly
- * where its messages are read.
+ * agent runs it from wherever it was started, so a relative path would be wrong exactly where its
+ * messages are read.
  */
 const CLI_NAME = onPath() ? 'spicytrade' : homeRelative(installedLink() ?? CLI_PATH)
 

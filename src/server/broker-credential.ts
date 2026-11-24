@@ -12,7 +12,7 @@ export type BrokerCredential = {
 export class BrokerCredentialMissingError extends CallerVisibleError {
   constructor() {
     super(
-      // The local relay recognizes this prefix and offers its in-conversation connection tool.
+      // The local CLI recognizes this prefix and answers with that computer's own fix instead.
       // Written for the agent rather than the user: an agent with a shell on the user's computer
       // can do the whole setup itself, and handing it back as homework is what made this slow.
       'No brokerage is connected. Account access needs the spicytrade connector on the user\'s own '

@@ -2,23 +2,22 @@ import { lstat, readlink, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
-import { CLIENTS, namesSpicytrade } from './clients.mjs'
+import { AGENT_TOKEN_SERVICE, CLI_PATH, MCP_TOKEN_KEY, ORIGIN } from './config.mjs'
 import {
-  AGENT_TOKEN_SERVICE, CLI_PATH, MCP_SERVER_NAME, MCP_TOKEN_KEY, ORIGIN,
-} from './config.mjs'
-import {
-  agentToken, APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, keyringClear, keyringClearCommand, keyringHelperInstalled, keyringHelperMissing, REFRESH_TOKEN_KEY, TASTYTRADE,
+  ACCESS_TOKEN_KEY, agentToken, APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, keyringClear, keyringClearCommand, keyringHelperInstalled, keyringHelperMissing, REFRESH_TOKEN_KEY, TASTYTRADE,
   tastytradeCredentialKind,
 } from './keyring.mjs'
+import { removeSkill, workspaceName } from './skill.mjs'
 import { UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
 
 /**
- * `spicytrade uninstall`: take spicytrade off this computer -- its agent entries, its credentials,
- * and, for the copy `install.sh` put here, the program itself. Revoking a computer on the web
+ * `spicytrade uninstall`: take spicytrade off this computer -- the skill in this folder, its
+ * credentials, and, for the copy `install.sh` put here, the program itself. Revoking a computer on the web
  * leaves all of that behind, and every later agent session would then advise signing in again.
  *
- * Only spicytrade's own entries are removed: an entry of the same name that names something else
- * is someone's own. A checkout of this code is never deleted, only an installed copy.
+ * Only the skill this CLI wrote is removed: one of the same name that someone else wrote is
+ * theirs. A skill left in another folder is found only from that folder, so the closing line
+ * says so. A checkout of this code is never deleted, only an installed copy.
  */
 
 /** Where `install.sh` puts the program and its link; anything else is a checkout, left alone. */
@@ -70,19 +69,10 @@ export async function uninstall(out = process.stdout) {
   // First, while the token is still in the keyring to sign out with.
   const signedOut = await signOut()
 
-  for (const client of CLIENTS) {
-    const scopes = [[client.name, client], ...(client.everywhere ? [[`${client.name} (every folder)`, client.everywhere]] : [])]
-    for (const [label, scope] of scopes) {
-      const found = scope.configured(MCP_SERVER_NAME)
-      if (found.state !== 'configured' || !namesSpicytrade(found.target)) continue
-      out.write(scope.remove(MCP_SERVER_NAME).ok
-        ? `✓ ${label}: removed ${MCP_SERVER_NAME}\n`
-        : `✗ ${label} did not remove ${MCP_SERVER_NAME}; remove it yourself with: ${scope.removeCommand(MCP_SERVER_NAME)}\n`)
-    }
-  }
+  for (const agent of await removeSkill()) out.write(`✓ ${agent.name}: removed the spicytrade skill from ${workspaceName()}\n`)
 
   const entries = [
-    [TASTYTRADE, APP_REFRESH_TOKEN_KEY], [TASTYTRADE, CLIENT_SECRET_KEY], [TASTYTRADE, REFRESH_TOKEN_KEY],
+    [TASTYTRADE, ACCESS_TOKEN_KEY], [TASTYTRADE, APP_REFRESH_TOKEN_KEY], [TASTYTRADE, CLIENT_SECRET_KEY], [TASTYTRADE, REFRESH_TOKEN_KEY],
     [AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY],
   ]
   // A missing helper says nothing about whether credentials are still stored. Removal failures
@@ -103,8 +93,9 @@ export async function uninstall(out = process.stdout) {
     : `✓ removed this computer's ${saved} from the keyring\n`)
 
   if (await removeProgram()) out.write('✓ removed the spicytrade program\n')
+  const elsewhere = 'If you connected from other folders too, delete the spicytrade folder under .claude/skills or .agents/skills in each.\n'
   out.write(signedOut
-    ? '\nspicytrade is removed from this computer and signed out of your account.\n'
+    ? '\nspicytrade is removed from this computer and signed out of your account.\n' + elsewhere
     : `\nspicytrade is removed from this computer. To sign it out of your account too, revoke it under`
-      + ` Signed-in computers at ${ORIGIN}/connect.\n`)
+      + ` Signed-in computers at ${ORIGIN}/connect.\n` + elsewhere)
 }

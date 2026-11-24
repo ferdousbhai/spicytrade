@@ -6,7 +6,7 @@ import { CliFailure, pollUntil, unexpectedTail } from './cli.mjs'
 import { cliCommand } from './config.mjs'
 import { keyringEnvironment } from './keyring-environment.mjs'
 import {
-  APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, keyringClear, keyringPrompt, keyringSecret, keyringStore, KeyringUnavailable, REFRESH_TOKEN_KEY, TASTYTRADE,
+  ACCESS_TOKEN_KEY, APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, keyringClear, keyringPrompt, keyringSecret, keyringStore, KeyringUnavailable, REFRESH_TOKEN_KEY, TASTYTRADE,
   tastytradeCredentialKind,
 } from './keyring.mjs'
 import { login } from './login.mjs'
@@ -21,7 +21,7 @@ import { postWorker } from './worker.mjs'
  * and continues to tastytrade's own consent page, in whichever browser they opened it. The
  * browser returns to the Worker, and this process, polling with the agent token that sign-in
  * issued and the same verifier, has the Worker redeem the code and stores the refresh token under
- * `tastytrade/app-refresh-token`, where `spicytrade mcp` finds it. The Worker holds the app's
+ * `tastytrade/app-refresh-token`, where `spicytrade call` finds it. The Worker holds the app's
  * client secret and never keeps the refresh token; this machine keeps the refresh token and
  * never needs a client secret.
  *
@@ -163,10 +163,10 @@ export async function disconnectTastytrade(out = process.stdout) {
     out.write('· tastytrade was not connected on this computer; nothing to remove.\n')
     return false
   }
-  for (const key of [APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, REFRESH_TOKEN_KEY]) {
+  for (const key of [ACCESS_TOKEN_KEY, APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, REFRESH_TOKEN_KEY]) {
     if (!await keyringClear(BROKER, key)) throw new KeyringUnavailable()
   }
-  out.write('✓ tastytrade removed from this computer. Your agent keeps market and research tools.'
+  out.write('✓ tastytrade removed from this computer. Market and research tools still work.'
     + (kind === 'personal'
       ? ' To end the grant itself, delete it under OAuth Applications on my.tastytrade.com.\n'
       // The app grant lived only in this keyring -- the Worker never keeps it -- so nothing can use it now.

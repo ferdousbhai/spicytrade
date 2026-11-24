@@ -8,8 +8,8 @@ import { UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
  * credential scripts all have to answer before they can say anything useful.
  *
  * Asked the way an agent would ask it -- a `tools/list` on the MCP endpoint, the cheapest call that
- * requires the token -- so an accepted answer means `spicytrade mcp`'s calls will be accepted too.
- * It is one relayed MCP call, so it gets the budget for one. The token rides in the
+ * requires the token -- so an accepted answer means `spicytrade call`'s will be accepted too.
+ * It is one MCP call, so it gets the budget for one. The token rides in the
  * Authorization header of this request and nowhere else; no answer body is read.
  *
  * `accepted`, `rejected` (a 401), `unanswered` with the status for any other refusal, or

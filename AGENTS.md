@@ -89,8 +89,8 @@ the `BriefPublisher` entrypoint over a service binding.
 
 ## Working rules
 
-- An interactive agent reaches spicytrade through `spicytrade mcp`, which the agent launches and
-  which attaches the tokens from the keyring, so no agent configuration holds a credential. An
+- An interactive agent reaches spicytrade by running `spicytrade call` in its own shell, which
+  attaches the tokens from the keyring, so no agent configuration holds a credential. An
   unattended research run instead connects directly with its own token and *no* broker header,
   so every account tool refuses structurally rather than by allowlist. Keep that asymmetry — it
   is what makes an unattended run unable to trade.

@@ -30,8 +30,8 @@ server's own guards decide what is admissible.
 ## MCP server
 
 - [MCP endpoint (Streamable HTTP)](${MCP_ENDPOINT}): Connect directly with no credential for the public tier: the site's cached snapshot quotes, catalysts, research reads and the daily brief. Its \`sign_in\` tool asks the client to start OAuth sign-in for the member tier.
-- [Connect in the current agent](${CONNECT_GUIDE_URL}): Follow this guide to install the local connector, register only the current harness in its workspace, and approve browser authorization without launching a new agent. The connector keeps credentials in the OS keyring; no MCP configuration holds a credential.
-- [Local MCP server installer](${INSTALL_SCRIPT_URL}): Use \`--connector-only\` for agent-driven onboarding. Manual terminal setup remains available.
+- [Connect in the current agent](${CONNECT_GUIDE_URL}): Follow this guide to install the local \`spicytrade\` command and approve browser authorization without launching a new agent. The agent then calls tools from its own shell. The command keeps credentials in the OS keyring; no agent configuration holds a credential.
+- [Local command installer](${INSTALL_SCRIPT_URL}): Use \`--connector-only\` for agent-driven onboarding. Manual terminal setup remains available.
 - [OAuth protected resource metadata](${at(`/.well-known/oauth-protected-resource${MCP_PATH}`)}): How an HTTP MCP client discovers sign-in for the endpoint.
 - [Full agent guide](${at('/llms-full.txt')}): This file plus the guide the MCP server publishes as its \`spicytrade://guide\` resource.
 

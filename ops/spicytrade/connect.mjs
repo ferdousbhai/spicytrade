@@ -1,113 +1,30 @@
-import { spawn } from 'node:child_process'
-import { createInterface } from 'node:readline'
 import { z } from 'zod'
 
 import { grantMinter, grantRefused, TastytradeAuthError } from './broker-grants.mjs'
-import { CLIENTS, inPlace, namesSpicytrade } from './clients.mjs'
-import { CLI_PATH, cliCommand, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME } from './config.mjs'
+import { callTool } from './call.mjs'
+import { CliFailure } from './cli.mjs'
+import { cliCommand } from './config.mjs'
 import { agentToken, keyringHelperInstalled, keyringHelperMissing, keyringWritable, requireSupportedPlatform, tastytradeCredentialKind } from './keyring.mjs'
 import { login } from './login.mjs'
-import { register } from './setup.mjs'
-import { CliFailure } from './cli.mjs'
+import { installedAgents, installSkill, workspaceName } from './skill.mjs'
 import { connectTastytrade } from './tastytrade-connect.mjs'
-import { TOKEN_REQUEST_TIMEOUT_MS, UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
 import { checkAgentToken, describeTokenCheck } from './worker.mjs'
 
-/** A verification uses the same stdio transport as the user's harness, and never prints account data. */
+const SnapshotSchema = z.object({ asOf: z.iso.datetime(), balances: z.object({ netLiquidatingValue: z.number() }), source: z.literal('tastytrade') })
+
+/**
+ * A connection is finished only when a real account snapshot comes back, read the way the agent
+ * will read it. Nothing of the account is printed.
+ */
 async function verifyAccount() {
-  const child = spawn(process.execPath, [CLI_PATH, 'mcp'], { stdio: ['pipe', 'pipe', 'ignore'] })
-  const lines = createInterface({ input: child.stdout })
-  const pending = new Map()
-  let sequence = 0
-  // Initialization, a broker mint and a snapshot each get their existing request budget.
-  const timer = setTimeout(() => child.kill(), 2 * UPSTREAM_TIMEOUT_MS + TOKEN_REQUEST_TIMEOUT_MS)
-  const failure = () => {
-    for (const reject of pending.values()) reject({ failed: true })
-    pending.clear()
-  }
-  child.once('error', failure)
-  child.once('exit', failure)
-  child.stdin.on('error', failure)
-  lines.on('line', (line) => {
-    try {
-      const reply = JSON.parse(line)
-      pending.get(reply.id)?.(reply)
-      pending.delete(reply.id)
-    } catch {
-      failure()
-    }
-  })
-  const request = (method, params) => new Promise((resolve) => {
-    const id = ++sequence
-    pending.set(id, resolve)
-    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`)
-  })
+  const { isError, text } = await callTool('read_account_snapshot')
+  let snapshot
   try {
-    const initialized = await request('initialize', {
-      protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'spicytrade-connect', version: '1' },
-    })
-    if (!initialized.result?.protocolVersion || initialized.error) throw new CliFailure('The MCP connection could not be verified.')
-    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`)
-    const reply = await request('tools/call', { name: 'read_account_snapshot', arguments: {} })
-    const content = reply.result?.content?.find((item) => item.type === 'text')?.text
-    const snapshot = z.object({ asOf: z.iso.datetime(), source: z.literal('tastytrade'), balances: z.object({ netLiquidatingValue: z.number() }) })
-    // A successful transport is insufficient: only a real account snapshot completes onboarding.
-    if (reply.error || reply.result?.isError || !content
-      || !snapshot.safeParse(JSON.parse(content)).success) throw new CliFailure('The account snapshot could not be verified. Ask your agent to check the connection.')
+    snapshot = isError ? undefined : SnapshotSchema.safeParse(JSON.parse(text)).data
   } catch (error) {
-    if (error instanceof CliFailure) throw error
-    throw new CliFailure('The account connection did not finish answering. Try connecting again.')
-  } finally {
-    clearTimeout(timer)
-    lines.close()
-    child.kill()
+    if (!(error instanceof SyntaxError)) throw error
   }
-}
-
-/**
- * The agent whose shell `connect` runs in, when it says so: Claude Code sets CLAUDECODE=1 for the
- * commands it runs. No other client is guessed at from its environment; for them, the closing
- * line stays the general one and the connect guide's own steps cover registration.
- */
-function callingClient() {
-  return process.env.CLAUDECODE === '1' ? CLIENTS.find((client) => client.id === 'claude') : undefined
-}
-
-/**
- * The closing step, run from inside the agent that asked to connect. An account connected to no
- * agent's server looks finished and is not, so when Claude Code ran this and its workspace does
- * not start spicytrade, this registers it there -- replacing spicytrade's own older entry, such as
- * an HTTP one pointing at the website, which can never carry a broker credential. It is the
- * rest of what the user asked for by connecting from that agent, and it touches only entries
- * `namesSpicytrade` recognises: a different server under the name is someone's own, so it is left
- * alone and the line says how to fix it. Agents this cannot identify register through their own
- * mechanism, as the connect guide has it.
- */
-function finish(out) {
-  const verified = 'Account connected and live snapshot verified.'
-  const client = callingClient()
-  if (!client) return `${verified} Continue in your existing agent conversation.\n`
-  const configured = client.configured()
-  if (configured.state === 'failed') {
-    return `${verified} ${client.name} did not answer when asked for its ${MCP_SERVER_NAME} server; check it with: ${cliCommand('doctor')}\n`
-  }
-  const alreadyInPlace = configured.state === 'configured' && inPlace(configured.target)
-  const registered = alreadyInPlace || register(out, client, configured)
-  if (alreadyInPlace) {
-    return `${verified} ${client.name} starts ${MCP_SERVER_NAME} in ${client.where}. Continue in your existing agent conversation;`
-      + ' if its tools are not loaded yet, run /mcp and reconnect it, or restart Claude Code with claude --continue.\n'
-  }
-  if (registered) {
-    // Claude Code reads its servers when it starts, so one restart is the one step left.
-    return `${verified} ${client.name} now starts ${MCP_SERVER_NAME} in ${client.where}. Restart Claude Code in that folder`
-      + ' to load it: exit, then run claude --continue to resume this conversation.\n'
-  }
-  const problem = namesSpicytrade(configured.target ?? '')
-    ? `${client.name} could not replace its older ${MCP_SERVER_NAME} entry in ${client.where}`
-    : `${client.name} has a different server named "${MCP_SERVER_NAME}" in ${client.where}`
-  const fix = configured.state === 'configured' ? `${client.removeCommand()} && ${client.addCommand}` : client.addCommand
-  return `${verified} But ${problem}, so this conversation cannot use it yet.\n`
-    + `Fix it with: ${fix}\nThen restart Claude Code in that folder; claude --continue resumes this conversation.\n`
+  if (!snapshot) throw new CliFailure(`the account snapshot could not be verified. Check the connection with: ${cliCommand('doctor')}`)
 }
 
 /** Explicit account connection, callable from an existing agent's shell without a terminal questionnaire. */
@@ -143,5 +60,11 @@ export async function connect(out = process.stdout) {
   }
   out.write('Verifying live account access…\n')
   await verifyAccount()
-  out.write(finish(out))
+  const ready = await installSkill(out)
+  // An agent whose own skill of that name was left alone is installed all the same: only a
+  // computer with neither is told there is no agent to hear of it.
+  const told = ready.length
+    ? ` Agents started in ${workspaceName()} can use it now.`
+    : (await installedAgents()).length ? '' : ' No Claude Code or Codex was found on this computer to tell about it.'
+  out.write(`Account connected and live snapshot verified.${told} List what it can do with \`${cliCommand('tools')}\`.\n`)
 }

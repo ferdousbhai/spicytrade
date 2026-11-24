@@ -12,7 +12,7 @@ Live at [spicy.trade](https://spicy.trade/watch).
 - **Favorites**: signed-in members pin their own symbols.
 - **Daily brief** ([/recommendations](https://spicy.trade/recommendations)): an options brief with an archive. It is written automatically by an AI model in a separate private workflow and is not personal advice.
 - **MCP tools** at `https://spicy.trade/mcp`: any agent can connect with no credential for the public tier (snapshot quotes, catalysts, research reads and the brief). A signed-in member's agent also gets account reads and guarded order placement through their own tastytrade connection.
-- **Local `spicytrade` CLI**: the connector that runs on your machine. It keeps your broker credential in the OS keyring and exchanges it for a short-lived token per request.
+- **Local `spicytrade` CLI**: the command your agent runs in its own shell on your machine (`spicytrade tools`, `spicytrade call`). It keeps your broker credential in the OS keyring and exchanges it for a short-lived token per request. Nothing is registered with the agent; a skill file in the folder you connect from tells it the command is there.
 
 ## How orders stay safe
 
@@ -37,7 +37,7 @@ To connect your tastytrade account (macOS or Linux, Node.js 22+; Linux also need
 curl -fsSL https://spicy.trade/install.sh | bash
 ```
 
-That installs one file into `~/.local/share/spicytrade`, links `~/.local/bin/spicytrade`, then runs `spicytrade setup`, which prints one link. Approve it in any browser, on that computer or your phone: it signs the computer in and continues to tastytrade's consent page. Run the install again to update. For agent-driven onboarding (the current agent registers itself), use `bash -s -- --connector-only` and follow the [connect guide](https://spicy.trade/connect/guide). Agents can read [llms.txt](https://spicy.trade/llms.txt) for the full map.
+That installs one file into `~/.local/share/spicytrade`, links `~/.local/bin/spicytrade`, then runs `spicytrade setup`, which prints one link. Approve it in any browser, on that computer or your phone: it signs the computer in and continues to tastytrade's consent page. Run the install again to update. For agent-driven onboarding (the agent runs `spicytrade connect` itself), use `bash -s -- --connector-only` and follow the [connect guide](https://spicy.trade/connect/guide). Agents can read [llms.txt](https://spicy.trade/llms.txt) for the full map.
 
 ## Architecture
 

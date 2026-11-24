@@ -1,19 +1,10 @@
 import { spawn } from 'node:child_process'
 
-import { cliCommand, reconnectHow } from './config.mjs'
+import { cliCommand } from './config.mjs'
 
 /**
- * What the commands share in how they talk to the member: the failure they print, the notes that
- * close a run, the wait for an approval made in a browser, and opening that browser.
+ * What the commands share in how they talk to the member: the failure they print, the wait for an approval made in a browser, and opening that browser.
  */
-
-/**
- * Each agent session reads the keyring when it launches `spicytrade mcp`, so a credential change
- * reaches a session already running only once it reconnects.
- */
-export function reconnectNote(clients) {
-  return `An agent session that is already running picks this up once it reconnects: ${reconnectHow(clients)}.\n`
-}
 
 /**
  * The end of a failure this CLI cannot explain -- an answer it could not read -- so the member

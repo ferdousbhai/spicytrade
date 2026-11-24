@@ -1,45 +1,21 @@
-import { spawn } from 'node:child_process'
-import { createInterface } from 'node:readline'
-import { z } from 'zod'
-
 import { grantMinter, grantRefused, mintUnavailable, TastytradeAuthError, tastytradeUnavailable } from './broker-grants.mjs'
-import { CLIENTS, inPlace, namesSpicytrade } from './clients.mjs'
-import {
-  cliCommand, MCP_COMMAND, MCP_PROTOCOL_VERSION, MCP_SERVER_NAME,
-} from './config.mjs'
+import { cliCommand } from './config.mjs'
 import {
   agentToken, keyringHelperInstalled, keyringHelperMissing, tastytradeCredentialKind,
 } from './keyring.mjs'
-import { unexpectedTail } from './cli.mjs'
-import { NOT_READY } from './mcp.mjs'
-import { TOKEN_REQUEST_TIMEOUT_MS, UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
+import { installedAgents, skillState, workspaceName } from './skill.mjs'
 import { checkAgentToken, describeTokenCheck } from './worker.mjs'
 
 /**
- * `spicytrade doctor`: every link between an agent and spicytrade, checked in the order a
- * request crosses them, each failure with the one command that fixes it.
+ * `spicytrade doctor`: every link between an agent and spicytrade, checked in the order a call
+ * crosses them, each failure with the one command that fixes it.
  *
  * Output is fixed vocabulary, as everywhere in these tools: a status, a transport code, a path of
- * this install, or a message the MCP server itself wrote from its own vocabulary. No credential
- * is printed, and the server's answer is read only for its JSON-RPC error message.
+ * this install. No credential is printed.
  */
 
 /**
- * The server's worst case for one call that also mints a broker token: a mint's budget, then the
- * relayed call's.
- */
-const SERVER_CHECK_TIMEOUT_MS = UPSTREAM_TIMEOUT_MS + TOKEN_REQUEST_TIMEOUT_MS
-
-const ReplySchema = z.object({
-  id: z.literal(1),
-  jsonrpc: z.literal('2.0'),
-  error: z.object({ message: z.string() }).optional(),
-  result: z.object({ protocolVersion: z.string().min(1), instructions: z.string().optional() }).optional(),
-}).refine((reply) => (reply.error !== undefined) !== (reply.result !== undefined))
-
-/**
- * `quiet` is for `setup`, which has just reported each step itself: only failures, and the one
- * check setup cannot see -- the agent's server reaching spicytrade -- are written.
+ * `quiet` is for `setup`, which has just reported each step itself: only failures are written.
  */
 function report(out, quiet) {
   let failed = 0
@@ -55,7 +31,7 @@ function report(out, quiet) {
       noted += 1
       if (!quiet) out.write(`· ${label}\n    ${hint}\n`)
     },
-    pass: (label, { always = false } = {}) => { if (!quiet || always) out.write(`✓ ${label}\n`) },
+    pass: (label) => { if (!quiet) out.write(`✓ ${label}\n`) },
   }
 }
 
@@ -84,63 +60,8 @@ function brokerFix(error, kind, setup) {
 }
 
 /**
- * Starts the MCP server exactly as an agent does -- the same command line -- and sends it
- * `initialize`, which it relays to the Worker with this machine's credentials.
- */
-async function checkServer() {
-  const child = spawn(MCP_COMMAND[0], MCP_COMMAND.slice(1), { stdio: ['pipe', 'pipe', 'ignore'] })
-  const lines = createInterface({ input: child.stdout })
-  // Each reason ends in what to do, as every other check's fix line does.
-  let timedOut = false
-  const timer = setTimeout(() => {
-    timedOut = true
-    child.kill()
-  }, SERVER_CHECK_TIMEOUT_MS)
-  try {
-    const started = new Promise((resolve) => {
-      child.once('error', (error) => resolve({ reason: `it could not start (${error.code ?? error.name}). ${unexpectedTail()}` }))
-      // The timer's kill also ends the process, which is a wait, not the server stopping by itself.
-      child.once('exit', () => resolve({
-        reason: timedOut
-          ? `it did not answer within ${SERVER_CHECK_TIMEOUT_MS / 1_000} seconds. Check your internet connection, then run: ${cliCommand('setup')}`
-          : `it stopped before answering. ${unexpectedTail()}`,
-      }))
-      lines.once('line', (line) => {
-        try {
-          const reply = ReplySchema.parse(JSON.parse(line))
-          const instructions = reply.result?.instructions ?? ''
-          // A session that needs setup still answers, so the agent can relay the fix; here it is a failure.
-          resolve(reply.error
-            ? { reason: reply.error.message }
-            : instructions.startsWith(NOT_READY) ? { reason: instructions.slice(NOT_READY.length).trim() } : { ok: true })
-        } catch {
-          resolve({ reason: `it answered with something other than MCP. ${unexpectedTail()}` })
-        }
-      })
-    })
-    child.stdin.on('error', () => {})
-    child.stdin.write(`${JSON.stringify({
-      id: 1,
-      jsonrpc: '2.0',
-      method: 'initialize',
-      params: { capabilities: {}, clientInfo: { name: 'spicytrade-doctor', version: '1' }, protocolVersion: MCP_PROTOCOL_VERSION },
-    })}\n`)
-    return await started
-  } finally {
-    clearTimeout(timer)
-    lines.close()
-    child.kill()
-  }
-}
-
-/**
- * Runs every check, writing one line each to `out`; resolves true when none failed.
- *
- * `skip` names clients `setup` already found not answering, so they are reported without waiting
- * out their timeout again; `settled`, clients whose entries `setup` has just put in place and
- * reported on itself, so their lookups -- each one starting the server -- are not made twice.
- */
-export async function doctor(out = process.stdout, { quiet = false, settled = new Set(), skip = new Set() } = {}) {
+ * Runs every check, writing one line each to `out`; resolves true when none failed. */
+export async function doctor(out = process.stdout, { quiet = false } = {}) {
   const checks = report(out, quiet)
   const setup = cliCommand('setup')
 
@@ -171,7 +92,7 @@ export async function doctor(out = process.stdout, { quiet = false, settled = ne
 
   const credential = await tastytradeCredentialKind()
   if (credential.kind === 'none') {
-    checks.note('tastytrade is not connected: your agent gets market and research tools only',
+    checks.note('tastytrade is not connected: market and research tools only',
       `To see positions and trade, run: ${setup}`)
   } else if (credential.kind === 'ambiguous' || credential.kind === 'incomplete') {
     checks.fail(credential.kind === 'ambiguous'
@@ -190,57 +111,26 @@ export async function doctor(out = process.stdout, { quiet = false, settled = ne
     }
   }
 
-  let agentsFound = 0
-  for (const client of CLIENTS) {
-    if (settled.has(client.name)) {
-      agentsFound += 1
-      continue
-    }
-    const configured = skip.has(client.name) ? { state: 'failed' } : client.configured()
-    if (configured.state === 'uninstalled') continue
-    agentsFound += 1
-    // A per-folder entry is reported with its folder, or "has none" reads as "has none anywhere".
-    const inWhere = client.where ? ` in ${client.where}` : ''
-    // Run from setup, which has just tried to fix these itself, the fix given is the manual one;
-    // run alone, it is setup, which would fix them.
-    if (configured.state === 'failed') {
-      checks.fail(`${client.name} did not answer when asked for its ${MCP_SERVER_NAME} server`, `Once ${client.name} responds, run: ${setup}`)
-      // Every lookup below would wait out the same timeout.
-      continue
-    } else if (configured.state === 'missing') {
-      // A per-folder entry is missing only from the folder checked, and `setup` registers whatever
-      // folder it is run from, so the fix is the command for this folder rather than `setup`.
-      checks.fail(`${client.name} has no ${MCP_SERVER_NAME} server${inWhere}`, quiet || client.where
-        ? `Add it${quiet ? ' yourself' : ''} with: ${client.addCommand}${client.afterAdd ?? ''}`
-        : `Add it with: ${setup}`)
-    } else if (!inPlace(configured.target)) {
-      // The configured target is not printed: a client entry may carry a credential in a URL.
-      checks.fail(namesSpicytrade(configured.target)
-        ? `${client.name} starts spicytrade from an older install${inWhere}`
-        : `${client.name} has a different server named "${MCP_SERVER_NAME}"${inWhere}`,
-      namesSpicytrade(configured.target) && !quiet && !client.where
-        ? `Update it with: ${setup}`
-        : `Replace it: ${client.removeCommand()} && ${client.addCommand}${client.afterAdd ?? ''}`)
+  // Run from setup, which has just written the skill itself, there is nothing more to say of it.
+  const agents = quiet ? [] : await installedAgents()
+  for (const agent of agents) {
+    const state = await skillState(agent)
+    if (state === 'current') {
+      checks.pass(`${agent.name} has the spicytrade skill in ${workspaceName()}`)
+    } else if (state === 'foreign') {
+      checks.note(`${agent.name} has a different skill named "spicytrade" in ${workspaceName()}`,
+        'Rename or remove it if agents started in this folder should learn about spicytrade.')
     } else {
-      checks.pass(`${client.name} starts spicytrade${inWhere}`)
+      // The command works from any folder; the skill is only how an agent started here hears of it.
+      checks.note(state === 'outdated'
+        ? `${agent.name} has an older spicytrade skill in ${workspaceName()}`
+        : `${agent.name} has no spicytrade skill in ${workspaceName()}, so an agent started here is not told about it`,
+      `${state === 'outdated' ? 'Update' : 'Add'} it by running this in that folder: ${cliCommand('connect')}`)
     }
-    const wide = client.everywhere?.configured(MCP_SERVER_NAME)
-    if (wide?.state === 'configured' && namesSpicytrade(wide.target)) {
-      checks.fail(`${client.name} loads ${MCP_SERVER_NAME} in every folder, not only ${client.where ?? 'your workspace'}`, `Move it with: ${setup}`)
-    }
-  }
-
-  // A saved connection that cannot trade was reported above; the server would only answer with it again.
-  // And with no agent to start it, there is no server to speak of.
-  if (agentsFound && signedIn && credential.kind !== 'ambiguous' && credential.kind !== 'incomplete') {
-    const server = await checkServer()
-    // The server's own answer already ends in the command that fixes it.
-    if (server.ok) checks.pass('your agent can reach spicytrade', { always: true })
-    else checks.fail('your agent could not reach spicytrade', server.reason)
   }
   // Everything else may check out, but with no agent to use it nothing is connected yet.
   // Quiet, from setup, which said so at its start and closes on it: not a second, contradicting failure.
-  if (!agentsFound && !quiet) checks.fail('no agent found (Claude Code or Codex)', `Install one, then run: ${setup}`)
+  if (!quiet && !agents.length) checks.fail('no agent found (Claude Code or Codex)', `Install one, then run: ${setup}`)
 
   // A note -- tastytrade not connected -- is not a failure, but "everything is connected" would
   // say otherwise. Quiet, a clean run says nothing: setup's Ready block follows.

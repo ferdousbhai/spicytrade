@@ -248,13 +248,13 @@ export function ConnectScreen({ authError, owner, signedIn }: { authError?: stri
         <p>Open the agent you already use and paste this into your conversation:</p>
         <CopyBlock label="Message to your agent" value={CONNECT_PROMPT} />
         <p>
-          Your agent installs the local connector and connects it to the current workspace.
+          Your agent installs the spicytrade command and connects it in the current workspace.
           Approve the link it gives you, in any browser, and any desktop password dialog, then continue your conversation.
           Your credentials stay in this computer&apos;s keyring.
         </p>
         <p>Once connected, ask “How is my account doing?”</p>
         <p className="connect-note">
-          Account access needs an agent running on your own Linux or macOS computer, with shell access and local MCP support.
+          Account access needs an agent running on your own Linux or macOS computer, with shell access.
           It is not available on Windows. There, and in any other agent, market data and research below work without installing.
         </p>
       </section>

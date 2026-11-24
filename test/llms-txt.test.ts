@@ -20,18 +20,19 @@ describe('llms.txt', () => {
     expect(llmsTxt()).toContain('`/options/SYMBOL`')
   })
 
-  it('gives an existing agent a connector-only setup path and explicit refresh limits', () => {
+  it('gives an existing agent a setup path it runs itself, with nothing to register or restart', () => {
     expect(llmsTxt()).toContain(CONNECT_GUIDE_URL)
     const guide = connectGuide()
     expect(guide).toContain('--connector-only')
-    expect(guide).toContain('connect_spicytrade')
-    expect(guide).toContain('Configure only this harness')
-    expect(guide).toContain('Do not promise that every harness supports hot reload')
-    expect(guide).toContain('spicytrade integration')
-    // The agent does the setup; the user approves and, in Claude Code, restarts once.
-    expect(guide).toContain('run ~/.local/bin/spicytrade connect from the user\'s current workspace')
     expect(guide).toContain('If ~/.local/bin/spicytrade already exists, skip this step')
-    expect(guide).toContain('is replaced by the connector')
+    expect(guide).toContain('Run ~/.local/bin/spicytrade connect from the user\'s current workspace')
+    expect(guide).toContain('There is nothing to register with the agent and nothing to restart')
+    // The agent uses it from its own shell, and an order is never part of setup.
+    expect(guide).toContain('~/.local/bin/spicytrade tools')
+    expect(guide).toContain('~/.local/bin/spicytrade call <name>')
+    expect(guide).toContain('Do not place a trade as part of setup')
+    // Nothing of the stdio server the command used to register is left to follow.
+    for (const retired of ['connect_spicytrade', 'setup_required', 'spicytrade integration', 'claude mcp add']) expect(guide).not.toContain(retired)
   })
 
   it('carries the MCP guide in the full version, under the index rather than a second title', () => {

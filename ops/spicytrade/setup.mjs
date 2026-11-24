@@ -1,22 +1,22 @@
 import { createInterface } from 'node:readline/promises'
 
 import { grantMinter, grantRefused, TastytradeAuthError } from './broker-grants.mjs'
-import { CLIENTS, inPlace, namesSpicytrade } from './clients.mjs'
-import { cliCommand, MCP_SERVER_NAME } from './config.mjs'
+import { CliFailure } from './cli.mjs'
+import { cliCommand } from './config.mjs'
 import { doctor } from './doctor.mjs'
 import {
-  agentToken, commandInstalled, keyringFix, keyringHelperInstalled, keyringHelperMissing, keyringWritable,
+  agentToken, keyringFix, keyringHelperInstalled, keyringHelperMissing, keyringWritable,
   requireSupportedPlatform,
   tastytradeCredentialKind,
 } from './keyring.mjs'
 import { login } from './login.mjs'
-import { CliFailure, reconnectNote } from './cli.mjs'
+import { installedAgents, installSkill } from './skill.mjs'
 import { collectTastytrade, connectTastytrade, NotConnected } from './tastytrade-connect.mjs'
 import { checkAgentToken, describeTokenCheck } from './worker.mjs'
 
 /**
- * `spicytrade setup`: everything between a fresh machine and an agent that can reach
- * spicytrade, in one run. Each step looks before it acts and skips what is already done, so
+ * `spicytrade setup`: everything between a fresh machine and an agent that can use spicytrade,
+ * in one run. Each step looks before it acts and skips what is already done, so
  * running it again is also how a broken setup is repaired; `doctor` closes the run by checking
  * the result end to end.
  *
@@ -67,58 +67,6 @@ async function confirm(question) {
 }
 
 /**
- * Removes an entry that loads the server in every folder once the workspace's entry is in place,
- * and only when it is spicytrade's: an entry of that name pointing anywhere else is someone's own.
- */
-function removeStale(out, label, entry, scope, registered) {
-  const found = scope.configured(entry)
-  if (found.state !== 'configured') return
-  if (!namesSpicytrade(found.target)) {
-    out.write(`! ${label} has a different server named "${entry}"; left as it is\n`)
-  } else if (!registered) {
-    out.write(`· ${label} keeps its old ${entry} entry until ${MCP_SERVER_NAME} is in place\n`)
-  } else if (scope.remove(entry).ok) {
-    out.write(`✓ ${label}: removed an old ${entry} entry\n`)
-  } else {
-    out.write(`✗ ${label} did not remove an old ${entry} entry; remove it yourself with:\n    ${scope.removeCommand(entry)}\n`)
-  }
-}
-
-/** Registers `spicytrade mcp` with one client; true when its entry is in place afterwards. */
-export function register(out, client, configured) {
-  // Each way this can fail is reported once, by the check below, with its fix.
-  if (configured.state === 'failed') {
-    out.write(`· ${client.name} did not answer; see the check below\n`)
-    return false
-  }
-  if (configured.state === 'configured' && inPlace(configured.target)) {
-    out.write(`✓ ${client.name} already starts spicytrade; skipped\n`)
-    return true
-  }
-  if (configured.state === 'configured' && !namesSpicytrade(configured.target)) {
-    // Someone chose that entry; replacing it is theirs to decide.
-    out.write(`· ${client.name} already has a different server named "${MCP_SERVER_NAME}"; left as it is, see the check below\n`)
-    return false
-  }
-  // Spicytrade's own entry from an older install -- a copy of this CLI that is gone, a node that
-  // has moved, the website's address -- is replaced.
-  if (configured.state === 'configured' && !client.remove(MCP_SERVER_NAME).ok) {
-    out.write(`· ${client.name}: the old ${MCP_SERVER_NAME} entry was not replaced; see the check below\n`)
-    return false
-  }
-  const added = client.add()
-  if (!added.ok) {
-    out.write(`· ${client.name}: not added; see the check below\n`)
-    return false
-  }
-  // How to start each agent is said once, in the closing Ready block.
-  out.write(added.off === false
-    ? `! ${client.name}: added ${MCP_SERVER_NAME}, but ${client.offFailedNote}\n`
-    : `✓ ${client.name}: added ${MCP_SERVER_NAME}${client.where ? ` in ${client.where}` : ''}${client.offNote ?? ''}\n`)
-  return true
-}
-
-/**
  * Connects tastytrade -- collecting the grant `session`'s approval already started, or on a link
  * of its own -- reporting a failure without ending setup; true when it connected.
  */
@@ -135,8 +83,6 @@ async function tryConnect(out, session) {
 
 /** Runs every step, writing progress to `out`; resolves true when the closing doctor passes. */
 export async function setup(out = process.stdout) {
-  // Whether this run replaced a credential a running agent session may still hold.
-  let credentialsChanged = false
   requireSupportedPlatform()
   if (!await keyringHelperInstalled()) {
     const { install, name } = keyringHelperMissing()
@@ -148,7 +94,7 @@ export async function setup(out = process.stdout) {
   }
 
   // Said before the browser sign-in rather than after it: without an agent, nothing uses it.
-  const agentInstalled = (await Promise.all(CLIENTS.map((client) => commandInstalled(client.bin)))).some(Boolean)
+  const agentInstalled = (await installedAgents()).length > 0
   if (!agentInstalled) {
     // Only a heads-up: the run's closing line says what to do about it.
     out.write('· No Claude Code or Codex found; signing in anyway.\n')
@@ -171,28 +117,10 @@ export async function setup(out = process.stdout) {
     const fresh = (await tastytradeCredentialKind()).kind === 'none'
     const signedIn = await login(out, { tastytrade: fresh })
     if (fresh) session = signedIn
-    credentialsChanged = true
   }
 
-  // With an agent to add, the heading comes first: looking a client up can take a few seconds,
-  // which would otherwise pass with nothing on screen.
-  const agents = underHeading(out, 'Agents')
-  if (agentInstalled) agents.write('')
-  const ready = []
-  let alreadyInPlace = false
-  /** Clients that did not answer here; the check below reports them without asking again. */
-  const unanswered = new Set()
-  for (const client of CLIENTS) {
-    const configured = client.configured()
-    if (configured.state === 'uninstalled') continue
-    if (configured.state === 'failed') unanswered.add(client.name)
-    const registered = register(agents, client, configured)
-    // A client that did not answer would only make each lookup below wait out its timeout again.
-    if (configured.state === 'failed') continue
-    if (registered) ready.push(client)
-    if (configured.state === 'configured' && inPlace(configured.target)) alreadyInPlace = true
-    if (client.everywhere) removeStale(agents, `${client.name} (every folder)`, MCP_SERVER_NAME, client.everywhere, registered)
-  }
+  // The skill is how an agent started in this folder learns spicytrade is here.
+  await installSkill(underHeading(out, 'Agents'))
 
   step(out, 'tastytrade')
   const credential = await tastytradeCredentialKind()
@@ -217,7 +145,7 @@ export async function setup(out = process.stdout) {
     } else if (refused && !process.stdin.isTTY) {
       out.write('· tastytrade refused the saved connection; see the check below\n')
     } else if (refused && await confirm('tastytrade refused the saved connection. Reconnect now? [Y/n] ')) {
-      credentialsChanged = await tryConnect(out) || credentialsChanged
+      await tryConnect(out)
     } else if (refused) {
       out.write('· not reconnected\n')
     }
@@ -227,7 +155,7 @@ export async function setup(out = process.stdout) {
     if (!process.stdin.isTTY) {
       out.write(`· ${found}; see the check below\n`)
     } else if (await confirm(`${found}. Replace ${kind === 'ambiguous' ? 'them' : 'it'} with a new connection now? [Y/n] `)) {
-      credentialsChanged = await tryConnect(out) || credentialsChanged
+      await tryConnect(out)
     } else {
       out.write('· left as it is\n')
     }
@@ -235,21 +163,21 @@ export async function setup(out = process.stdout) {
     // The closing block says how to connect.
     out.write('· not connected: there is no terminal to ask on\n')
   } else if (await confirm('Connect tastytrade, so your agent can see your positions and place orders? [Y/n] ')) {
-    credentialsChanged = await tryConnect(out) || credentialsChanged
+    await tryConnect(out)
   } else {
     // The check below says what that leaves the agent and how to connect later.
     out.write('· skipped\n')
   }
 
   const checkStep = underHeading(out, 'Check')
-  if (agentInstalled) checkStep.write('Checking that your agent can reach spicytrade…\n')
-  const healthy = await doctor(checkStep, { quiet: true, settled: new Set(ready.map((client) => client.name)), skip: unanswered })
+  const healthy = await doctor(checkStep, { quiet: true })
   // Whatever else is wrong, the missing agent is the step that matters most here, so it is always said.
   if (!agentInstalled) out.write(`\n${healthy ? 'Signed in. ' : ''}Install Claude Code or Codex, then run: ${cliCommand('setup')}\n`)
-  if (ready.length) {
-    const starts = '  Return to your agent conversation and ask it to connect Spicytrade.\n'
+  // Said for any installed agent: one whose own skill of that name was left alone can still run the command.
+  if (agentInstalled) {
+    const starts = `  Ask your agent about a quote or your positions; it runs \`${cliCommand('tools')}\` to see what it can do.\n`
     const { kind } = await tastytradeCredentialKind()
-    // An agent that was added can start whatever else failed, so how to start it is always said;
+    // An agent can start whatever else failed, so how to go on is always said;
     // "Ready" is kept for a run with nothing left to fix.
     out.write(!healthy
       ? `\nContinue in your agent:\n${starts}`
@@ -257,8 +185,6 @@ export async function setup(out = process.stdout) {
         ? `\nAccount connected. Continue in your agent:\n${starts}`
         : `\nReady for market data and research. Continue in your agent:\n${starts}`
           + `To see positions and place orders, connect tastytrade: ${cliCommand('connect')}\n`)
-    // Only an agent that already had the server can be running on the credentials this run replaced.
-    if (credentialsChanged && alreadyInPlace) out.write(reconnectNote(ready.map((client) => client.id)))
   }
   return healthy
 }

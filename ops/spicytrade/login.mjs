@@ -10,7 +10,7 @@ import { postWorker } from './worker.mjs'
 
 /**
  * Signing this machine in to spicytrade: one link, approved in any browser, and the agent token
- * it yields kept in the OS keyring, where `spicytrade mcp` reads it.
+ * it yields kept in the OS keyring, where `spicytrade call` reads it.
  *
  * The link carries the SHA-256 of a verifier that never leaves this process (S256, as in RFC
  * 7636). The member approves on spicytrade's `/connect/agent` page, signed in there, on this
@@ -68,7 +68,7 @@ function connectCode(challenge) {
 
 /**
  * Ask once whether the member has approved: the token when they have, undefined while they have
- * not. One Worker call, so it gets the same budget as one forwarded MCP call. A refusal is
+ * not. One Worker call, so it gets the same budget as one MCP call. A refusal is
  * described by its status in this CLI's own words, never the answer's body.
  */
 async function collect(codeVerifier, previousToken) {

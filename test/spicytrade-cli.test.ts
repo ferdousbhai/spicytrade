@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { chmod, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { type IncomingMessage, type Server } from 'node:http'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -11,46 +11,77 @@ import { closeLoopback, listenLoopback } from './loopback.ts'
 
 /*
  * `spicytrade` end to end against a stand-in Worker, with every tool it drives replaced on PATH:
- * a file-backed `secret-tool`, an `xdg-open` that records the URL, and `claude`/`codex` whose
- * entries are files, Claude Code's by scope. PATH holds only those and the system directories, so
- * a run never reaches the real keyring, a real browser, or the agent clients installed on the
- * machine running the tests.
+ * a file-backed `secret-tool`, an `xdg-open` that records the URL, and, where a test has an agent
+ * installed, a `claude` or `codex` that only records that it was run -- the CLI looks for them and
+ * never runs them. PATH holds only those and the system directories, the home directory and the
+ * workspace are inside the test's own temporary directory, so a run never reaches the real
+ * keyring, a real browser, or the folders and agents of the machine running the tests.
  */
 
 const OLD_TOKEN = 'spice_0123456789abcdef_OLDOLDOLDOLDOLDOLDOL'
 const NEW_TOKEN = 'spice_fedcba9876543210_NEWNEWNEWNEWNEWNEWNE'
 const APP_REFRESH_TOKEN = 'app-refresh-token-that-belongs-in-the-keyring'
+/** The access token the stand-in Worker mints for the app grant. */
+const MINTED_ACCESS_TOKEN = 'minted-access-token'
 const CLI = 'ops/spicytrade/spicytrade.mjs'
 /**
- * The PATH every run gets: the fakes, this test's own node, and the system directories. The node
- * is needed because the agent's server starts through `#!/usr/bin/env node`, as an agent starts
- * it with the member's PATH; a build machine may have no node in the system directories at all.
+ * How the CLI names itself in a message when it is run from this checkout: by its absolute path,
+ * since neither PATH nor the temporary home leads to it.
  */
+const SPICYTRADE = resolve(CLI)
+/** The PATH every run gets: the fakes, this test's own node, and the system directories. */
 const TEST_PATH = (bin: string) => `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`
 
-/** The command line `setup` registers: this CLI by absolute path, run through its shebang. */
-const MCP_TARGET = `${resolve(CLI)} mcp`
-/** An entry for a copy of the CLI that is no longer on disk, as an older install leaves behind. */
-const GONE_TARGET = '/gone/spicytrade/spicytrade.mjs mcp'
+/** A signed-in computer with tastytrade connected through spicytrade's app. */
+const CONNECTED = { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN }
+
+type Agent = 'claude' | 'codex'
+/** Where each agent looks for a folder's skills, relative to that folder. */
+const SKILL_FILES = {
+  claude: join('.claude', 'skills', 'spicytrade', 'SKILL.md'),
+  codex: join('.agents', 'skills', 'spicytrade', 'SKILL.md'),
+} satisfies Record<Agent, string>
+/** A skill a member wrote under the same name: no marker of the CLI's, so it is theirs. */
+const FOREIGN_SKILL = '---\nname: spicytrade\ndescription: My own notes on the spice trade.\n---\n\nMine.\n'
+/** The file a fake agent appends its command line to, if anything ever runs it. */
+const AGENT_RUNS = 'agent-runs'
+
+/** The closing lines the commands share, as the source words them. */
+const ASK_YOUR_AGENT = `  Ask your agent about a quote or your positions; it runs \`${SPICYTRADE} tools\` to see what it can do.\n`
+const OTHER_FOLDERS = 'If you connected from other folders too, delete the spicytrade folder under .claude/skills or .agents/skills in each.\n'
+const connected = (who: string) => `Account connected and live snapshot verified. ${who}. List what it can do with \`${SPICYTRADE} tools\`.\n`
+const AGENTS_CAN_USE_IT = connected('Agents started in ~/workspace can use it now')
+const NO_AGENT_TO_TELL = connected('No Claude Code or Codex was found on this computer to tell about it')
 
 const ExchangeBodySchema = z.strictObject({
   codeVerifier: z.string(),
   previousToken: z.string().optional(),
 })
+const McpRequestSchema = z.object({
+  id: z.number().optional(),
+  method: z.string(),
+  params: z.object({ name: z.string().optional() }).optional(),
+})
 
-type WorkerCall = { authorization?: string; body: string; path: string }
+type Answer = { body?: unknown; status: number }
+type ToolResult = { content: { text: string; type: 'text' }[]; isError?: boolean }
+type WorkerCall = { body: string; headers: IncomingMessage['headers']; method?: string; path: string }
 
 const servers: Server[] = []
 const children: ChildProcess[] = []
 const directories: string[] = []
+const machines: Machine[] = []
 
 afterEach(async () => {
   for (const child of children.splice(0)) child.kill('SIGKILL')
   await Promise.all(servers.splice(0).map(closeLoopback))
+  const kept = await Promise.all(machines.splice(0).map((machine) => readdir(machine.state)))
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { force: true, recursive: true })))
+  // Whatever the test was about, no command in it ran an agent: they are only looked for.
+  for (const files of kept) expect(files).not.toContain(AGENT_RUNS)
 })
 
-async function serve(handler: (request: IncomingMessage, body: string) => { body?: unknown; status: number }): Promise<number> {
+async function serve(handler: (request: IncomingMessage, body: string) => Answer): Promise<number> {
   const { port, server } = await listenLoopback((request, body, response) => {
     const answer = handler(request, body)
     response.writeHead(answer.status, { 'content-type': 'application/json' })
@@ -60,144 +91,114 @@ async function serve(handler: (request: IncomingMessage, body: string) => { body
   return port
 }
 
+/** The answer `read_account_snapshot` gives for a live account, as `connect` verifies it. */
+function liveSnapshot(): ToolResult {
+  const netLiquidatingValue = 1234
+  return { content: [{ text: JSON.stringify({ asOf: new Date().toISOString(), balances: { netLiquidatingValue }, source: 'tastytrade' }), type: 'text' }] }
+}
+
 /**
- * A Worker that accepts `acceptedTokens` on `/mcp` and on the app-grant mint, and answers each
- * poll of the sign-in exchange with `exchange()`: by default, a member who has already approved.
+ * A Worker that accepts `acceptedTokens` on `/mcp`, on the app-grant mint and on the collection of
+ * a tastytrade grant. It answers each poll of the sign-in exchange with `exchange()`, by default a
+ * member who has already approved; each poll for the grant with `grant()`, by default a browser
+ * already back from tastytrade; and a tool call on `/mcp` with `snapshot()`, by default a live
+ * account snapshot.
  */
-async function fakeWorker(acceptedTokens: string[], exchange: () => { body: unknown; status: number } = () => ({
-  body: { token: NEW_TOKEN, tokenMetadata: { createdAt: '2026-09-28T00:00:00Z', label: 'test', tokenId: '0123456789abcdef' } },
-  status: 200,
-})) {
+async function fakeWorker(acceptedTokens: string[], { exchange, grant, snapshot = liveSnapshot }: {
+  exchange?: () => Answer
+  grant?: () => Answer
+  snapshot?: () => ToolResult
+} = {}) {
   const calls: WorkerCall[] = []
   const port = await serve((request, body) => {
     const path = request.url ?? ''
-    calls.push({ authorization: request.headers.authorization, body, path })
+    calls.push({ body, headers: request.headers, method: request.method, path })
     if (path === '/api/agent-logins/exchange') {
-      const answer = exchange()
+      const answer = exchange?.() ?? {
+        body: { token: NEW_TOKEN, tokenMetadata: { createdAt: '2026-09-28T00:00:00Z', label: 'test', tokenId: '0123456789abcdef' } },
+        status: 200,
+      }
       if (answer.status === 200) acceptedTokens.push(NEW_TOKEN)
       return answer
     }
     const accepted = acceptedTokens.some((token) => request.headers.authorization === `Bearer ${token}`)
     if (!accepted) return { body: { error: 'invalid_token' }, status: 401 }
-    if (path === '/api/brokers/tastytrade/token') return { body: { accessToken: 'minted', expiresIn: 900 }, status: 200 }
+    if (path === '/api/brokers/tastytrade/exchange') return grant?.() ?? { body: { refreshToken: APP_REFRESH_TOKEN }, status: 200 }
+    if (path === '/api/brokers/tastytrade/token') return { body: { accessToken: MINTED_ACCESS_TOKEN, expiresIn: 900 }, status: 200 }
     if (path !== '/mcp') return { body: {}, status: 200 }
-    const { id, method } = JSON.parse(body)
-    return { body: { id, jsonrpc: '2.0', result: method === 'initialize' ? { protocolVersion: '2025-06-18' } : { tools: [] } }, status: 200 }
+    const { id, method } = McpRequestSchema.parse(JSON.parse(body))
+    return { body: { id, jsonrpc: '2.0', result: method === 'tools/call' ? snapshot() : { tools: [] } }, status: 200 }
   })
   return { calls, port }
 }
 
+/** The tool calls a Worker received: each one's tool, and the broker token that came with it. */
+function toolCalls(calls: WorkerCall[]) {
+  return calls.filter((call) => call.path === '/mcp')
+    .map((call) => ({ brokerToken: call.headers['x-spicy-trade-broker-token'], request: McpRequestSchema.parse(JSON.parse(call.body)) }))
+    .filter(({ request }) => request.method === 'tools/call')
+    .map(({ brokerToken, request }) => ({ brokerToken, name: request.params?.name }))
+}
+
 type Machine = {
   bin: string
-  config: string
   home: string
   state: string
   workspace: string
 }
 
 /**
- * A machine: the fake tools, a home directory, and the state the fakes keep. `clients` names which
- * agent CLIs are installed, each with the entries it already holds, by name to target -- a URL, or
- * a command line. A Claude
- * Code entry's name carries its scope, `local:` for the workspace's or `user:` for every
- * folder's; the fake answers a local entry only from inside the workspace, and prefers it there
- * the way Claude Code does.
+ * A machine: the fake tools, a home directory, and the state the fakes keep. `agents` names which
+ * agent CLIs are installed. An installed agent is nothing but an executable of that name on PATH,
+ * which is all the CLI looks for; run, it records its command line in `state`, and every test ends
+ * by checking that none was.
  */
-async function fakeMachine(
-  keyring: Record<string, string>,
-  clients: Record<string, Record<string, string>> = {},
-): Promise<Machine> {
+async function fakeMachine(keyring: Record<string, string>, agents: Agent[] = []): Promise<Machine> {
   const bin = await fakeSecretTool(keyring)
   directories.push(bin)
   const state = join(bin, 'state')
   const home = join(bin, 'home')
-  const config = join(home, '.config')
   const workspace = join(home, 'workspace')
   await mkdir(state)
-  await mkdir(config, { recursive: true })
+  await mkdir(home)
   await writeFile(join(bin, 'xdg-open'), `#!/usr/bin/env bash\necho "$1" > '${state}/opened'\n`)
-  for (const [client, entries] of Object.entries(clients)) {
-    for (const [name, target] of Object.entries(entries)) {
-      await writeFile(join(state, `${client}-${name.replace(':', '-')}-target`), target)
-      if (name.startsWith('local:')) await mkdir(workspace, { recursive: true })
-    }
-    await writeFile(join(bin, client), client === 'claude' ? `#!/usr/bin/env bash
-state='${state}'
-echo "$*" >> "$state/claude-calls"
-here=$(pwd -P); workspace=$(cd '${workspace}' 2>/dev/null && pwd -P)
-[[ $here == "$workspace" ]] && scopes='local user' || scopes='user'
-if [[ $2 == get ]]; then
-  for scope in $scopes; do
-    entry="$state/claude-$scope-$3-target"
-    [[ -f "$entry" ]] || continue
-    read -r command args < "$entry"
-    if [[ $command == http* ]]; then
-      printf '%s:\\n  Scope: %s config\\n  Type: http\\n  URL: %s\\n' "$3" "\${scope^}" "$command"
-    else
-      printf '%s:\\n  Scope: %s config\\n  Type: stdio\\n  Command: %s\\n  Args: %s\\n' "$3" "\${scope^}" "$command" "$args"
-    fi
-    exit 0
-  done
-  exit 1
-elif [[ $2 == add ]]; then
-  [[ $4 == local && $here != "$workspace" ]] && exit 1
-  scope=$4 name=$5
-  shift 6
-  echo "$*" > "$state/claude-$scope-$name-target"
-elif [[ $2 == remove ]]; then
-  rm "$state/claude-$5-$3-target"
-fi
-` : `#!/usr/bin/env bash
-state='${state}'
-echo "$*" >> "$state/codex-calls"
-if [[ $2 == get ]]; then
-  entry="$state/codex-$3-target"
-  [[ -f "$entry" ]] || exit 1
-  read -r command args < "$entry"
-  if [[ $command == http* ]]; then
-    printf '{"name":"%s","transport":{"type":"streamable_http","url":"%s"}}' "$3" "$command"
-  else
-    printf '{"name":"%s","transport":{"type":"stdio","command":"%s","args":["%s"]}}' "$3" "$command" "\${args// /\\",\\"}"
-  fi
-elif [[ $2 == add ]]; then
-  name=$3
-  shift 4
-  echo "$*" > "$state/codex-$name-target"
-  mkdir -p "$CODEX_HOME" && printf '[mcp_servers.%s]\\ncommand = "%s"\\n' "$name" "$1" >> "$CODEX_HOME/config.toml"
-elif [[ $2 == remove ]]; then
-  rm "$state/codex-$3-target"
-fi
-`)
-  }
-  for (const tool of ['xdg-open', ...Object.keys(clients)]) await chmod(join(bin, tool), 0o755)
-  return { bin, config, home, state, workspace }
+  for (const agent of agents) await writeFile(join(bin, agent), `#!/usr/bin/env bash\necho "${agent} $*" >> '${state}/${AGENT_RUNS}'\n`)
+  for (const tool of ['xdg-open', ...agents]) await chmod(join(bin, tool), 0o755)
+  const machine = { bin, home, state, workspace }
+  machines.push(machine)
+  return machine
 }
 
 /**
- * Runs the CLI on `machine`. The tests' own environment is passed on without CLAUDECODE, which is
- * set when they run inside Claude Code and would change what `connect` checks. `env` adds to it,
- * an undefined value removing that variable; `cwd` is the folder the CLI is run from.
+ * Runs the CLI on `machine`: its home, its PATH, the stand-in Worker, and its workspace. The tests'
+ * own environment is passed on without CLAUDECODE, which is set when they run inside Claude Code.
+ * `env` adds to it, an undefined value removing that variable; `cwd` is the folder the CLI is run
+ * from, and `script` the copy of the CLI to run when it is not this checkout's.
+ *
+ * The CLI writes into its workspace and reads its home, so a run whose workspace or home would be
+ * outside the machine's own temporary directory is refused before anything is started.
  */
 function run(
   machine: Machine,
   workerPort: number,
   args: string[],
-  { cwd, env = {} }: { cwd?: string; env?: Record<string, string | undefined> } = {},
+  { cwd, env = {}, script = SPICYTRADE }: { cwd?: string; env?: Record<string, string | undefined>; script?: string } = {},
 ) {
   let stdout = ''
   let stderr = ''
   const { CLAUDECODE: _inherited, ...inherited } = process.env
   const environment = {
     ...inherited,
-    CODEX_HOME: join(machine.home, '.codex'),
     HOME: machine.home,
     PATH: TEST_PATH(machine.bin),
     SPICYTRADE_MCP_URL: `http://127.0.0.1:${workerPort}/mcp`,
     SPICYTRADE_WORKSPACE: machine.workspace,
-    XDG_CONFIG_HOME: machine.config,
     ...env,
   }
-  const child = spawn(process.execPath, [resolve(CLI), ...args], {
+  for (const folder of [environment.HOME, environment.SPICYTRADE_WORKSPACE ?? cwd]) {
+    if (!folder?.startsWith(`${machine.bin}/`)) throw new Error('a test run must keep its home and its workspace inside the test machine')
+  }
+  const child = spawn(process.execPath, [script, ...args], {
     cwd,
     env: Object.fromEntries(Object.entries(environment).filter(([, value]) => value !== undefined)),
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -217,21 +218,33 @@ async function approvalUrl(output: () => { stdout: string }): Promise<URL> {
   return new URL(printed)
 }
 
+function skillFile(machine: Machine, agent: Agent, workspace = machine.workspace) {
+  return join(workspace, SKILL_FILES[agent])
+}
+
+/** Puts a member's own skill where the CLI would write its own for `agent`. */
+async function writeForeignSkill(machine: Machine, agent: Agent) {
+  await mkdir(dirname(skillFile(machine, agent)), { recursive: true })
+  await writeFile(skillFile(machine, agent), FOREIGN_SKILL)
+}
+
+/** Whether nothing exists at `path`. */
+async function absent(path: string) {
+  return stat(path).then(() => false, () => true)
+}
+
 /*
  * Signing in on its own link: tastytrade is already connected on these computers, so the link
  * `setup` prints goes no further than the sign-in.
  */
 describe('signing in again', () => {
   it('prints one link, polls with its verifier until the member approves, and keeps only the token', async () => {
-    const machine = await fakeMachine(
-      { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN },
-      { claude: { 'local:spicytrade': MCP_TARGET } },
-    )
+    const machine = await fakeMachine(CONNECTED, ['claude'])
     // The member approves between the first poll and the second.
     let polls = 0
-    const worker = await fakeWorker([], () => (polls++ === 0
-      ? { body: { pending: true }, status: 202 }
-      : { body: { token: NEW_TOKEN }, status: 200 }))
+    const worker = await fakeWorker([], {
+      exchange: () => (polls++ === 0 ? { body: { pending: true }, status: 202 } : { body: { token: NEW_TOKEN }, status: 200 }),
+    })
     const cli = run(machine, worker.port, ['setup'])
     const url = await approvalUrl(cli.output)
 
@@ -255,7 +268,7 @@ describe('signing in again', () => {
       // along so the Worker retires it rather than leaving this machine with two.
       expect(createHash('sha256').update(body.codeVerifier).digest('base64url')).toBe(challenge)
       expect(body.previousToken).toBe(OLD_TOKEN)
-      expect(exchange.authorization).toBeUndefined()
+      expect(exchange.headers.authorization).toBeUndefined()
     }
 
     const { stderr, stdout } = cli.output()
@@ -263,14 +276,16 @@ describe('signing in again', () => {
       expect(stdout).not.toContain(secret)
       expect(stderr).not.toContain(secret)
     }
+    expect(stdout).toContain('This computer was signed out of spicytrade (revoked under Signed-in computers); signing in again.\n')
     expect(stdout).toContain('✓ Signed in.')
-    // Nothing to restart: each agent session reads the keyring when it starts.
-    expect(stdout).toContain('picks this up once it reconnects')
+    // Every call reads the keyring as it stands, so nothing has to restart or reconnect.
+    expect(stdout).not.toMatch(/reconnect|restart/i)
+    expect(stdout).toContain(`\nAccount connected. Continue in your agent:\n${ASK_YOUR_AGENT}`)
     await expect.poll(() => readFile(join(machine.state, 'opened'), 'utf8').catch(() => '')).toContain('/connect/agent?')
   }, 60_000)
 
   it('opens no browser over SSH, where the member opens the link on their own device', async () => {
-    const machine = await fakeMachine({ 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN }, { claude: {} })
+    const machine = await fakeMachine({ 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN }, ['claude'])
     const worker = await fakeWorker([])
     const cli = run(machine, worker.port, ['setup'], { env: { SSH_CONNECTION: '203.0.113.7 50000 203.0.113.8 22' } })
     expect(await cli.exited).toBe(0)
@@ -283,8 +298,8 @@ describe('signing in again', () => {
     [409, { error: 'At most 5 agent tokens' }, 'Revoke one you no longer'],
     [503, { error: 'unavailable' }, 'spicytrade could not finish the sign-in (HTTP 503)'],
   ])('reports an exchange refused with %i in its own words, keeping the old token', async (status, answer, message) => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN })
-    const worker = await fakeWorker([], () => ({ body: answer, status }))
+    const machine = await fakeMachine(CONNECTED)
+    const worker = await fakeWorker([], { exchange: () => ({ body: answer, status }) })
     const cli = run(machine, worker.port, ['setup'])
     expect(await cli.exited).toBe(1)
     expect(cli.output().stderr).toContain(message)
@@ -296,46 +311,36 @@ describe('signing in again', () => {
 })
 
 describe('spicytrade doctor', () => {
-  it('does not report a successful handshake for an unrelated MCP result', async () => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN }, { claude: { 'local:spicytrade': MCP_TARGET } })
-    const port = await serve(() => ({ status: 200, body: { id: 1, jsonrpc: '2.0', result: { tools: [] } } }))
-    const cli = run(machine, port, ['doctor'])
-    expect(await cli.exited).toBe(1)
-    expect(cli.output().stdout).toContain('it answered with something other than MCP.')
-    expect(cli.output().stdout).not.toContain('✓ your agent can reach spicytrade')
-  }, 30_000)
-
   it('passes every check on a machine that is fully connected', async () => {
-    const machine = await fakeMachine(
-      { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN },
-      { claude: { 'local:spicytrade': MCP_TARGET } },
-    )
+    const machine = await fakeMachine(CONNECTED, ['claude'])
     const worker = await fakeWorker([OLD_TOKEN])
+    expect(await run(machine, worker.port, ['connect']).exited).toBe(0)
 
     const cli = run(machine, worker.port, ['doctor'])
     expect(await cli.exited).toBe(0)
     const { stdout } = cli.output()
-    expect(stdout).toContain('✓ signed in to spicytrade')
-    expect(stdout).toContain('✓ tastytrade is connected')
-    // The server was started exactly as an agent starts it, and its relay reached the Worker.
-    expect(stdout).toContain('✓ your agent can reach spicytrade')
-    expect(worker.calls.some((call) => call.path === '/mcp' && call.body.includes('"initialize"'))).toBe(true)
-    expect(stdout).toContain('✓ Claude Code starts spicytrade')
-    expect(stdout).not.toContain('✗')
-    expect(stdout).toContain('Everything is connected.')
+    expect(stdout).toBe('✓ signed in to spicytrade\n'
+      + '✓ tastytrade is connected\n'
+      + '✓ Claude Code has the spicytrade skill in ~/workspace\n'
+      + '\nEverything is connected.\n')
     expect(stdout).not.toContain(OLD_TOKEN)
     expect(stdout).not.toContain(APP_REFRESH_TOKEN)
-  }, 30_000)
+  }, 60_000)
 
-  it('does not call a computer without tastytrade fully connected', async () => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN }, { claude: { 'local:spicytrade': MCP_TARGET } })
+  it('notes what is not connected and a folder without the skill, without calling either a problem', async () => {
+    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN }, ['claude'])
     const worker = await fakeWorker([OLD_TOKEN])
     const cli = run(machine, worker.port, ['doctor'])
     expect(await cli.exited).toBe(0)
-    const { stdout } = cli.output()
-    expect(stdout).toContain('· tastytrade is not connected: your agent gets market and research tools only')
-    expect(stdout).toContain('Everything else is working.')
-    expect(stdout).not.toContain('Everything is connected.')
+    // The skill's note names the command that writes it, and the folder to run it in.
+    expect(cli.output().stdout).toBe('✓ signed in to spicytrade\n'
+      + '· tastytrade is not connected: market and research tools only\n'
+      + `    To see positions and trade, run: ${SPICYTRADE} setup\n`
+      + '· Claude Code has no spicytrade skill in ~/workspace, so an agent started here is not told about it\n'
+      + `    Add it by running this in that folder: ${SPICYTRADE} connect\n`
+      + '\nEverything else is working.\n')
+    // It checks without changing anything: the workspace was not even created.
+    expect(await absent(machine.workspace)).toBe(true)
   }, 30_000)
 
   it('names a mistyped command rather than only reprinting the usage', async () => {
@@ -346,139 +351,327 @@ describe('spicytrade doctor', () => {
     expect(cli.output().stderr).toMatch(/^spicytrade: unknown command "stup"\n\nUsage: spicytrade <command>/)
   }, 30_000)
 
-  it.each(['login', 'connect-tastytrade'])('no longer knows %s, which connect now covers', async (removed) => {
-    const machine = await fakeMachine({})
-    const worker = await fakeWorker([])
+  it.each(['login', 'connect-tastytrade', 'mcp', 'start', 'integration'])('no longer knows %s', async (removed) => {
+    const machine = await fakeMachine(CONNECTED, ['claude', 'codex'])
+    const worker = await fakeWorker([OLD_TOKEN])
     const cli = run(machine, worker.port, [removed])
     expect(await cli.exited).toBe(2)
-    expect(cli.output().stderr).toContain(`spicytrade: unknown command "${removed}"`)
+    expect(cli.output().stderr).toMatch(new RegExp(`^spicytrade: unknown command "${removed}"\n\nUsage: spicytrade <command>`))
+    expect(cli.output().stdout).toBe('')
+    expect(worker.calls).toEqual([])
+    expect(await absent(machine.workspace)).toBe(true)
+  }, 30_000)
+
+  it.each(['connect', 'doctor', 'guide', 'setup', 'uninstall'])('refuses arguments to %s, which takes none, before doing anything', async (command) => {
+    const machine = await fakeMachine(CONNECTED, ['claude'])
+    const worker = await fakeWorker([OLD_TOKEN])
+    const cli = run(machine, worker.port, [command, 'extra'])
+    expect(await cli.exited).toBe(2)
+    expect(cli.output().stderr).toMatch(new RegExp(`^spicytrade ${command}: takes no arguments\n\nUsage: spicytrade <command>`))
+    expect(worker.calls).toEqual([])
+    expect(await readFile(join(machine.bin, 'store', 'spicytrade_mcp-token'), 'utf8')).toBe(OLD_TOKEN)
+  }, 30_000)
+
+  it('takes arguments for tools and call, and says how each is used when they are wrong', async () => {
+    const machine = await fakeMachine(CONNECTED)
+    const worker = await fakeWorker([OLD_TOKEN])
+    const tools = run(machine, worker.port, ['tools', 'one', 'two'])
+    expect(await tools.exited).toBe(1)
+    expect(tools.output().stderr).toBe(`spicytrade tools: takes at most one tool name. Usage: ${SPICYTRADE} tools [name]\n`)
+    const call = run(machine, worker.port, ['call'])
+    expect(await call.exited).toBe(1)
+    expect(call.output().stderr).toBe('spicytrade call: takes a tool name and its arguments as one JSON object.'
+      + ` Usage: ${SPICYTRADE} call <tool> '<json arguments>'\n`)
     expect(worker.calls).toEqual([])
   }, 30_000)
 
-  it('names each broken link with the command that fixes it', async () => {
-    const machine = await fakeMachine(
-      { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN },
-      { claude: { 'local:spicytrade': 'https://elsewhere.example/mcp?key=a-credential-in-a-url' }, codex: {} },
-    )
+  it('reports a revoked sign-in once, with the command that fixes it', async () => {
+    const machine = await fakeMachine(CONNECTED, ['claude', 'codex'])
     const worker = await fakeWorker([])
 
     const cli = run(machine, worker.port, ['doctor'])
     expect(await cli.exited).toBe(1)
-    const { stdout } = cli.output()
-    expect(stdout).toMatch(/✗ this computer was signed out of spicytrade \(revoked under Signed-in computers\)\n {4}Sign in again with: \S*spicytrade(\.mjs)? setup/)
-    // The tastytrade mint and the server both go through spicytrade, so the one refused sign-in
-    // is reported once, not again as a failure of each.
-    expect(stdout).not.toContain('tastytrade:')
-    expect(stdout).not.toContain('MCP server')
-    expect(stdout).toContain('✗ Claude Code has a different server named "spicytrade" in ~/workspace\n'
-      + `    Replace it: cd ${machine.workspace} && claude mcp remove spicytrade --scope local && mkdir -p ${machine.workspace} && `
-      + `cd ${machine.workspace} && claude mcp add --scope local spicytrade -- ${MCP_TARGET}`)
-    expect(stdout).toMatch(/✗ Codex has no spicytrade server\n {4}Add it with: \S+ setup/)
-    expect(stdout).not.toContain('a-credential-in-a-url')
-    expect(stdout).toContain('3 problems found.')
+    // The tastytrade mint goes through spicytrade, so the one refused sign-in is reported once,
+    // not again as a failure of the connection. A missing skill is a note beside it, not a problem.
+    expect(cli.output().stdout).toBe('✗ this computer was signed out of spicytrade (revoked under Signed-in computers)\n'
+      + `    Sign in again with: ${SPICYTRADE} setup\n`
+      + '· Claude Code has no spicytrade skill in ~/workspace, so an agent started here is not told about it\n'
+      + `    Add it by running this in that folder: ${SPICYTRADE} connect\n`
+      + '· Codex has no spicytrade skill in ~/workspace, so an agent started here is not told about it\n'
+      + `    Add it by running this in that folder: ${SPICYTRADE} connect\n`
+      + '\n1 problem found.\n')
+    expect(worker.calls.some((call) => call.path === '/api/brokers/tastytrade/token')).toBe(false)
   }, 30_000)
 
-  it('counts another copy of the CLI still on disk as in place, and one that is gone as an older install', async () => {
-    const machine = await fakeMachine(
-      { 'spicytrade/mcp-token': OLD_TOKEN },
-      { claude: { 'local:spicytrade': GONE_TARGET, 'user:spicytrade': GONE_TARGET }, codex: { spicytrade: GONE_TARGET } },
-    )
-    // A developer's folder starts a checkout while another copy, here the one under test, checks it.
-    const copy = join(machine.home, 'checkout', 'ops', 'spicytrade', 'spicytrade.mjs')
-    await mkdir(dirname(copy), { recursive: true })
-    await writeFile(copy, '')
-    const entry = join(machine.state, 'claude-local-spicytrade-target')
-    await writeFile(entry, `${copy} mcp`)
+  it('fails on a machine with no agent', async () => {
+    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN })
     const worker = await fakeWorker([OLD_TOKEN])
-
     const cli = run(machine, worker.port, ['doctor'])
     expect(await cli.exited).toBe(1)
-    const { stdout } = cli.output()
-    expect(stdout).toContain('✓ Claude Code starts spicytrade in ~/workspace\n')
-    expect(stdout).toMatch(/✗ Codex starts spicytrade from an older install\n {4}Update it with: \S+ setup/)
-    // An entry in every folder loads trading tools in this code's own checkout.
-    expect(stdout).toMatch(/✗ Claude Code loads spicytrade in every folder, not only ~\/workspace\n {4}Move it with: \S+ setup/)
-    expect(stdout).toContain('2 problems found.')
-
-    // Setup agrees: the copy on disk is left as the developer registered it, the gone one replaced.
-    const setup = run(machine, worker.port, ['setup'])
-    expect(await setup.exited).toBe(0)
-    expect(setup.output().stdout).toContain('✓ Claude Code already starts spicytrade; skipped')
-    expect(await readFile(entry, 'utf8')).toBe(`${copy} mcp`)
-    expect(await readFile(join(machine.state, 'codex-spicytrade-target'), 'utf8')).toBe(`${MCP_TARGET}\n`)
-  }, 60_000)
+    expect(cli.output().stdout).toContain(`✗ no agent found (Claude Code or Codex)\n    Install one, then run: ${SPICYTRADE} setup\n`)
+    expect(cli.output().stdout).toContain('\n1 problem found.\n')
+  }, 30_000)
 })
 
-describe('the workspace an agent loads spicytrade in', () => {
-  it('is the folder doctor and setup run from, named in what they report and in the fix', async () => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN }, { claude: {} })
-    await mkdir(machine.workspace, { recursive: true })
+describe('the skill that tells an agent about spicytrade', () => {
+  it('is written for each installed agent where that agent looks, and skipped on a second run', async () => {
+    const machine = await fakeMachine(CONNECTED, ['claude', 'codex'])
+    const worker = await fakeWorker([OLD_TOKEN])
+
+    const first = run(machine, worker.port, ['connect'])
+    expect(await first.exited).toBe(0)
+    const firstOut = first.output().stdout
+    expect(firstOut).toContain('✓ Claude Code: added the spicytrade skill in ~/workspace\n'
+      + '✓ Codex: added the spicytrade skill in ~/workspace\n'
+      + AGENTS_CAN_USE_IT)
+    expect(firstOut.endsWith(AGENTS_CAN_USE_IT)).toBe(true)
+    // The connection was verified by reading the account the way an agent will: one tool call
+    // straight to the Worker, carrying a freshly minted broker token.
+    expect(toolCalls(worker.calls)).toEqual([{ brokerToken: MINTED_ACCESS_TOKEN, name: 'read_account_snapshot' }])
+
+    const skill = await readFile(skillFile(machine, 'claude'), 'utf8')
+    expect(skill).toMatch(/^---\nname: spicytrade\ndescription: \S.*\n---\n/)
+    for (const command of ['spicytrade tools', 'spicytrade call', 'spicytrade guide', 'spicytrade connect']) expect(skill).toContain(command)
+    expect(await readFile(skillFile(machine, 'codex'), 'utf8')).toBe(skill)
+    // Nothing else is put in the workspace, and no credential is written into it.
+    expect((await readdir(machine.workspace)).sort()).toEqual(['.agents', '.claude'])
+    for (const secret of [OLD_TOKEN, APP_REFRESH_TOKEN, MINTED_ACCESS_TOKEN]) {
+      expect(skill).not.toContain(secret)
+      expect(firstOut).not.toContain(secret)
+    }
+
+    const written = await Promise.all([stat(skillFile(machine, 'claude')), stat(skillFile(machine, 'codex'))])
+    const second = run(machine, worker.port, ['connect'])
+    expect(await second.exited).toBe(0)
+    expect(second.output().stdout).toContain('✓ Claude Code already has the spicytrade skill in ~/workspace; skipped\n'
+      + '✓ Codex already has the spicytrade skill in ~/workspace; skipped\n'
+      + AGENTS_CAN_USE_IT)
+    const kept = await Promise.all([stat(skillFile(machine, 'claude')), stat(skillFile(machine, 'codex'))])
+    expect(kept.map((file) => file.mtimeMs)).toEqual(written.map((file) => file.mtimeMs))
+    expect(await readFile(skillFile(machine, 'claude'), 'utf8')).toBe(skill)
+  }, 60_000)
+
+  it('is written for no agent that is not installed', async () => {
+    const machine = await fakeMachine(CONNECTED, ['codex'])
+    const worker = await fakeWorker([OLD_TOKEN])
+    const cli = run(machine, worker.port, ['connect'])
+    expect(await cli.exited).toBe(0)
+    const { stdout } = cli.output()
+    expect(stdout).toContain(`✓ Codex: added the spicytrade skill in ~/workspace\n${AGENTS_CAN_USE_IT}`)
+    expect(stdout).not.toContain('Claude Code')
+    expect(await readdir(machine.workspace)).toEqual(['.agents'])
+    expect(await readFile(skillFile(machine, 'codex'), 'utf8')).toMatch(/^---\nname: spicytrade\n/)
+  }, 30_000)
+
+  it('is written nowhere when no agent is installed, and connect says so', async () => {
+    const machine = await fakeMachine(CONNECTED)
+    const worker = await fakeWorker([OLD_TOKEN])
+    const cli = run(machine, worker.port, ['connect'])
+    expect(await cli.exited).toBe(0)
+    expect(cli.output().stdout.endsWith(`Verifying live account access…\n${NO_AGENT_TO_TELL}`)).toBe(true)
+    expect(await absent(machine.workspace)).toBe(true)
+  }, 30_000)
+
+  it('is updated when it is the CLI\'s own from an earlier version', async () => {
+    const machine = await fakeMachine(CONNECTED, ['claude', 'codex'])
+    const worker = await fakeWorker([OLD_TOKEN])
+    expect(await run(machine, worker.port, ['connect']).exited).toBe(0)
+    const current = await readFile(skillFile(machine, 'claude'), 'utf8')
+    // Still marked as the CLI's own, but not what this version writes.
+    await writeFile(skillFile(machine, 'claude'), `${current}\nA line an earlier version wrote.\n`)
+
+    const doctor = run(machine, worker.port, ['doctor'])
+    expect(await doctor.exited).toBe(0)
+    expect(doctor.output().stdout).toBe('✓ signed in to spicytrade\n'
+      + '✓ tastytrade is connected\n'
+      + '· Claude Code has an older spicytrade skill in ~/workspace\n'
+      + `    Update it by running this in that folder: ${SPICYTRADE} connect\n`
+      + '✓ Codex has the spicytrade skill in ~/workspace\n'
+      + '\nEverything else is working.\n')
+
+    const setup = run(machine, worker.port, ['setup'])
+    expect(await setup.exited).toBe(0)
+    expect(setup.output().stdout).toContain('\n== Agents\n'
+      + '✓ Claude Code: updated the spicytrade skill in ~/workspace\n'
+      + '✓ Codex already has the spicytrade skill in ~/workspace; skipped\n')
+    expect(await readFile(skillFile(machine, 'claude'), 'utf8')).toBe(current)
+
+    // `connect` updates it the same way.
+    await writeFile(skillFile(machine, 'codex'), `${current}\nA line an earlier version wrote.\n`)
+    const connect = run(machine, worker.port, ['connect'])
+    expect(await connect.exited).toBe(0)
+    expect(connect.output().stdout).toContain('✓ Claude Code already has the spicytrade skill in ~/workspace; skipped\n'
+      + '✓ Codex: updated the spicytrade skill in ~/workspace\n')
+    expect(await readFile(skillFile(machine, 'codex'), 'utf8')).toBe(current)
+  }, 60_000)
+
+  it('leaves a skill of the same name that someone else wrote, and every command says so', async () => {
+    const machine = await fakeMachine(CONNECTED, ['claude', 'codex'])
+    await writeForeignSkill(machine, 'claude')
+    const worker = await fakeWorker([OLD_TOKEN])
+
+    const setup = run(machine, worker.port, ['setup'])
+    expect(await setup.exited).toBe(0)
+    const setupOut = setup.output().stdout
+    expect(setupOut).toContain('\n== Agents\n'
+      + '! Claude Code has a different skill named "spicytrade" in ~/workspace; left as it is\n'
+      + '✓ Codex: added the spicytrade skill in ~/workspace\n')
+    // The agent that did get the skill can go on.
+    expect(setupOut.endsWith(`\nAccount connected. Continue in your agent:\n${ASK_YOUR_AGENT}`)).toBe(true)
+
+    const connect = run(machine, worker.port, ['connect'])
+    expect(await connect.exited).toBe(0)
+    expect(connect.output().stdout).toContain('! Claude Code has a different skill named "spicytrade" in ~/workspace; left as it is\n'
+      + '✓ Codex already has the spicytrade skill in ~/workspace; skipped\n'
+      + AGENTS_CAN_USE_IT)
+
+    const doctor = run(machine, worker.port, ['doctor'])
+    expect(await doctor.exited).toBe(0)
+    expect(doctor.output().stdout).toBe('✓ signed in to spicytrade\n'
+      + '✓ tastytrade is connected\n'
+      + '· Claude Code has a different skill named "spicytrade" in ~/workspace\n'
+      + '    Rename or remove it if agents started in this folder should learn about spicytrade.\n'
+      + '✓ Codex has the spicytrade skill in ~/workspace\n'
+      + '\nEverything else is working.\n')
+
+    expect(await readFile(skillFile(machine, 'claude'), 'utf8')).toBe(FOREIGN_SKILL)
+    expect(await readFile(skillFile(machine, 'codex'), 'utf8')).toMatch(/^---\nname: spicytrade\n/)
+  }, 60_000)
+
+  it('leaves it as it is when it belongs to the only agent installed, without failing the run', async () => {
+    const machine = await fakeMachine(CONNECTED, ['claude'])
+    await writeForeignSkill(machine, 'claude')
+    const worker = await fakeWorker([OLD_TOKEN])
+    for (const command of ['setup', 'connect']) {
+      const cli = run(machine, worker.port, [command])
+      expect(await cli.exited).toBe(0)
+      expect(cli.output().stdout).toContain('! Claude Code has a different skill named "spicytrade" in ~/workspace; left as it is\n')
+      expect(cli.output().stdout).not.toMatch(/(added|updated) the spicytrade skill/)
+    }
+    expect(await readFile(skillFile(machine, 'claude'), 'utf8')).toBe(FOREIGN_SKILL)
+    expect(await readdir(dirname(skillFile(machine, 'claude')))).toEqual(['SKILL.md'])
+  }, 60_000)
+
+  // An agent whose own skill was left alone is installed all the same.
+  it('does not say no agent was found when the one installed has a skill of its own under that name', async () => {
+    const machine = await fakeMachine(CONNECTED, ['claude'])
+    await writeForeignSkill(machine, 'claude')
+    const worker = await fakeWorker([OLD_TOKEN])
+    const cli = run(machine, worker.port, ['connect'])
+    await cli.exited
+    expect(cli.output().stdout).not.toContain('No Claude Code or Codex was found on this computer')
+  }, 30_000)
+
+  it('belongs to the folder the command is run from', async () => {
+    const machine = await fakeMachine(CONNECTED, ['claude'])
+    await mkdir(machine.workspace)
     const worker = await fakeWorker([OLD_TOKEN])
     // No override: the folder the command runs in is the workspace, as from an agent's own shell.
     const here = { cwd: machine.workspace, env: { SPICYTRADE_WORKSPACE: undefined } }
 
     const before = run(machine, worker.port, ['doctor'], here)
-    expect(await before.exited).toBe(1)
-    // Missing only from this folder, so the fix adds it here rather than running setup from anywhere.
-    expect(before.output().stdout).toContain('✗ Claude Code has no spicytrade server in ~/workspace\n'
-      + `    Add it with: mkdir -p ${machine.workspace} && cd ${machine.workspace} && claude mcp add --scope local spicytrade -- ${MCP_TARGET}\n`)
+    expect(await before.exited).toBe(0)
+    expect(before.output().stdout).toContain('· Claude Code has no spicytrade skill in ~/workspace, so an agent started here is not told about it\n'
+      + `    Add it by running this in that folder: ${SPICYTRADE} connect\n`)
 
-    const setup = run(machine, worker.port, ['setup'], here)
-    expect(await setup.exited).toBe(0)
-    expect(setup.output().stdout).toContain('✓ Claude Code: added spicytrade in ~/workspace\n')
+    const connect = run(machine, worker.port, ['connect'], here)
+    expect(await connect.exited).toBe(0)
+    expect(connect.output().stdout).toContain(`✓ Claude Code: added the spicytrade skill in ~/workspace\n${AGENTS_CAN_USE_IT}`)
+    expect(await readFile(skillFile(machine, 'claude'), 'utf8')).toMatch(/^---\nname: spicytrade\n/)
 
     const after = run(machine, worker.port, ['doctor'], here)
     expect(await after.exited).toBe(0)
-    expect(after.output().stdout).toContain('✓ Claude Code starts spicytrade in ~/workspace\n')
+    expect(after.output().stdout).toContain('✓ Claude Code has the spicytrade skill in ~/workspace\n')
+
+    // From another folder the skill is not there: the same check notes it, naming that folder.
+    const elsewhere = join(machine.home, 'elsewhere')
+    await mkdir(elsewhere)
+    const other = run(machine, worker.port, ['doctor'], { ...here, cwd: elsewhere })
+    expect(await other.exited).toBe(0)
+    expect(other.output().stdout).toContain('· Claude Code has no spicytrade skill in ~/elsewhere, so an agent started here is not told about it\n')
+    expect(await readdir(elsewhere)).toEqual([])
   }, 60_000)
 
-  it('quotes a workspace whose path a shell would split', async () => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN }, { claude: {} })
+  it('is written into, found in and removed from a workspace whose path has spaces', async () => {
+    const machine = await fakeMachine(CONNECTED, ['claude', 'codex'])
     const spaced = join(machine.home, 'My Trades')
-    await mkdir(spaced)
+    const env = { SPICYTRADE_WORKSPACE: spaced }
     const worker = await fakeWorker([OLD_TOKEN])
-    const cli = run(machine, worker.port, ['doctor'], { cwd: spaced, env: { SPICYTRADE_WORKSPACE: undefined } })
-    expect(await cli.exited).toBe(1)
-    expect(cli.output().stdout).toContain(`Add it with: mkdir -p '${spaced}' && cd '${spaced}' && claude mcp add`)
-  }, 30_000)
+
+    const connect = run(machine, worker.port, ['connect'], { env })
+    expect(await connect.exited).toBe(0)
+    expect(connect.output().stdout).toContain('✓ Claude Code: added the spicytrade skill in ~/My Trades\n'
+      + '✓ Codex: added the spicytrade skill in ~/My Trades\n'
+      + connected('Agents started in ~/My Trades can use it now'))
+    expect(await readFile(skillFile(machine, 'claude', spaced), 'utf8')).toMatch(/^---\nname: spicytrade\n/)
+    expect(await readFile(skillFile(machine, 'codex', spaced), 'utf8')).toMatch(/^---\nname: spicytrade\n/)
+    expect(await readdir(machine.home)).toEqual(['My Trades'])
+
+    const doctor = run(machine, worker.port, ['doctor'], { env })
+    expect(await doctor.exited).toBe(0)
+    expect(doctor.output().stdout).toContain('✓ Claude Code has the spicytrade skill in ~/My Trades\n'
+      + '✓ Codex has the spicytrade skill in ~/My Trades\n'
+      + '\nEverything is connected.\n')
+
+    const uninstall = run(machine, worker.port, ['uninstall'], { env })
+    expect(await uninstall.exited).toBe(0)
+    expect(uninstall.output().stdout).toContain('✓ Claude Code: removed the spicytrade skill from ~/My Trades\n'
+      + '✓ Codex: removed the spicytrade skill from ~/My Trades\n')
+    expect(await absent(dirname(skillFile(machine, 'claude', spaced)))).toBe(true)
+    expect(await absent(dirname(skillFile(machine, 'codex', spaced)))).toBe(true)
+  }, 60_000)
+
+  it('is installed, checked and removed without ever running an agent', async () => {
+    const machine = await fakeMachine({}, ['claude', 'codex'])
+    const worker = await fakeWorker([])
+    for (const command of ['setup', 'connect', 'doctor', 'disconnect-tastytrade', 'uninstall']) {
+      expect(await run(machine, worker.port, [command]).exited).toBe(0)
+      expect(await readdir(machine.state)).not.toContain(AGENT_RUNS)
+    }
+    // The fakes do record a run, so the check above -- made after every test in this file -- could fail.
+    expect(spawnSync(join(machine.bin, 'claude'), ['--version'], { env: { PATH: TEST_PATH(machine.bin) } }).status).toBe(0)
+    expect(await readFile(join(machine.state, AGENT_RUNS), 'utf8')).toBe('claude --version\n')
+    await rm(join(machine.state, AGENT_RUNS))
+  }, 120_000)
 })
 
 describe('spicytrade setup', () => {
   it('does every step once, and on a second run skips each one', async () => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN }, { claude: {} })
+    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN }, ['claude'])
     const worker = await fakeWorker([OLD_TOKEN])
 
     const first = run(machine, worker.port, ['setup'])
     expect(await first.exited).toBe(0)
     const firstOut = first.output().stdout
-    expect(firstOut).toContain('✓ already signed in; skipped')
-    // No terminal to ask on, so trading authority is not granted; the member is told how.
-    expect(firstOut).toMatch(/· not connected: there is no terminal to ask on\n/)
-    // Only the workspace setup ran for loads the server, and the line says which folder that is.
-    expect(firstOut).toContain('✓ Claude Code: added spicytrade in ~/workspace\n')
+    expect(firstOut).toContain('\n== Sign in\n✓ already signed in; skipped\n')
+    // Only the workspace setup ran for gets the skill, and the line says which folder that is.
     // Agents come before tastytrade, so walking away from tastytrade still leaves a working agent.
-    expect(firstOut.indexOf('== Agents')).toBeLessThan(firstOut.indexOf('== tastytrade'))
-    // The closing check repeats none of what the steps just said; it adds the one thing they
-    // cannot see, the agent's server reaching spicytrade.
-    expect(firstOut).toContain('== Check\nChecking that your agent can reach spicytrade…\n✓ your agent can reach spicytrade')
+    // No terminal to ask on, so trading authority is not granted; the closing block says how.
+    // The closing check repeats none of what the steps just said, so with nothing wrong it has no
+    // heading at all; tastytrade was not connected, so ready means market data and research.
+    expect(firstOut.endsWith('\n== Agents\n✓ Claude Code: added the spicytrade skill in ~/workspace\n'
+      + '\n== tastytrade\n· not connected: there is no terminal to ask on\n'
+      + `\nReady for market data and research. Continue in your agent:\n${ASK_YOUR_AGENT}`
+      + `To see positions and place orders, connect tastytrade: ${SPICYTRADE} connect\n`)).toBe(true)
+    expect(firstOut).not.toContain('== Check')
     expect(firstOut).not.toContain('✓ signed in to spicytrade')
     expect(firstOut).not.toContain('Everything is connected.')
-    // tastytrade was not connected, so ready means market data and research, and says how to go further.
-    expect(firstOut).toContain(`Ready for market data and research. Continue in your agent:\n  Return to your agent conversation and ask it to connect Spicytrade.\n`)
-    expect(firstOut).toMatch(/To see positions and place orders, connect tastytrade: \S+ connect\n/)
-    // Nothing was running on an older sign-in, so there is no reconnect advice to give.
-    expect(firstOut).not.toContain('reconnects')
 
-    expect(await readFile(join(machine.state, 'claude-calls'), 'utf8')).toContain(`mcp add --scope local spicytrade -- ${MCP_TARGET}`)
-    expect(await readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).toBe(`${MCP_TARGET}\n`)
-    await expect(readFile(join(machine.state, 'claude-user-spicytrade-target'), 'utf8')).rejects.toThrow()
+    const skill = await readFile(skillFile(machine, 'claude'), 'utf8')
+    expect(skill).toMatch(/^---\nname: spicytrade\ndescription: \S.*\n---\n/)
+    // Codex is not installed, so nothing is written where it would look.
+    expect(await readdir(machine.workspace)).toEqual(['.claude'])
+    // Setup verifies no snapshot and calls no tool: it only asks whether the sign-in is accepted.
+    expect(toolCalls(worker.calls)).toEqual([])
 
+    const written = await stat(skillFile(machine, 'claude'))
     const second = run(machine, worker.port, ['setup'])
     expect(await second.exited).toBe(0)
     const secondOut = second.output().stdout
     expect(secondOut).toContain('✓ already signed in; skipped')
-    expect(secondOut).toContain('✓ Claude Code already starts spicytrade; skipped')
-    expect((await readFile(join(machine.state, 'claude-calls'), 'utf8')).match(/mcp add/g)).toHaveLength(1)
+    expect(secondOut).toContain('\n== Agents\n✓ Claude Code already has the spicytrade skill in ~/workspace; skipped\n')
+    expect((await stat(skillFile(machine, 'claude'))).mtimeMs).toBe(written.mtimeMs)
+    expect(await readFile(skillFile(machine, 'claude'), 'utf8')).toBe(skill)
     for (const output of [first.output(), second.output()]) {
       expect(output.stdout).not.toContain(OLD_TOKEN)
       expect(output.stderr).not.toContain(OLD_TOKEN)
@@ -486,33 +679,20 @@ describe('spicytrade setup', () => {
   }, 60_000)
 
   it('signs a fresh computer in and connects tastytrade on one link, asking nothing', async () => {
-    const machine = await fakeMachine({}, { claude: {} })
-    const accepted: string[] = []
-    const calls: string[] = []
-    const port = await serve((request, body) => {
-      const path = request.url ?? ''
-      calls.push(path)
-      if (path === '/api/agent-logins/exchange') {
-        accepted.push(NEW_TOKEN)
-        return { body: { token: NEW_TOKEN }, status: 200 }
-      }
-      if (!accepted.some((token) => request.headers.authorization === `Bearer ${token}`)) return { body: { error: 'invalid_token' }, status: 401 }
-      if (path === '/api/brokers/tastytrade/exchange') return { body: { refreshToken: APP_REFRESH_TOKEN }, status: 200 }
-      if (path === '/api/brokers/tastytrade/token') return { body: { accessToken: 'minted', expiresIn: 900 }, status: 200 }
-      const { id, method } = JSON.parse(body)
-      return { body: { id, jsonrpc: '2.0', result: method === 'initialize' ? { protocolVersion: '2025-06-18' } : { tools: [] } }, status: 200 }
-    })
+    const machine = await fakeMachine({}, ['claude'])
+    const worker = await fakeWorker([], { exchange: () => ({ body: { token: NEW_TOKEN }, status: 200 }) })
     // No terminal: the member's answer is the approval itself, on the page and on tastytrade.
-    const cli = run(machine, port, ['setup'])
+    const cli = run(machine, worker.port, ['setup'])
     expect(await cli.exited).toBe(0)
     const { stdout } = cli.output()
     expect((await approvalUrl(cli.output)).searchParams.get('broker')).toBe('tastytrade')
     expect(stdout.match(/\/connect\/agent\?/g)).toHaveLength(1)
     expect(stdout.indexOf('✓ Signed in.')).toBeLessThan(stdout.indexOf('== Agents'))
+    expect(stdout).toContain('\n== Agents\n✓ Claude Code: added the spicytrade skill in ~/workspace\n')
     expect(stdout).toMatch(/== tastytrade\nWaiting for tastytrade\. To skip for now, press Ctrl-C\.\n✓ tastytrade connected\.\n/)
-    expect(stdout).toContain('Account connected. Continue in your agent:')
+    expect(stdout.endsWith(`\nAccount connected. Continue in your agent:\n${ASK_YOUR_AGENT}`)).toBe(true)
     expect(stdout).not.toContain('[Y/n]')
-    expect(calls.filter((path) => path === '/api/agent-logins/exchange')).toHaveLength(1)
+    expect(worker.calls.filter((call) => call.path === '/api/agent-logins/exchange')).toHaveLength(1)
     expect(await readFile(join(machine.bin, 'store', 'tastytrade_app-refresh-token'), 'utf8')).toBe(APP_REFRESH_TOKEN)
   }, 60_000)
 
@@ -523,150 +703,151 @@ describe('spicytrade setup', () => {
     // Everything setup can do is done; the member was told at the start this would be the case.
     expect(await cli.exited).toBe(0)
     const { stdout } = cli.output()
-    expect(stdout).toMatch(/· No Claude Code or Codex found; signing in anyway\./)
-    expect(stdout).toMatch(/\nSigned in\. Install Claude Code or Codex, then run: \S+ setup\n$/)
+    expect(stdout).toContain('· No Claude Code or Codex found; signing in anyway.\n')
+    expect(stdout.endsWith(`\nSigned in. Install Claude Code or Codex, then run: ${SPICYTRADE} setup\n`)).toBe(true)
     expect(stdout).not.toContain('✗')
     // Steps with nothing to say leave no bare heading behind.
     expect(stdout).not.toContain('== Agents')
     expect(stdout).not.toContain('== Check')
-    // With no agent, there is no server of "your agent" to report as working.
-    expect(stdout).not.toContain('your agent can reach spicytrade')
-    expect(stdout).not.toContain('Ready.')
-  }, 60_000)
-
-  it('fails doctor on a machine with no agent, run on its own', async () => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN })
-    const worker = await fakeWorker([OLD_TOKEN])
-    const cli = run(machine, worker.port, ['doctor'])
-    expect(await cli.exited).toBe(1)
-    expect(cli.output().stdout).toMatch(/✗ no agent found \(Claude Code or Codex\)\n {4}Install one, then run: \S+ setup/)
-  }, 30_000)
-
-  it('leaves a client entry that is not spicytrade\'s as it is, and says how to replace it', async () => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN }, { codex: { spicytrade: 'https://someone-elses.example/mcp' } })
-    const worker = await fakeWorker([OLD_TOKEN])
-    const cli = run(machine, worker.port, ['setup'])
-    expect(await cli.exited).toBe(1)
-    const { stdout } = cli.output()
-    expect(stdout).toContain('· Codex already has a different server named "spicytrade"; left as it is, see the check below')
-    // The command that replaces it is given once, by the check.
-    expect(stdout.match(/codex mcp remove spicytrade && codex mcp add spicytrade -- /g)).toHaveLength(1)
-    expect(await readFile(join(machine.state, 'codex-spicytrade-target'), 'utf8')).toBe('https://someone-elses.example/mcp')
-  }, 60_000)
-
-  it.each([
-    [GONE_TARGET, '✓ Claude Code (every folder): removed an old spicytrade entry', false],
-    ['https://someone-elses.example/mcp', '! Claude Code (every folder) has a different server named "spicytrade"; left as it is', true],
-  ])('moves an entry in every folder into the workspace, and leaves one that is not spicytrade', async (everywhere, line, kept) => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN }, { claude: { 'user:spicytrade': everywhere } })
-    const worker = await fakeWorker([OLD_TOKEN])
-
-    const cli = run(machine, worker.port, ['setup'])
-    expect(await cli.exited).toBe(0)
-    const { stdout } = cli.output()
-    // The every-folder entry answers from the workspace too, but does not count as its entry.
-    expect(stdout).toContain('✓ Claude Code: added spicytrade in ~/workspace\n')
-    expect(stdout).toContain(line)
-    expect(await readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).toBe(`${MCP_TARGET}\n`)
-    expect(await readdir(machine.state)).toContain('claude-local-spicytrade-target')
-    expect((await readdir(machine.state)).includes('claude-user-spicytrade-target')).toBe(kept)
-    expect(stdout).not.toContain('someone-elses')
-    expect(stdout).toContain('Ready for market data and research.')
+    // With no agent there is nobody to continue in, and no skill to write for one.
+    expect(stdout).not.toContain('Continue in your agent')
+    expect(stdout).not.toContain('Ready')
+    expect(await absent(machine.workspace)).toBe(true)
   }, 60_000)
 })
 
+/** A Worker that accepts any sign-in, and whose tastytrade refuses the saved connection. */
+function refusingWorker() {
+  return serve((request) => {
+    if (request.url === '/api/brokers/tastytrade/token') return { body: { error: 'refused', tastytradeStatus: 401 }, status: 502 }
+    return { body: { id: 1, jsonrpc: '2.0', result: {} }, status: 200 }
+  })
+}
+
 describe('spicytrade setup and a saved tastytrade connection', () => {
   it('finds a connection tastytrade has since refused, rather than calling it connected', async () => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN })
-    const port = await serve((request) => {
-      if (request.url === '/api/brokers/tastytrade/token') return { body: { error: 'refused', tastytradeStatus: 401 }, status: 502 }
-      return { body: { id: 1, jsonrpc: '2.0', result: {} }, status: 200 }
-    })
-    const cli = run(machine, port, ['setup'])
+    const machine = await fakeMachine(CONNECTED)
+    const cli = run(machine, await refusingWorker(), ['setup'])
     expect(await cli.exited).toBe(1)
     const { stdout } = cli.output()
     expect(stdout).not.toContain('already connected')
     // No terminal to ask on, so it does not ask; the closing check reports it once, with its fix.
     expect(stdout).toContain('· tastytrade refused the saved connection; see the check below')
-    expect(stdout).toMatch(/✗ tastytrade refused the saved connection \(HTTP 401\)\n {4}Reconnect with: \S+ setup/)
+    expect(stdout).toContain(`\n== Check\n✗ tastytrade refused the saved connection (HTTP 401)\n    Reconnect with: ${SPICYTRADE} setup\n\n1 problem found.\n`)
     expect(stdout.match(/✗ tastytrade/g)).toHaveLength(1)
   }, 60_000)
 })
 
 describe('setup with a problem left over', () => {
-  it('still says how to start the agent it added, without calling the run ready', async () => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN }, { claude: {} })
-    const port = await serve((request) => {
-      if (request.url === '/api/brokers/tastytrade/token') return { body: { error: 'refused', tastytradeStatus: 401 }, status: 502 }
-      return { body: { id: 1, jsonrpc: '2.0', result: {} }, status: 200 }
-    })
-    const cli = run(machine, port, ['setup'])
+  it('still says how to go on in the agent it wrote the skill for, without calling the run ready', async () => {
+    const machine = await fakeMachine(CONNECTED, ['claude'])
+    const cli = run(machine, await refusingWorker(), ['setup'])
     expect(await cli.exited).toBe(1)
     const { stdout } = cli.output()
-    expect(stdout).toContain(`Continue in your agent:\n  Return to your agent conversation and ask it to connect Spicytrade.\n`)
+    expect(stdout).toContain('✓ Claude Code: added the spicytrade skill in ~/workspace\n')
+    expect(stdout.endsWith(`\n1 problem found.\n\nContinue in your agent:\n${ASK_YOUR_AGENT}`)).toBe(true)
     expect(stdout).not.toContain('Ready')
+    expect(stdout).not.toContain('Account connected')
   }, 60_000)
 })
 
 describe('a keyring that answers lookups but cannot save', () => {
   it('stops before any browser step, saying why, with nothing issued', async () => {
-    const machine = await fakeMachine({})
+    const machine = await fakeMachine({}, ['claude'])
     // Lookups answer "nothing stored"; every store is refused, as with no unlocked collection.
     await writeFile(join(machine.bin, 'secret-tool'), '#!/usr/bin/env bash\n[[ $1 == store ]] && { cat >/dev/null; exit 1; }\n[[ $1 == lookup ]] && exit 1\nexit 0\n')
     const worker = await fakeWorker([])
-    const cli = run(machine, worker.port, ['setup'])
-    expect(await cli.exited).toBe(1)
-    expect(cli.output().stderr).toMatch(/spicytrade setup: your system keyring cannot save credentials here\. If you have one, unlock it\. If not, install one \(Debian\/Ubuntu: sudo apt install gnome-keyring;.* Over SSH, this computer's desktop session must also be logged in\. Then run: \S+ setup$/m)
-    expect(cli.output().stdout).not.toContain('/connect/agent')
+    const setup = run(machine, worker.port, ['setup'])
+    expect(await setup.exited).toBe(1)
+    expect(setup.output().stderr).toMatch(/spicytrade setup: your system keyring cannot save credentials here\. If you have one, unlock it\. If not, install one \(Debian\/Ubuntu: sudo apt install gnome-keyring;.* Over SSH, this computer's desktop session must also be logged in\. Then run: \S+ setup$/m)
+    expect(setup.output().stdout).not.toContain('/connect/agent')
+
+    const connect = run(machine, worker.port, ['connect'])
+    expect(await connect.exited).toBe(1)
+    expect(connect.output().stderr).toBe('spicytrade connect: Password storage is unavailable. Connect from a signed-in desktop session with a working system keyring.\n')
+    expect(connect.output().stdout).not.toContain('/connect/agent')
+
     expect(worker.calls).toEqual([])
+    // Nothing was connected, so no agent is told anything.
+    expect(await absent(machine.workspace)).toBe(true)
   }, 30_000)
 })
 
-describe('half a saved personal grant', () => {
-  it('is reported with its one repair, by doctor and by setup, never as a crash', async () => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/client-secret': 'half-a-grant' }, { claude: {} })
+describe('a saved tastytrade connection that cannot trade', () => {
+  it.each([
+    ['half a personal grant', { 'tastytrade/client-secret': 'half-a-grant' }, 'an incomplete tastytrade connection is saved', 'Replace it'],
+    [
+      'two connections',
+      { 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN, 'tastytrade/client-secret': 'half-a-grant' },
+      'two tastytrade connections are saved, so spicytrade will not guess which account trades',
+      'Replace them',
+    ],
+  ])('is reported with its one repair when it is %s, by doctor, setup and connect, never as a crash', async (_what, saved, problem, fix) => {
+    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN, ...saved }, ['claude'])
     const worker = await fakeWorker([OLD_TOKEN])
     for (const command of ['doctor', 'setup']) {
       const cli = run(machine, worker.port, [command])
       expect(await cli.exited).toBe(1)
       const { stderr, stdout } = cli.output()
-      expect(stdout).toMatch(/✗ an incomplete tastytrade connection is saved\n {4}Replace it with: \S+ setup/)
-      expect(stderr).not.toContain('TypeError')
-      expect(stdout + stderr).not.toContain('half-a-grant')
+      expect(stdout).toContain(`✗ ${problem}\n    ${fix} with: ${SPICYTRADE} setup\n`)
+      expect(stderr).toBe('')
+      expect(stdout).not.toContain('half-a-grant')
     }
+    // `connect` asks nothing, so it does not choose for the member: it sends them to setup.
+    const connect = run(machine, worker.port, ['connect'])
+    expect(await connect.exited).toBe(1)
+    expect(connect.output().stderr).toBe(`spicytrade connect: The saved tastytrade connection needs repair. Run ${SPICYTRADE} setup in a terminal to choose whether to replace it.\n`)
+    expect(connect.output().stdout).not.toContain('/connect/agent')
+    expect(connect.output().stdout).not.toContain('Account connected')
+    // Neither was minted from, and no tool was called with it.
+    expect(worker.calls.some((call) => call.path === '/api/brokers/tastytrade/token')).toBe(false)
+    expect(toolCalls(worker.calls)).toEqual([])
   }, 60_000)
 })
 
 describe('spicytrade disconnect-tastytrade', () => {
   it('removes every tastytrade credential of either kind, and nothing else', async () => {
     const machine = await fakeMachine({
-      'spicytrade/mcp-token': OLD_TOKEN,
-      'tastytrade/app-refresh-token': APP_REFRESH_TOKEN,
+      ...CONNECTED,
+      'tastytrade/access-token': 'a-cached-access-token',
       'tastytrade/client-secret': 'personal-client-secret',
-    })
+    }, ['claude'])
     const worker = await fakeWorker([OLD_TOKEN])
     const cli = run(machine, worker.port, ['disconnect-tastytrade'])
     expect(await cli.exited).toBe(0)
-    expect(cli.output().stdout).toContain('✓ tastytrade removed from this computer.')
-    for (const key of ['app-refresh-token', 'client-secret', 'refresh-token']) {
+    // One line, with nothing about reconnecting or restarting an agent: the next call reads the keyring.
+    expect(cli.output().stdout).toBe('✓ tastytrade removed from this computer. Market and research tools still work.'
+      + ' spicytrade kept no copy, so nothing can use that connection now; tastytrade may still list it in your'
+      + ' account settings, where you can remove it.\n')
+    // The short-lived access token an earlier call cached goes with the connection it came from.
+    for (const key of ['access-token', 'app-refresh-token', 'client-secret', 'refresh-token']) {
       await expect(readFile(join(machine.bin, 'store', `tastytrade_${key}`), 'utf8')).rejects.toThrow()
     }
     expect(await readFile(join(machine.bin, 'store', 'spicytrade_mcp-token'), 'utf8')).toBe(OLD_TOKEN)
+    expect(worker.calls).toEqual([])
   }, 30_000)
-})
 
-describe('spicytrade disconnect-tastytrade with nothing connected', () => {
-  it('says there was nothing to remove, and nothing about reconnecting', async () => {
+  it('removes the access token a call cached, so the next call cannot use the old connection', async () => {
+    const machine = await fakeMachine(CONNECTED, ['claude'])
+    const worker = await fakeWorker([OLD_TOKEN])
+    expect(await run(machine, worker.port, ['connect']).exited).toBe(0)
+    expect(await readFile(join(machine.bin, 'store', 'tastytrade_access-token'), 'utf8')).toContain(MINTED_ACCESS_TOKEN)
+
+    expect(await run(machine, worker.port, ['disconnect-tastytrade']).exited).toBe(0)
+    expect((await readdir(join(machine.bin, 'store'))).sort()).toEqual(['spicytrade_mcp-token'])
+    // The skill stays: market and research tools still work from this folder.
+    expect(await readFile(skillFile(machine, 'claude'), 'utf8')).toMatch(/^---\nname: spicytrade\n/)
+  }, 60_000)
+
+  it('says there was nothing to remove when nothing is connected', async () => {
     const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN })
     const worker = await fakeWorker([OLD_TOKEN])
     const cli = run(machine, worker.port, ['disconnect-tastytrade'])
     expect(await cli.exited).toBe(0)
     expect(cli.output().stdout).toBe('· tastytrade was not connected on this computer; nothing to remove.\n')
   }, 30_000)
-})
 
-describe('spicytrade disconnect-tastytrade with a personal grant', () => {
-  it('says the grant itself is ended on the member\'s own OAuth app', async () => {
+  it('says the grant itself is ended on the member\'s own OAuth app, for a personal grant', async () => {
     const machine = await fakeMachine({
       'spicytrade/mcp-token': OLD_TOKEN,
       'tastytrade/client-secret': 'personal-client-secret',
@@ -675,7 +856,8 @@ describe('spicytrade disconnect-tastytrade with a personal grant', () => {
     const worker = await fakeWorker([OLD_TOKEN])
     const cli = run(machine, worker.port, ['disconnect-tastytrade'])
     expect(await cli.exited).toBe(0)
-    expect(cli.output().stdout).toContain('To end the grant itself, delete it under OAuth Applications on my.tastytrade.com.')
+    expect(cli.output().stdout).toBe('✓ tastytrade removed from this computer. Market and research tools still work.'
+      + ' To end the grant itself, delete it under OAuth Applications on my.tastytrade.com.\n')
   }, 30_000)
 })
 
@@ -689,34 +871,48 @@ describe('spicytrade uninstall', () => {
     const { stdout } = cli.output()
     expect(stdout).toContain('could not remove this computer\'s spicytrade sign-in and tastytrade connection from password storage.')
     expect(stdout).toContain('secret-tool is missing. Install it')
-    expect(stdout).toContain('secret-tool clear service spicytrade key mcp-token')
+    expect(stdout).toContain('      secret-tool clear service spicytrade key mcp-token\n')
+    expect(stdout).toContain('      secret-tool clear service tastytrade key access-token\n')
     expect(stdout).not.toContain('✓ removed this computer\'s')
     expect(await readFile(join(machine.bin, 'store', 'spicytrade_mcp-token'), 'utf8')).toBe(OLD_TOKEN)
   }, 30_000)
 
-  it('removes spicytrade\'s agent entries and credentials, leaving others\' and a checkout alone', async () => {
-    const machine = await fakeMachine(
-      { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN },
-      { claude: { 'local:spicytrade': MCP_TARGET, 'user:spicytrade': 'https://someone-elses.example/mcp' }, codex: { spicytrade: MCP_TARGET } },
-    )
+  it('removes its own skill and its credentials, leaving a skill someone else wrote and a checkout alone', async () => {
+    const machine = await fakeMachine(CONNECTED, ['claude', 'codex'])
     const worker = await fakeWorker([OLD_TOKEN])
+    // Connected from this folder first, so the skill and the cached access token are the CLI's own.
+    await writeForeignSkill(machine, 'codex')
+    expect(await run(machine, worker.port, ['connect']).exited).toBe(0)
+    expect((await readdir(join(machine.bin, 'store'))).sort()).toEqual(['spicytrade_mcp-token', 'tastytrade_access-token', 'tastytrade_app-refresh-token'])
+
     const cli = run(machine, worker.port, ['uninstall'])
     expect(await cli.exited).toBe(0)
-    const { stdout } = cli.output()
-    expect(stdout).toContain('✓ Claude Code: removed spicytrade')
-    expect(stdout).toContain('✓ Codex: removed spicytrade')
-    await expect(readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).rejects.toThrow()
-    await expect(readFile(join(machine.state, 'codex-spicytrade-target'), 'utf8')).rejects.toThrow()
-    expect(await readFile(join(machine.state, 'claude-user-spicytrade-target'), 'utf8')).toBe('https://someone-elses.example/mcp')
-    for (const entry of ['spicytrade_mcp-token', 'tastytrade_app-refresh-token']) {
-      await expect(readFile(join(machine.bin, 'store', entry), 'utf8')).rejects.toThrow()
-    }
-    // Run from a checkout, the program is not touched.
-    expect(stdout).not.toContain('removed the spicytrade program')
+    // Run from a checkout, the program is not touched, so nothing says it was removed.
+    expect(cli.output().stdout).toBe('✓ Claude Code: removed the spicytrade skill from ~/workspace\n'
+      + '✓ removed this computer\'s spicytrade sign-in and tastytrade connection from the keyring\n'
+      + `\nspicytrade is removed from this computer and signed out of your account.\n${OTHER_FOLDERS}`)
+    expect(await absent(dirname(skillFile(machine, 'claude')))).toBe(true)
+    expect(await readFile(skillFile(machine, 'codex'), 'utf8')).toBe(FOREIGN_SKILL)
+    expect(await readdir(join(machine.bin, 'store'))).toEqual([])
     expect(await readFile(CLI, 'utf8')).toContain('spicytrade')
     // It signed itself out with its own token, before clearing it.
-    expect(worker.calls.some((call) => call.path === '/api/agent-logins' && call.authorization === `Bearer ${OLD_TOKEN}`)).toBe(true)
-    expect(stdout).toMatch(/spicytrade is removed from this computer and signed out of your account\.\n$/)
+    expect(worker.calls.some((call) => call.path === '/api/agent-logins' && call.method === 'DELETE'
+      && call.headers.authorization === `Bearer ${OLD_TOKEN}`)).toBe(true)
+  }, 60_000)
+
+  it('removes its own skill for an agent that has since been uninstalled, and an outdated one', async () => {
+    const machine = await fakeMachine(CONNECTED, ['claude', 'codex'])
+    const worker = await fakeWorker([OLD_TOKEN])
+    expect(await run(machine, worker.port, ['connect']).exited).toBe(0)
+    await rm(join(machine.bin, 'claude'))
+    await writeFile(skillFile(machine, 'codex'), `${await readFile(skillFile(machine, 'codex'), 'utf8')}\nA line an earlier version wrote.\n`)
+
+    const cli = run(machine, worker.port, ['uninstall'])
+    expect(await cli.exited).toBe(0)
+    expect(cli.output().stdout).toContain('✓ Claude Code: removed the spicytrade skill from ~/workspace\n'
+      + '✓ Codex: removed the spicytrade skill from ~/workspace\n')
+    expect(await absent(dirname(skillFile(machine, 'claude')))).toBe(true)
+    expect(await absent(dirname(skillFile(machine, 'codex')))).toBe(true)
   }, 60_000)
 
   it('counts a computer the website already revoked as signed out, rather than sending the member back to revoke it', async () => {
@@ -724,14 +920,24 @@ describe('spicytrade uninstall', () => {
     const worker = await fakeWorker([])
     const cli = run(machine, worker.port, ['uninstall'])
     expect(await cli.exited).toBe(0)
-    expect(cli.output().stdout).toMatch(/signed out of your account\.\n$/)
-    expect(cli.output().stdout).not.toContain('revoke it under')
-    // Nothing of tastytrade's was saved, so nothing of it is said to be removed.
-    expect(cli.output().stdout).toContain("✓ removed this computer's spicytrade sign-in from the keyring\n")
+    // Nothing of tastytrade's was saved, so nothing of it is said to be removed; no skill was in
+    // this folder, so none is said to be removed either.
+    expect(cli.output().stdout).toBe('✓ removed this computer\'s spicytrade sign-in from the keyring\n'
+      + `\nspicytrade is removed from this computer and signed out of your account.\n${OTHER_FOLDERS}`)
+  }, 30_000)
+
+  it('says where to sign the computer out when spicytrade did not answer', async () => {
+    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN })
+    const port = await serve(() => ({ body: { error: 'unavailable' }, status: 503 }))
+    const cli = run(machine, port, ['uninstall'])
+    expect(await cli.exited).toBe(0)
+    expect(cli.output().stdout).toBe('✓ removed this computer\'s spicytrade sign-in from the keyring\n'
+      + '\nspicytrade is removed from this computer. To sign it out of your account too, revoke it under'
+      + ` Signed-in computers at http://127.0.0.1:${port}/connect.\n${OTHER_FOLDERS}`)
   }, 30_000)
 
   it('removes the program and its link when it is the installed copy', async () => {
-    const machine = await fakeMachine({})
+    const machine = await fakeMachine({}, ['claude'])
     const share = join(machine.home, '.local', 'share', 'spicytrade')
     const link = join(machine.home, '.local', 'bin', 'spicytrade')
     await mkdir(share, { recursive: true })
@@ -742,14 +948,9 @@ describe('spicytrade uninstall', () => {
     await symlink(join(share, 'spicytrade.mjs'), link)
     const worker = await fakeWorker([])
     // Without XDG_DATA_HOME, so the installer's default location is the one in play.
-    const { XDG_DATA_HOME: _ignored, ...inherited } = process.env
-    const env = { ...inherited, HOME: machine.home, PATH: TEST_PATH(machine.bin), SPICYTRADE_MCP_URL: `http://127.0.0.1:${worker.port}/mcp`, XDG_CONFIG_HOME: machine.config }
-    const child = spawn(process.execPath, [join(share, 'spicytrade.mjs'), 'uninstall'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
-    children.push(child)
-    let stdout = ''
-    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
-    expect(await new Promise((done) => child.on('exit', done))).toBe(0)
-    expect(stdout).toContain('✓ removed the spicytrade program')
+    const cli = run(machine, worker.port, ['uninstall'], { env: { XDG_DATA_HOME: undefined }, script: join(share, 'spicytrade.mjs') })
+    expect(await cli.exited).toBe(0)
+    expect(cli.output().stdout).toContain('✓ removed the spicytrade program\n')
     await expect(readFile(join(share, 'spicytrade.mjs'), 'utf8')).rejects.toThrow()
     await expect(readFile(link, 'utf8')).rejects.toThrow()
   }, 60_000)
@@ -766,170 +967,65 @@ describe('spicytrade store-personal-grant', () => {
   }, 30_000)
 })
 
-describe('opening a trading session', () => {
-  it('launches Codex with trading enabled without changing its saved configuration', async () => {
-    const machine = await fakeMachine({}, { codex: { spicytrade: MCP_TARGET } })
-    const config = join(machine.home, '.codex', 'config.toml')
-    await mkdir(join(machine.home, '.codex'), { recursive: true })
-    const saved = '[mcp_servers.spicytrade]\nenabled = false\n'
-    await writeFile(config, saved)
-    const cli = run(machine, 1, ['start'])
-    expect(await cli.exited).toBe(0)
-    expect(await readFile(join(machine.state, 'codex-calls'), 'utf8')).toContain('-c mcp_servers.spicytrade.enabled=true')
-    expect(await readFile(config, 'utf8')).toBe(saved)
-  })
-
-  it('uses the saved choice when both agents are installed', async () => {
-    const machine = await fakeMachine({}, { codex: { spicytrade: MCP_TARGET }, claude: { 'local:spicytrade': MCP_TARGET } })
-    await mkdir(join(machine.config, 'spicytrade'))
-    await writeFile(join(machine.config, 'spicytrade', 'agent.json'), '"codex"')
-    const cli = run(machine, 1, ['start'])
-    expect(await cli.exited).toBe(0)
-    expect(await readFile(join(machine.state, 'codex-calls'), 'utf8')).toContain('-c mcp_servers.spicytrade.enabled=true')
-  })
-
-  it('refuses to launch an unrelated server registered under the same name', async () => {
-    const machine = await fakeMachine({}, { codex: { spicytrade: 'https://other.example/mcp' } })
-    const cli = run(machine, 1, ['start'])
-    expect(await cli.exited).toBe(1)
-    expect(cli.output().stderr).toContain('setup')
-    expect(await readFile(join(machine.state, 'codex-calls'), 'utf8')).not.toContain('-c mcp_servers')
-  })
-})
-
-
-/**
- * A Worker for an already signed-in, already connected computer: it mints the tastytrade token and
- * answers the MCP calls `connect` makes to verify a live snapshot. Resolves its port.
- */
-function snapshotWorker() {
-  return serve((request, body) => {
-    if (request.headers.authorization !== `Bearer ${OLD_TOKEN}`) return { body: { error: 'invalid_token' }, status: 401 }
-    if (request.url === '/api/brokers/tastytrade/token') return { body: { accessToken: 'minted', expiresIn: 900 }, status: 200 }
-    const { id, method } = JSON.parse(body)
-    if (id === undefined) return { status: 202 }
-    const result = method === 'initialize'
-      ? { protocolVersion: '2025-06-18' }
-      : method === 'tools/call'
-        ? { content: [{ type: 'text', text: JSON.stringify({ asOf: new Date().toISOString(), source: 'tastytrade', balances: { netLiquidatingValue: 1234 } }) }] }
-        : { tools: [] }
-    return { body: { id, jsonrpc: '2.0', result }, status: 200 }
-  })
-}
-
 describe('connecting from the current agent without a terminal', () => {
-  it('signs in and connects the brokerage on one link, without launching or configuring a harness', async () => {
+  it('signs in and connects the brokerage on one link, then verifies a live snapshot', async () => {
     const machine = await fakeMachine({})
-    const calls: WorkerCall[] = []
     // The browser comes back from tastytrade between the first poll for the grant and the second.
     let grantPolls = 0
-    const port = await serve((request, body) => {
-      const path = request.url ?? ''
-      calls.push({ authorization: request.headers.authorization, body, path })
-      if (path === '/api/agent-logins/exchange') return { status: 200, body: { token: NEW_TOKEN } }
-      if (path === '/api/brokers/tastytrade/exchange') {
-        return grantPolls++ === 0 ? { status: 202, body: { pending: true } } : { status: 200, body: { refreshToken: APP_REFRESH_TOKEN } }
-      }
-      if (path === '/api/brokers/tastytrade/token') return { status: 200, body: { accessToken: 'minted', expiresIn: 900 } }
-      const { id, method, params } = JSON.parse(body)
-      if (method === 'tools/call') expect(params.name).toBe('read_account_snapshot')
-      return { status: id === undefined ? 202 : 200, body: id === undefined ? undefined : { id, jsonrpc: '2.0', result: method === 'initialize'
-        ? { protocolVersion: '2025-06-18' }
-        : method === 'tools/call' ? { content: [{ type: 'text', text: JSON.stringify({ asOf: new Date().toISOString(), source: 'tastytrade', balances: { netLiquidatingValue: 1234 } }) }] }
-        : { tools: [] } } }
+    const worker = await fakeWorker([], {
+      exchange: () => ({ body: { token: NEW_TOKEN }, status: 200 }),
+      grant: () => (grantPolls++ === 0 ? { body: { pending: true }, status: 202 } : { body: { refreshToken: APP_REFRESH_TOKEN }, status: 200 }),
     })
-    const cli = run(machine, port, ['connect'])
+    const cli = run(machine, worker.port, ['connect'])
     const approval = await approvalUrl(cli.output)
     expect(approval.searchParams.get('broker')).toBe('tastytrade')
     expect(await cli.exited).toBe(0)
-    expect(cli.output().stdout).toContain('Account connected and live snapshot verified. Continue in your existing agent conversation.')
+    // No agent is installed here, so there is none to tell; the connection itself is complete.
+    expect(cli.output().stdout.endsWith(`✓ tastytrade connected.\nVerifying live account access…\n${NO_AGENT_TO_TELL}`)).toBe(true)
     // One link: the member is never sent a second address.
     expect(cli.output().stdout.match(/https?:\/\//g)).toHaveLength(1)
-    const grants = calls.filter((call) => call.path === '/api/brokers/tastytrade/exchange')
+    const grants = worker.calls.filter((call) => call.path === '/api/brokers/tastytrade/exchange')
     expect(grants).toHaveLength(2)
-    const signIn = ExchangeBodySchema.parse(JSON.parse(calls.find((call) => call.path === '/api/agent-logins/exchange')!.body))
+    const signIn = ExchangeBodySchema.parse(JSON.parse(worker.calls.find((call) => call.path === '/api/agent-logins/exchange')!.body))
     for (const grant of grants) {
       // The grant is collected by the token the sign-in issued and the verifier behind the link.
-      expect(grant.authorization).toBe(`Bearer ${NEW_TOKEN}`)
+      expect(grant.headers.authorization).toBe(`Bearer ${NEW_TOKEN}`)
       expect(JSON.parse(grant.body)).toEqual({ codeVerifier: signIn.codeVerifier })
     }
     expect(createHash('sha256').update(signIn.codeVerifier).digest('base64url')).toBe(approval.searchParams.get('challenge'))
-    const files = await readdir(machine.state)
-    expect(files).not.toContain('claude-calls')
-    expect(files).not.toContain('codex-calls')
-    for (const secret of [NEW_TOKEN, APP_REFRESH_TOKEN, signIn.codeVerifier]) expect(JSON.stringify(cli.output())).not.toContain(secret)
+    // The snapshot is the last thing asked of the Worker, by the new sign-in and a minted token.
+    expect(toolCalls(worker.calls)).toEqual([{ brokerToken: MINTED_ACCESS_TOKEN, name: 'read_account_snapshot' }])
+    expect(worker.calls.at(-1)?.headers.authorization).toBe(`Bearer ${NEW_TOKEN}`)
+    for (const secret of [NEW_TOKEN, APP_REFRESH_TOKEN, MINTED_ACCESS_TOKEN, signIn.codeVerifier]) expect(JSON.stringify(cli.output())).not.toContain(secret)
     expect(await readFile(join(machine.bin, 'store', 'tastytrade_app-refresh-token'), 'utf8')).toBe(APP_REFRESH_TOKEN)
+    expect(await absent(machine.workspace)).toBe(true)
   }, 30_000)
 
-  it('does not report a connection ready when the live snapshot cannot be verified', async () => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN })
-    const worker = await fakeWorker([OLD_TOKEN])
+  it.each([
+    ['the account tool refuses', { content: [{ text: 'tastytrade refused this request.', type: 'text' }], isError: true }],
+    ['the answer is not JSON', { content: [{ text: 'not a snapshot', type: 'text' }] }],
+    [
+      'the snapshot is not tastytrade\'s',
+      { content: [{ text: JSON.stringify({ asOf: '2026-09-28T00:00:00Z', balances: { netLiquidatingValue: 1 }, source: 'elsewhere' }), type: 'text' }] },
+    ],
+  ] satisfies [string, ToolResult][])('does not report a connection ready, or tell any agent, when %s', async (_what, answer) => {
+    const machine = await fakeMachine(CONNECTED, ['claude', 'codex'])
+    const worker = await fakeWorker([OLD_TOKEN], { snapshot: () => answer })
     const cli = run(machine, worker.port, ['connect'])
     expect(await cli.exited).toBe(1)
-    expect(cli.output().stdout).not.toContain('Account connected and live snapshot verified')
-    expect(cli.output().stderr).toContain('could not be verified')
-  })
-
-  it('adds the server to the Claude Code workspace it runs in, and says to restart once', async () => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN }, { claude: {} })
-    const cli = run(machine, await snapshotWorker(), ['connect'], { env: { CLAUDECODE: '1' } })
-    expect(await cli.exited).toBe(0)
-    const { stdout } = cli.output()
-    expect(stdout).toContain('✓ Claude Code: added spicytrade in ~/workspace\n')
-    expect(stdout).toContain('Account connected and live snapshot verified. Claude Code now starts spicytrade in ~/workspace.'
-      + ' Restart Claude Code in that folder to load it: exit, then run claude --continue to resume this conversation.\n')
-    expect(await readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).toBe(`${MCP_TARGET}\n`)
+    expect(cli.output().stdout.endsWith('Verifying live account access…\n')).toBe(true)
+    expect(cli.output().stdout).not.toContain('Account connected')
+    expect(cli.output().stderr).toBe(`spicytrade connect: the account snapshot could not be verified. Check the connection with: ${SPICYTRADE} doctor\n`)
+    expect(toolCalls(worker.calls)).toHaveLength(1)
+    // The skill is what tells an agent the account is there, so it is not written for one that is not.
+    expect(await absent(machine.workspace)).toBe(true)
   }, 30_000)
-
-  it('replaces an HTTP entry for the website, which can never carry a broker credential', async () => {
-    const port = await snapshotWorker()
-    const website = `http://127.0.0.1:${port}/mcp`
-    const machine = await fakeMachine(
-      { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN },
-      { claude: { 'local:spicytrade': website } },
-    )
-    const cli = run(machine, port, ['connect'], { env: { CLAUDECODE: '1' } })
-    expect(await cli.exited).toBe(0)
-    const { stdout } = cli.output()
-    expect(stdout).toContain('Claude Code now starts spicytrade in ~/workspace.')
-    expect(await readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).toBe(`${MCP_TARGET}\n`)
-  }, 30_000)
-
-  it('leaves a different server named spicytrade alone and says how to fix it', async () => {
-    const machine = await fakeMachine(
-      { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN },
-      { claude: { 'local:spicytrade': '/opt/someone-else/server --stdio' } },
-    )
-    const cli = run(machine, await snapshotWorker(), ['connect'], { env: { CLAUDECODE: '1' } })
-    expect(await cli.exited).toBe(0)
-    const { stdout } = cli.output()
-    expect(stdout).toContain('But Claude Code has a different server named "spicytrade" in ~/workspace, so this conversation cannot use it yet.\n')
-    expect(await readFile(join(machine.state, 'claude-local-spicytrade-target'), 'utf8')).toBe('/opt/someone-else/server --stdio')
-  }, 30_000)
-
-  it('tells Claude Code to continue once its workspace starts the server', async () => {
-    const machine = await fakeMachine(
-      { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN },
-      { claude: { 'local:spicytrade': MCP_TARGET } },
-    )
-    const cli = run(machine, await snapshotWorker(), ['connect'], { env: { CLAUDECODE: '1' } })
-    expect(await cli.exited).toBe(0)
-    expect(cli.output().stdout).toContain('Account connected and live snapshot verified. Claude Code starts spicytrade in ~/workspace.'
-      + ' Continue in your existing agent conversation;')
-  }, 30_000)
-
-  it('prints only a credential-free stdio manifest without inspecting or launching clients', async () => {
-    const machine = await fakeMachine({})
-    const cli = run(machine, 1, ['integration'])
-    expect(await cli.exited).toBe(0)
-    expect(JSON.parse(cli.output().stdout)).toEqual({ command: resolve(CLI), args: ['mcp'] })
-  })
 })
 
 
 describe('connector-only installation', () => {
   it('installs without running setup, choosing an agent, or changing harness configuration', async () => {
-    const machine = await fakeMachine({})
+    const machine = await fakeMachine({}, ['claude', 'codex'])
     await writeFile(join(machine.bin, 'curl'), `#!/usr/bin/env bash
 while (( $# )); do
   if [[ $1 == -o ]]; then
@@ -952,6 +1048,8 @@ exit 1
     expect(await new Promise(resolve => child.once('exit', resolve))).toBe(0)
     expect(output).toContain('Connector ready. Your current agent can run:')
     expect(await readFile(join(machine.home, '.local', 'share', 'spicytrade', 'spicytrade.mjs'), 'utf8')).toContain('Installer must not run setup')
+    // Neither agent on the machine was run, and nothing but the program was put in the home directory.
     expect(await readdir(machine.state)).toEqual([])
+    expect(await readdir(machine.home)).toEqual(['.local'])
   })
 })

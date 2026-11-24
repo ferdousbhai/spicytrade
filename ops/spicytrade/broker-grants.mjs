@@ -5,7 +5,7 @@ import { TOKEN_REQUEST_TIMEOUT_MS } from './token-refresh.mjs'
 
 /**
  * Minting a 15-minute tastytrade access token from the long-lived grant in the keyring, for the
- * MCP server that attaches it and for `spicytrade doctor` that checks the grant still mints.
+ * tool call that attaches it and for `spicytrade doctor` that checks the grant still mints.
  */
 
 const TokenResponseSchema = z.object({

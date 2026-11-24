@@ -1,8 +1,8 @@
 /**
- * When `spicytrade mcp` stops handing out a cached broker access token.
+ * When `spicytrade call` stops using a cached broker access token.
  *
  * Refreshed on a margin rather than on a 401, so a placement is never attempted with a token that
- * dies mid-flight. A token is handed to one forwarded request, which `spicytrade mcp` abandons after
+ * dies mid-flight. A token is handed to one request, which `spicytrade call` abandons after
  * `UPSTREAM_TIMEOUT_MS`; retiring it that long before expiry means every request it rides on
  * finishes, or is abandoned, while it is still live. A tenth of the lifetime caps the margin for a
  * token too short-lived to spare a whole timeout and still be worth caching. This is the rule the
@@ -10,7 +10,7 @@
  */
 const REFRESH_SKEW_FRACTION = 0.1
 
-// The budget for one relayed MCP call, headers through the last streamed byte. Nothing
+// The budget for one MCP call, headers through the last streamed byte. Nothing
 // on the Worker bounds a request's wall time (Workers limit CPU, not wall-clock, and each broker
 // call there carries its own timeout), so this is not a mirror of a Worker bound: it is meant to
 // cover a single call's worst case, a placement's sequential broker round trips being the longest,

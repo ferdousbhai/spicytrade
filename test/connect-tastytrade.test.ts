@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { chmod, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { type IncomingMessage, type Server } from 'node:http'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
@@ -11,7 +11,10 @@ import { closeLoopback, listenLoopback } from './loopback.ts'
 /*
  * Connecting tastytrade with `spicytrade connect`, end to end against a stand-in Worker: the real
  * polling, the real keyring code over a file-backed `secret-tool`, and a no-op browser opener, so
- * a run never opens a browser on the machine running the tests.
+ * a run never opens a browser on the machine running the tests. Each run has a home directory and
+ * a workspace inside its own temporary directory, and a PATH of the fakes and the system
+ * directories: `connect` writes a skill into the workspace for each agent it finds on PATH, and
+ * must find neither the real agents nor a real folder to write into.
  */
 
 const OLD_TOKEN = 'spice_0123456789abcdef_AAAAAAAAAAAAAAAAAAAA'
@@ -39,10 +42,15 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { force: true, recursive: true })))
 })
 
-/** The shared `secret-tool` stand-in, plus inert `xdg-open` and `open` beside it. */
+/** Where a run's home directory and workspace are, inside its tools directory. */
+const homeOf = (tools: string) => join(tools, 'home')
+const workspaceOf = (tools: string) => join(homeOf(tools), 'workspace')
+
+/** The shared `secret-tool` stand-in, plus inert `xdg-open` and `open` beside it, and an empty home. */
 async function fakeTools(entries: Record<string, string>): Promise<string> {
   const directory = await fakeSecretTool(entries)
   directories.push(directory)
+  await mkdir(homeOf(directory))
   await writeFile(join(directory, 'xdg-open'), `#!/usr/bin/env bash\necho "$1" > '${directory}/opened'\n`)
   await writeFile(join(directory, 'open'), `#!/usr/bin/env bash\necho "$1" > '${directory}/opened'\n`)
   for (const tool of ['xdg-open', 'open']) await chmod(join(directory, tool), 0o755)
@@ -51,7 +59,7 @@ async function fakeTools(entries: Record<string, string>): Promise<string> {
 
 const McpRequestSchema = z.object({ id: z.number().optional(), method: z.string() })
 
-/** What the Worker answers the agent's server once this computer is connected: a live snapshot to verify. */
+/** What the Worker answers once this computer is connected: its mint, and a live snapshot to verify. */
 function connectedAnswer(request: IncomingMessage, raw: string): Answer {
   if (request.headers.authorization !== `Bearer ${AGENT_TOKEN}`) return { body: { error: 'invalid_token' }, status: 401 }
   if (request.url === '/api/brokers/tastytrade/token') return { body: { accessToken: 'minted', expiresIn: 900 }, status: 200 }
@@ -90,11 +98,17 @@ async function fakeWorker(grant: () => Answer) {
 function startCli(tools: string, workerPort: number) {
   let stdout = ''
   let stderr = ''
-  // Without CLAUDECODE, which is set when the tests run inside Claude Code and would have
-  // `connect` register the server with the real client.
+  // Without CLAUDECODE, which is set when the tests run inside Claude Code, and with nothing of
+  // this machine's own in reach: not its home, its folders, or the agents on its PATH.
   const { CLAUDECODE: _inherited, ...inherited } = process.env
   cli = spawn(process.execPath, ['ops/spicytrade/spicytrade.mjs', 'connect'], {
-    env: { ...inherited, SPICYTRADE_MCP_URL: `http://127.0.0.1:${workerPort}/mcp`, PATH: `${tools}:${process.env.PATH ?? ''}` },
+    env: {
+      ...inherited,
+      HOME: homeOf(tools),
+      PATH: `${tools}:${dirname(process.execPath)}:/usr/bin:/bin`,
+      SPICYTRADE_MCP_URL: `http://127.0.0.1:${workerPort}/mcp`,
+      SPICYTRADE_WORKSPACE: workspaceOf(tools),
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   cli.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
@@ -136,6 +150,9 @@ describe('connecting tastytrade', () => {
     }
     // One link, spicytrade's own, is printed and handed to the opener; tastytrade's follows in the browser.
     expect(stdout.match(/https?:\/\//g)).toHaveLength(1)
+    // Connected means a live snapshot came back. No agent is installed here, so none is told.
+    expect(stdout).toMatch(/\n✓ tastytrade connected\.\nVerifying live account access…\nAccount connected and live snapshot verified\. No Claude Code or Codex was found on this computer to tell about it\. List what it can do with `\S+ tools`\.\n$/)
+    expect(await readdir(homeOf(tools))).toEqual([])
     // The opener is detached, so it may still be writing when the run exits.
     await expect.poll(() => readFile(join(tools, 'opened'), 'utf8').catch(() => ''))
       .toMatch(/\/connect\/agent\?.*broker=tastytrade/)

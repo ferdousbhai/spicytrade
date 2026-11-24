@@ -9,7 +9,7 @@ import { CliFailure } from './cli.mjs'
 import { keyringEnvironment } from './keyring-environment.mjs'
 
 /**
- * Keyring access for the local tools, shared so every one of them (`mcp`, setup, doctor, login
+ * Keyring access for the local tools, shared so every one of them (`call`, setup, doctor, login
  * and the tastytrade connect step) reads the same entries the same way.
  *
  * Everything goes through the platform's own password-storage command (`HELPERS` below), and no
@@ -290,6 +290,11 @@ export const TASTYTRADE = 'tastytrade'
 export const APP_REFRESH_TOKEN_KEY = 'app-refresh-token'
 export const CLIENT_SECRET_KEY = 'client-secret'
 export const REFRESH_TOKEN_KEY = 'refresh-token'
+/**
+ * The 15-minute access token the last call minted, kept so the next need not mint again (see
+ * `brokerAccessToken` in `call.mjs`). Not a connection: it is absent from `tastytradeCredentialKind`.
+ */
+export const ACCESS_TOKEN_KEY = 'access-token'
 
 /**
  * Reads every tastytrade keyring entry in parallel and classifies what is there. `kind` is
@@ -298,7 +303,7 @@ export const REFRESH_TOKEN_KEY = 'refresh-token'
  * account trades would otherwise turn on an ordering nobody chose); or `'incomplete'` (half a
  * personal grant, which cannot mint). The last two are repaired the same way: clear and connect
  * again. The raw values come back alongside `kind` so a caller that needs them to mint -- the
- * MCP server, and doctor's mint check -- does not read the keyring twice; setup and the connect step
+ * tool call, and doctor's mint check -- does not read the keyring twice; setup and the connect step
  * only inspect `kind`. Never logs a value.
  */
 export async function tastytradeCredentialKind() {
