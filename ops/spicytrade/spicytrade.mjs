@@ -2,19 +2,18 @@
 import { connect } from './connect.mjs'
 import { cliCommand, MCP_COMMAND } from './config.mjs'
 import { doctor } from './doctor.mjs'
-import { login } from './login.mjs'
 import { CliFailure, reconnectNote } from './cli.mjs'
 import { serveMcp } from './mcp.mjs'
 import { setup } from './setup.mjs'
 import { start } from './start.mjs'
-import { connectTastytrade, disconnectTastytrade, storePersonalGrant } from './tastytrade-connect.mjs'
+import { disconnectTastytrade, storePersonalGrant } from './tastytrade-connect.mjs'
 import { uninstall } from './uninstall.mjs'
 
 /**
  * `spicytrade`: the one command a member runs on their own machine, installed by
- * `curl -fsSL https://spicy.trade/install.sh | bash`. `setup` is the whole path from nothing to
- * a working agent; the others are its steps, for when only one needs redoing, and `mcp` is what
- * the agent itself runs.
+ * `curl -fsSL https://spicy.trade/install.sh | bash`. `connect` signs this computer in and connects
+ * tastytrade, and is run again to redo either; `setup` is the whole path from nothing to a working
+ * agent, and `mcp` is what the agent itself runs.
  */
 
 // `mcp` is left out: the agent runs it, and a member never needs to.
@@ -31,8 +30,6 @@ Advanced:
   integration             Print the credential-free local MCP configuration.
   start                   Open a trading agent.
   doctor                  Check everything without changing anything.
-  login                   Sign this computer in again.
-  connect-tastytrade      Reconnect tastytrade.
   disconnect-tastytrade   Remove tastytrade from this computer.
   store-personal-grant    Use your own tastytrade OAuth app instead.
   uninstall               Remove spicytrade and its credentials from this computer.
@@ -43,10 +40,8 @@ const COMMANDS = {
   integration: async () => { process.stdout.write(`${JSON.stringify({ command: MCP_COMMAND[0], args: MCP_COMMAND.slice(1) })}\n`) },
   connect,
   start,
-  'connect-tastytrade': async () => { await connectTastytrade(); process.stdout.write(reconnectNote()) },
   'disconnect-tastytrade': async () => { if (await disconnectTastytrade()) process.stdout.write(reconnectNote()) },
   doctor: async () => { if (!await doctor()) process.exitCode = 1 },
-  login: async () => { await login(); process.stdout.write(reconnectNote()) },
   mcp: async () => {
     // Run by hand, it would sit waiting for an agent's messages on the terminal with no word why.
     if (process.stdin.isTTY) {

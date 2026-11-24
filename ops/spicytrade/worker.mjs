@@ -1,5 +1,6 @@
 import { transportCode } from './broker-grants.mjs'
-import { UPSTREAM, workerFault } from './config.mjs'
+import { CliFailure } from './cli.mjs'
+import { cliCommand, ORIGIN, UPSTREAM, workerFault } from './config.mjs'
 import { UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
 
 /**
@@ -45,4 +46,28 @@ export function describeTokenCheck(check) {
     case 'unanswered': return `spicytrade could not check this computer's sign-in (HTTP ${check.httpStatus})`
     default: return `spicytrade could not be reached (${check.transport})`
   }
+}
+
+/**
+ * One JSON POST to the Worker, abandoned after `timeoutMs`: its status, and its body as JSON or
+ * undefined when it is not JSON. `bearer` is the agent token, for the calls that need one. A call
+ * the Worker never answered is the one failure decided here; what a status means is the caller's.
+ */
+export async function postWorker(path, body, timeoutMs, bearer) {
+  const headers = { Accept: 'application/json', 'Content-Type': 'application/json' }
+  if (bearer) headers.Authorization = `Bearer ${bearer}`
+  let response
+  try {
+    response = await fetch(new URL(path, ORIGIN), {
+      body: JSON.stringify(body),
+      headers,
+      method: 'POST',
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  } catch (error) {
+    // The cause's own word -- ENOTFOUND, ECONNREFUSED, TimeoutError -- not fetch's bare TypeError.
+    const cause = transportCode(error)
+    throw new CliFailure(`spicytrade could not be reached${cause ? ` (${cause})` : ''}. Check your internet connection, then run: ${cliCommand('connect')}`)
+  }
+  return { ok: response.ok, payload: await response.json().catch(() => undefined), status: response.status }
 }

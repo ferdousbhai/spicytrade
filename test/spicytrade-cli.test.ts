@@ -224,15 +224,22 @@ async function legacyUnit(machine: Machine, name: string) {
   return join(machine.config, 'systemd', 'user', name)
 }
 
-describe('spicytrade login', () => {
+/*
+ * Signing in on its own link: tastytrade is already connected on these computers, so the link
+ * `setup` prints goes no further than the sign-in.
+ */
+describe('signing in again', () => {
   it('prints one link, polls with its verifier until the member approves, and keeps only the token', async () => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN })
+    const machine = await fakeMachine(
+      { 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN },
+      { claude: { 'local:spicytrade': MCP_TARGET } },
+    )
     // The member approves between the first poll and the second.
     let polls = 0
     const worker = await fakeWorker([], () => (polls++ === 0
       ? { body: { pending: true }, status: 202 }
       : { body: { token: NEW_TOKEN }, status: 200 }))
-    const cli = run(machine, worker.port, ['login'])
+    const cli = run(machine, worker.port, ['setup'])
     const url = await approvalUrl(cli.output)
 
     expect(url.pathname).toBe('/connect/agent')
@@ -267,22 +274,22 @@ describe('spicytrade login', () => {
     // Nothing to restart: each agent session reads the keyring when it starts.
     expect(stdout).toContain('picks this up once it reconnects')
     await expect.poll(() => readFile(join(machine.state, 'opened'), 'utf8').catch(() => '')).toContain('/connect/agent?')
-  }, 30_000)
+  }, 60_000)
 
   it('opens no browser over SSH, where the member opens the link on their own device', async () => {
-    const machine = await fakeMachine({})
+    const machine = await fakeMachine({ 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN }, { claude: {} })
     const worker = await fakeWorker([])
-    const cli = run(machine, worker.port, ['login'], { env: { SSH_CONNECTION: '203.0.113.7 50000 203.0.113.8 22' } })
+    const cli = run(machine, worker.port, ['setup'], { env: { SSH_CONNECTION: '203.0.113.7 50000 203.0.113.8 22' } })
     expect(await cli.exited).toBe(0)
     expect(cli.output().stdout).toContain('/connect/agent?')
     expect(cli.output().stdout).not.toContain('ssh -L')
     await expect(readFile(join(machine.state, 'opened'), 'utf8')).rejects.toThrow()
-  }, 30_000)
+  }, 60_000)
 
   it('moves a token signed in before the rename to the current keyring entry', async () => {
-    const machine = await fakeMachine({ 'spicy-trade/mcp-token': OLD_TOKEN })
+    const machine = await fakeMachine({ 'spicy-trade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN }, { claude: {} })
     const worker = await fakeWorker([])
-    const cli = run(machine, worker.port, ['login'])
+    const cli = run(machine, worker.port, ['setup'])
 
     expect(await cli.exited).toBe(0)
     // The old token still rides along, so the Worker retires it.
@@ -290,17 +297,18 @@ describe('spicytrade login', () => {
     expect(ExchangeBodySchema.parse(JSON.parse(exchange!.body)).previousToken).toBe(OLD_TOKEN)
     expect(await readFile(join(machine.bin, 'store', 'spicytrade_mcp-token'), 'utf8')).toBe(NEW_TOKEN)
     await expect(readFile(join(machine.bin, 'store', 'spicy-trade_mcp-token'), 'utf8')).rejects.toThrow()
-  }, 30_000)
+  }, 60_000)
 
   it.each([
     [409, { error: 'At most 5 agent tokens' }, 'Revoke one you no longer'],
     [503, { error: 'unavailable' }, 'spicytrade could not finish the sign-in (HTTP 503)'],
   ])('reports an exchange refused with %i in its own words, keeping the old token', async (status, answer, message) => {
-    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN })
+    const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN, 'tastytrade/app-refresh-token': APP_REFRESH_TOKEN })
     const worker = await fakeWorker([], () => ({ body: answer, status }))
-    const cli = run(machine, worker.port, ['login'])
+    const cli = run(machine, worker.port, ['setup'])
     expect(await cli.exited).toBe(1)
     expect(cli.output().stderr).toContain(message)
+    expect(cli.output().stderr).toMatch(/: \S+ connect$/m)
     // The Worker's body is not echoed.
     expect(cli.output().stderr).not.toContain(JSON.stringify(answer))
     expect(await readFile(join(machine.bin, 'store', 'spicytrade_mcp-token'), 'utf8')).toBe(OLD_TOKEN)
@@ -356,6 +364,15 @@ describe('spicytrade doctor', () => {
     const cli = run(machine, worker.port, ['stup'])
     expect(await cli.exited).toBe(2)
     expect(cli.output().stderr).toMatch(/^spicytrade: unknown command "stup"\n\nUsage: spicytrade <command>/)
+  }, 30_000)
+
+  it.each(['login', 'connect-tastytrade'])('no longer knows %s, which connect now covers', async (removed) => {
+    const machine = await fakeMachine({})
+    const worker = await fakeWorker([])
+    const cli = run(machine, worker.port, [removed])
+    expect(await cli.exited).toBe(2)
+    expect(cli.output().stderr).toContain(`spicytrade: unknown command "${removed}"`)
+    expect(worker.calls).toEqual([])
   }, 30_000)
 
   it('names each broken link with the command that fixes it', async () => {
@@ -463,7 +480,7 @@ describe('spicytrade setup', () => {
     expect(firstOut).not.toContain('Everything is connected.')
     // tastytrade was not connected, so ready means market data and research, and says how to go further.
     expect(firstOut).toContain(`Ready for market data and research. Continue in your agent:\n  Return to your agent conversation and ask it to connect Spicytrade.\n`)
-    expect(firstOut).toMatch(/To see positions and place orders, run this in a terminal and connect tastytrade: \S+ setup\n/)
+    expect(firstOut).toMatch(/To see positions and place orders, connect tastytrade: \S+ connect\n/)
     // Nothing was running on an older sign-in, so there is no reconnect advice to give.
     expect(firstOut).not.toContain('reconnects')
 

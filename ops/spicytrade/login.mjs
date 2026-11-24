@@ -2,11 +2,11 @@ import { createHash, randomBytes } from 'node:crypto'
 import { hostname } from 'node:os'
 import { z } from 'zod'
 
-import { transportCode } from './broker-grants.mjs'
 import { CliFailure, openBrowser, pollUntil, unexpectedTail } from './cli.mjs'
 import { cliCommand, ORIGIN } from './config.mjs'
 import { agentToken, KeyringUnavailable, storeAgentToken } from './keyring.mjs'
 import { UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
+import { postWorker } from './worker.mjs'
 
 /**
  * Signing this machine in to spicytrade: one link, approved in any browser, and the agent token
@@ -36,7 +36,7 @@ const RANDOM_BYTES = 32
 /**
  * How long to wait for the member to approve. It covers signing in to spicytrade with Google
  * first, the slowest thing a member does on that page, and matches how long a started tastytrade
- * connection stays redeemable (`BROKER_AUTHORIZATION_TTL_MS`). A product judgment.
+ * connection stays redeemable (`BROKER_CONSENT_TTL_MS`). A product judgment.
  */
 const APPROVAL_WAIT_MS = 10 * 60_000
 
@@ -74,27 +74,14 @@ function connectCode(challenge) {
 async function collect(codeVerifier, previousToken) {
   const body = { codeVerifier }
   if (previousToken) body.previousToken = previousToken
-  let response
-  try {
-    response = await fetch(new URL('/api/agent-logins/exchange', ORIGIN), {
-      body: JSON.stringify(body),
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      method: 'POST',
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-    })
-  } catch (error) {
-    // The cause's own word -- ENOTFOUND, ECONNREFUSED, TimeoutError -- not fetch's bare TypeError.
-    const cause = transportCode(error)
-    throw new CliFailure(`spicytrade could not be reached${cause ? ` (${cause})` : ''}. Check your internet connection, then run: ${cliCommand('setup')}`)
-  }
-  const payload = await response.json().catch(() => undefined)
+  const response = await postWorker('/api/agent-logins/exchange', body, UPSTREAM_TIMEOUT_MS)
   if (response.status === 202) return undefined
   if (response.status === 409) {
     throw new CliFailure('your account has the most signed-in computers allowed. Revoke one you no longer use under'
-      + ` "Signed-in computers" at ${ORIGIN}/connect, then run: ${cliCommand('setup')}`)
+      + ` "Signed-in computers" at ${ORIGIN}/connect, then run: ${cliCommand('connect')}`)
   }
-  if (!response.ok) throw new CliFailure(`spicytrade could not finish the sign-in (HTTP ${response.status}). Try again with: ${cliCommand('setup')}`)
-  const parsed = ExchangeResponseSchema.safeParse(payload)
+  if (!response.ok) throw new CliFailure(`spicytrade could not finish the sign-in (HTTP ${response.status}). Try again with: ${cliCommand('connect')}`)
+  const parsed = ExchangeResponseSchema.safeParse(response.payload)
   if (!parsed.success) throw new CliFailure(`spicytrade answered the sign-in with an unreadable response. ${unexpectedTail()}`)
   return parsed.data.token
 }
@@ -123,7 +110,7 @@ export async function login(out = process.stdout, { tastytrade = false } = {}) {
     return token && { token }
   }, APPROVAL_WAIT_MS)
   if (collected.lapsed) {
-    throw new CliFailure(`the link was not approved within ${APPROVAL_WAIT_MS / 60_000} minutes. Run: ${cliCommand('setup')}`)
+    throw new CliFailure(`the link was not approved within ${APPROVAL_WAIT_MS / 60_000} minutes. Run: ${cliCommand('connect')}`)
   }
   if (!await storeAgentToken(collected.token)) throw new KeyringUnavailable()
   out.write('✓ Signed in.\n')

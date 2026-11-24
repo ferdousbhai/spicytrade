@@ -249,7 +249,7 @@ export async function setup(out = process.stdout) {
       out.write('· left as it is\n')
     }
   } else if (!process.stdin.isTTY) {
-    // The closing block says how to connect; run from an agent's shell, "in a terminal" is the point.
+    // The closing block says how to connect.
     out.write('· not connected: there is no terminal to ask on\n')
   } else if (await confirm('Connect tastytrade, so your agent can see your positions and place orders? [Y/n] ')) {
     credentialsChanged = await tryConnect(out) || credentialsChanged
@@ -273,7 +273,7 @@ export async function setup(out = process.stdout) {
       : kind === 'app' || kind === 'personal'
         ? `\nAccount connected. Continue in your agent:\n${starts}`
         : `\nReady for market data and research. Continue in your agent:\n${starts}`
-          + `To see positions and place orders, run this in a terminal and connect tastytrade: ${cliCommand('setup')}\n`)
+          + `To see positions and place orders, connect tastytrade: ${cliCommand('connect')}\n`)
     // Only an agent that already had the server can be running on the credentials this run replaced.
     if (credentialsChanged && alreadyInPlace) out.write(reconnectNote(ready.map((client) => client.id)))
   }
