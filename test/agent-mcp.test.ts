@@ -158,7 +158,7 @@ async function accountWorker(mint: (request: IncomingMessage, response: ServerRe
       return
     }
     const { id, method } = JSON.parse(body)
-    const brokered = incoming.headers['x-spice-broker-token'] !== undefined
+    const brokered = incoming.headers['x-spicy-trade-broker-token'] !== undefined
     response.writeHead(200, { 'content-type': 'application/json' })
     response.end(JSON.stringify(method === 'tools/call' && !brokered
       ? { id, jsonrpc: '2.0', result: { content: [{ text: NO_BROKERAGE_TEXT, type: 'text' }], isError: true } }
@@ -225,8 +225,8 @@ describe('spicytrade mcp', () => {
     expect(captured).toHaveLength(2)
     for (const call of captured) {
       expect(call.headers.authorization).toBe(`Bearer ${AGENT_TOKEN}`)
-      expect(call.headers['x-spice-broker']).toBe('tastytrade')
-      expect(call.headers['x-spice-broker-token']).toBe(MINTED)
+      expect(call.headers['x-spicy-trade-broker']).toBe('tastytrade')
+      expect(call.headers['x-spicy-trade-broker-token']).toBe(MINTED)
       // The whole reason this process exists: the permanent credential stays here.
       expect(JSON.stringify(call)).not.toContain(REFRESH_TOKEN)
       expect(JSON.stringify(call)).not.toContain(CLIENT_SECRET)
@@ -259,7 +259,7 @@ describe('spicytrade mcp', () => {
     // working; an account tool's refusal is answered with what actually went wrong.
     server.send(request(3))
     expect(ToolErrorReplySchema.parse(await server.reply(2)).result.content[0]!.text).toMatch(/^tastytrade refused this computer's personal grant \(HTTP 401\)\./)
-    expect(captured.every((call) => call.headers['x-spice-broker-token'] === undefined)).toBe(true)
+    expect(captured.every((call) => call.headers['x-spicy-trade-broker-token'] === undefined)).toBe(true)
     expect(captured).toHaveLength(3)
   }, 30_000)
 
@@ -282,8 +282,8 @@ describe('spicytrade mcp', () => {
     await server.reply(0)
     // No broker headers at all: the Worker then answers account tools with its own
     // connect-a-brokerage message rather than being handed a half-configured credential.
-    expect(captured[0]?.headers['x-spice-broker']).toBeUndefined()
-    expect(captured[0]?.headers['x-spice-broker-token']).toBeUndefined()
+    expect(captured[0]?.headers['x-spicy-trade-broker']).toBeUndefined()
+    expect(captured[0]?.headers['x-spicy-trade-broker-token']).toBeUndefined()
   }, 30_000)
 
   it("gives this computer's own fix when an account call finds no brokerage connected", async () => {
@@ -569,7 +569,7 @@ exit 1
     expect(JSON.parse(mints[0]!.body)).toEqual({ refreshToken: REFRESH_TOKEN })
     expect(captured).toHaveLength(2)
     for (const call of captured) {
-      expect(call.headers['x-spice-broker-token']).toBe(MINTED)
+      expect(call.headers['x-spicy-trade-broker-token']).toBe(MINTED)
       expect(JSON.stringify(call)).not.toContain(REFRESH_TOKEN)
     }
   }, 30_000)

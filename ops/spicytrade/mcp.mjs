@@ -487,10 +487,8 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
           }
         }
         if (token) {
-          // Still the pre-rename header names: the Worker accepts both, and moving these waits until
-          // every installed CLI has been replaced by one that sends the current names.
-          headers.set('X-Spice-Broker', BROKER)
-          headers.set('X-Spice-Broker-Token', token)
+          headers.set('X-Spicy-Trade-Broker', BROKER)
+          headers.set('X-Spicy-Trade-Broker-Token', token)
         }
       }
       sent = true

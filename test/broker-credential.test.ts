@@ -14,54 +14,23 @@ afterEach(() => {
 describe('request-scoped broker credential', () => {
   it('parses a supported broker and trims its token', () => {
     const credential = brokerCredentialFromHeaders(new Headers({
-      'X-Spice-Broker': 'tastytrade',
-      'X-Spice-Broker-Token': '  request-token  ',
+      'X-Spicy-Trade-Broker': 'tastytrade',
+      'X-Spicy-Trade-Broker-Token': '  request-token  ',
     }))
 
     expect(credential).toEqual({ accessToken: 'request-token', broker: 'tastytrade' })
   })
 
-  it('reads the current header names', () => {
-    const credential = brokerCredentialFromHeaders(new Headers({
-      'X-Spicy-Trade-Broker': 'tastytrade',
-      'X-Spicy-Trade-Broker-Token': 'request-token',
-    }))
-
-    expect(credential).toEqual({ accessToken: 'request-token', broker: 'tastytrade' })
-  })
-
-  it('accepts a header sent under both names when the values agree', () => {
-    const credential = brokerCredentialFromHeaders(new Headers({
-      'X-Spice-Broker': 'tastytrade',
-      'X-Spice-Broker-Token': 'request-token',
-      'X-Spicy-Trade-Broker': 'tastytrade',
-      'X-Spicy-Trade-Broker-Token': ' request-token ',
-    }))
-
-    expect(credential).toEqual({ accessToken: 'request-token', broker: 'tastytrade' })
+  it('ignores the pre-rename header names', () => {
+    expect(brokerCredentialFromHeaders(new Headers({ 'X-Spice-Broker': 'tastytrade', 'X-Spice-Broker-Token': 'request-token' }))).toBeUndefined()
   })
 
   it.each([
-    ['tokens', {
-      'X-Spice-Broker-Token': 'old-token',
-      'X-Spicy-Trade-Broker': 'tastytrade',
-      'X-Spicy-Trade-Broker-Token': 'new-token',
-    }],
-    ['brokers', {
-      'X-Spice-Broker': 'another-broker',
-      'X-Spicy-Trade-Broker': 'tastytrade',
-      'X-Spicy-Trade-Broker-Token': 'request-token',
-    }],
-  ])('refuses %s that disagree between the old and current names', (_label, values) => {
-    expect(brokerCredentialFromHeaders(new Headers(values))).toBeUndefined()
-  })
-
-  it.each([
-    ['missing broker', { 'X-Spice-Broker-Token': 'request-token' }],
-    ['missing token', { 'X-Spice-Broker': 'tastytrade' }],
-    ['empty broker', { 'X-Spice-Broker': ' ', 'X-Spice-Broker-Token': 'request-token' }],
-    ['empty token', { 'X-Spice-Broker': 'tastytrade', 'X-Spice-Broker-Token': ' ' }],
-    ['unknown broker', { 'X-Spice-Broker': 'another-broker', 'X-Spice-Broker-Token': 'request-token' }],
+    ['missing broker', { 'X-Spicy-Trade-Broker-Token': 'request-token' }],
+    ['missing token', { 'X-Spicy-Trade-Broker': 'tastytrade' }],
+    ['empty broker', { 'X-Spicy-Trade-Broker': ' ', 'X-Spicy-Trade-Broker-Token': 'request-token' }],
+    ['empty token', { 'X-Spicy-Trade-Broker': 'tastytrade', 'X-Spicy-Trade-Broker-Token': ' ' }],
+    ['unknown broker', { 'X-Spicy-Trade-Broker': 'another-broker', 'X-Spicy-Trade-Broker-Token': 'request-token' }],
   ])('refuses %s', (_label, values) => {
     expect(brokerCredentialFromHeaders(new Headers(values))).toBeUndefined()
   })
