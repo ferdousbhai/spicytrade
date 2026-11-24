@@ -20,7 +20,7 @@ export function reconnectNote(clients) {
  * still has a next step. The site's support address is `SUPPORT_EMAIL` in `src/domain/site.ts`.
  */
 export function unexpectedTail() {
-  return `Try again with: ${cliCommand('setup')} -- if it happens again, write to support@spicy.trade`
+  return `Try again with: ${cliCommand('connect')} -- if it happens again, write to support@spicy.trade`
 }
 
 /** A command-line failure: its message is printed after the program's name, and the run exits 1. */

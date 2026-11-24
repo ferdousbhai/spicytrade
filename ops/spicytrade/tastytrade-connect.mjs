@@ -121,14 +121,6 @@ export async function collectTastytrade(out, { agentBearer, codeVerifier }) {
  * that already is: the approval is what starts the consent, under the member's own session.
  */
 export async function connectTastytrade(out = process.stdout) {
-  // A working personal grant is the member's choice, so connecting over it is refused rather than
-  // replacing it. Two connections, or half a personal grant, cannot trade at all: the new
-  // connection replaces them once it is in hand.
-  const { kind } = await tastytradeCredentialKind()
-  if (kind === 'personal') {
-    throw new CliFailure('tastytrade is already connected with your personal grant. To switch, run:\n'
-      + `  ${cliCommand('disconnect-tastytrade')}\nthen run this again.`)
-  }
   await collectTastytrade(out, await login(out, { tastytrade: true }))
 }
 

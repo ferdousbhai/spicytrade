@@ -109,7 +109,7 @@ function failureFor(error, grantKind) {
   if (error instanceof AgentTokenRefused || (error instanceof TastytradeAuthError && error.code === 'spicytrade-401')) {
     return {
       code: FAILURE_CODES.agentToken,
-      message: `This computer was signed out of spicytrade (revoked under Signed-in computers). ${repair(cliCommand('setup'))}`,
+      message: `This computer was signed out of spicytrade (revoked under Signed-in computers). ${repairInPlace()}`,
     }
   }
   if (tastytradeUnavailable(error)) {
@@ -123,8 +123,8 @@ function failureFor(error, grantKind) {
       code: FAILURE_CODES.brokerGrant,
       message: grantKind === 'personal'
         ? `tastytrade refused this computer's personal grant (HTTP ${error.code}). Create a new grant on`
-          + ` my.tastytrade.com. ${repair(cliCommand('store-personal-grant'))}`
-        : `tastytrade refused this computer's brokerage connection (HTTP ${error.code}). ${repair(cliCommand('setup'))}`,
+          + ` my.tastytrade.com. Run this in a terminal: ${cliCommand('store-personal-grant')}. Then call setup_required to reload the connection.`
+        : `tastytrade refused this computer's brokerage connection (HTTP ${error.code}). ${repairInPlace()}`,
     }
   }
   if (error instanceof WorkerNoReply) {
@@ -164,14 +164,8 @@ function failureFor(error, grantKind) {
 }
 
 /** Credential changes are reloaded explicitly inside this MCP session. */
-function repairInPlace(command) {
-  return `Use connect_spicytrade with action=start to connect in this conversation. If you prefer a terminal, run ${command}. Then call setup_required to reload the connection.`
-}
-
-function repair(command) {
-  return command.endsWith('store-personal-grant')
-    ? `Run this in a terminal: ${command}. Then call setup_required to reload the connection.`
-    : repairInPlace(cliCommand('connect'))
+function repairInPlace() {
+  return `Use connect_spicytrade with action=start to connect in this conversation. If you prefer a terminal, run ${cliCommand('connect')}. Then call setup_required to reload the connection.`
 }
 
 /**
@@ -324,14 +318,14 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
     // Not relayed market-only: a keyring that cannot be read may hold a brokerage connection, and
     // carrying on without it would answer account tools as though none were connected.
     if (!(error instanceof KeyringUnavailable)) throw error
-    setupRequired = () => `${error.recovery}. ${repairInPlace(cliCommand('connect'))}`
+    setupRequired = () => `${error.recovery}. ${repairInPlace()}`
   }
   if (setupRequired === undefined && !agentBearer) {
-    setupRequired = () => `This computer is not signed in to spicytrade. ${repairInPlace(cliCommand('connect'))}`
+    setupRequired = () => `This computer is not signed in to spicytrade. ${repairInPlace()}`
   } else if (setupRequired === undefined && (credential.kind === 'ambiguous' || credential.kind === 'incomplete')) {
     setupRequired = () => `${credential.kind === 'ambiguous'
       ? 'Two tastytrade connections are saved on this computer, so spicytrade will not guess which account trades.'
-      : 'An incomplete tastytrade connection is saved on this computer.'} ${repairInPlace(cliCommand('connect'))}`
+      : 'An incomplete tastytrade connection is saved on this computer.'} ${repairInPlace()}`
   }
   if (setupRequired) process.stderr.write(`${PROGRAM}: ${setupRequired()}\n`)
 
@@ -419,7 +413,7 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
       try {
         const nextBearer = await agentToken()
         const nextCredential = await tastytradeCredentialKind()
-        setupRequired = () => `The saved connection is missing or incomplete. ${repairInPlace(cliCommand('connect'))}`
+        setupRequired = () => `The saved connection is missing or incomplete. ${repairInPlace()}`
         if (nextBearer && !['ambiguous', 'incomplete'].includes(nextCredential.kind)) {
           // Recovery is explicit and only runs with no outstanding calls. Never replay the
           // user's failed tool or carry a cached broker token into a new credential context.
@@ -449,7 +443,7 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
         }
       } catch (error) {
         if (!(error instanceof KeyringUnavailable)) throw error
-        setupRequired = () => `${error.recovery}. ${repairInPlace(cliCommand('connect'))}`
+        setupRequired = () => `${error.recovery}. ${repairInPlace()}`
       } finally {
         recovering = false
       }
@@ -526,7 +520,7 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
           // Refused before the session began: serve it as one that needs setup, so the agent hears why.
           // Revoking is also how a member stops using spicytrade, so the way out is named beside the way back.
           setupRequired = () => 'This computer was signed out of spicytrade (revoked under Signed-in computers). If you no'
-            + ` longer use spicytrade here, remove it with \`${cliCommand('uninstall')}\`. To keep using it, ${repairInPlace(cliCommand('connect')).replace(/^Use/, 'use')}`
+            + ` longer use spicytrade here, remove it with \`${cliCommand('uninstall')}\`. To keep using it, ${repairInPlace().replace(/^Use/, 'use')}`
           process.stderr.write(`${PROGRAM}: initialize AgentTokenRefused 401\n`)
           emit(localAnswer(message, setupRequired()))
           return
@@ -564,7 +558,7 @@ export async function serveMcp({ input = process.stdin, output = process.stdout 
           if (missing?.result.content[0].text.startsWith(NO_BROKERAGE_PREFIX)) {
             const text = mintFailure
               ? failureFor(mintFailure, credential.kind).message
-              : `tastytrade is not connected on this computer. ${repair(cliCommand('setup'))}`
+              : `tastytrade is not connected on this computer. ${repairInPlace()}`
             emit({ ...reply, result: { ...missing.result, content: [{ text, type: 'text' }] } })
             return
           }
