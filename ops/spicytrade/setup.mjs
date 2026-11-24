@@ -13,8 +13,8 @@ import {
 } from './keyring.mjs'
 import { removeLegacyUnits } from './legacy-proxy.mjs'
 import { login } from './login.mjs'
-import { CliFailure, reconnectNote } from './loopback.mjs'
-import { connectTastytrade, NotConnected } from './tastytrade-connect.mjs'
+import { CliFailure, reconnectNote } from './cli.mjs'
+import { collectTastytrade, connectTastytrade, NotConnected } from './tastytrade-connect.mjs'
 import { checkAgentToken, describeTokenCheck } from './worker.mjs'
 
 /**
@@ -23,9 +23,11 @@ import { checkAgentToken, describeTokenCheck } from './worker.mjs'
  * running it again is also how a broken setup is repaired; `doctor` closes the run by checking
  * the result end to end.
  *
- * Only the tastytrade connection is asked about rather than done: it hands trading authority to
- * any agent on this machine, which is the member's call to make, and a run without a terminal to
- * ask on leaves it undone and says how to do it later.
+ * A computer with nothing saved signs in and connects tastytrade on one link: the member makes
+ * that call on the page they approve, which says where it continues, and again on tastytrade's
+ * own consent. A computer already signed in is asked before a brokerage is added to it or a saved
+ * connection replaced, and a run without a terminal to ask on leaves that undone and says how to
+ * do it later.
  */
 
 function step(out, title) {
@@ -120,10 +122,13 @@ export function register(out, client, configured) {
   return true
 }
 
-/** Connects tastytrade, reporting a failure without ending setup; true when it connected. */
-async function tryConnect(out) {
+/**
+ * Connects tastytrade -- collecting the grant `session`'s approval already started, or on a link
+ * of its own -- reporting a failure without ending setup; true when it connected.
+ */
+async function tryConnect(out, session) {
   try {
-    await connectTastytrade(out)
+    await (session ? collectTastytrade(out, session) : connectTastytrade(out))
     return true
   } catch (error) {
     if (!(error instanceof CliFailure)) throw error
@@ -146,7 +151,7 @@ export async function setup(out = process.stdout) {
       + ` desktop session must also be logged in. Then run: ${cliCommand('setup')}`)
   }
 
-  // Said before two browser sign-ins rather than after them: without an agent, nothing uses them.
+  // Said before the browser sign-in rather than after it: without an agent, nothing uses it.
   const agentInstalled = (await Promise.all(CLIENTS.map((client) => commandInstalled(client.bin)))).some(Boolean)
   if (!agentInstalled) {
     // Only a heads-up: the run's closing line says what to do about it.
@@ -154,6 +159,8 @@ export async function setup(out = process.stdout) {
   }
 
   step(out, 'Sign in')
+  /** The approval that signed this computer in, when it also started a tastytrade consent. */
+  let session
   const token = await agentToken()
   const check = token ? await checkAgentToken(token) : undefined
   if (check?.status === 'accepted') {
@@ -171,7 +178,10 @@ export async function setup(out = process.stdout) {
       : `${describeTokenCheck(check)}. Try again in a minute: ${cliCommand('setup')}`)
   } else {
     if (check?.status === 'rejected') out.write('This computer was signed out of spicytrade (revoked under Signed-in computers); signing in again.\n')
-    await login(out)
+    // Nothing saved here: the one link signs in and goes on to tastytrade, collected below.
+    const fresh = (await tastytradeCredentialKind()).kind === 'none'
+    const signedIn = await login(out, { tastytrade: fresh })
+    if (fresh) session = signedIn
     credentialsChanged = true
   }
 
@@ -204,7 +214,9 @@ export async function setup(out = process.stdout) {
   step(out, 'tastytrade')
   const credential = await tastytradeCredentialKind()
   const { kind } = credential
-  if (kind === 'app' || kind === 'personal') {
+  if (session) {
+    await tryConnect(out, session)
+  } else if (kind === 'app' || kind === 'personal') {
     // Present is not the same as working: a connection tastytrade has since revoked or expired is
     // found here, so running setup again is also how it is repaired.
     let refused = false

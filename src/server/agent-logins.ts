@@ -1,18 +1,16 @@
 import {
-  AGENT_LOGIN_INVALID_GRANT,
-  AGENT_LOGIN_RANDOM_BYTES,
   AGENT_LOGIN_TTL_MS,
   AgentLoginApproveRequestSchema,
   AgentLoginExchangeRequestSchema,
   MAX_PENDING_AGENT_LOGINS_PER_USER,
 } from '../domain/agent-login'
 import { getAuthenticatedIdentity } from './auth'
-import { randomBase64Url, sha256Base64Url } from './digest'
+import { openTastytradeConsent } from './broker-authorizations'
+import { sha256Base64Url } from './digest'
 import { type AppEnv } from './env'
 import { authenticateRequest, jsonNoStore } from './http'
 import {
   authenticateMcpToken,
-  constantTimeDigestMatch,
   issueMcpToken,
   McpTokenLimitError,
   presentedBearer,
@@ -22,28 +20,26 @@ import { ConfigurationError } from './secrets'
 import { errorName, toError } from '../domain/failure'
 
 /*
- * The browser sign-in for a member's terminal (`spicytrade login`); the wire contract and why it
- * keeps the token out of every URL are in `src/domain/agent-login.ts`.
+ * Connecting a member's computer; the wire contract and what replaces a return to that computer
+ * are in `src/domain/agent-login.ts`.
  *
- *   approve   the signed-in member, on `/connect/agent`, opens a pending row and gets a one-time
- *             code for the page to hand to the CLI's loopback listener;
- *   exchange  the CLI redeems code and verifier for a fresh agent token;
+ *   approve   the signed-in member, on `/connect/agent`, records the approval under the
+ *             challenge in the link, and starts the brokerage consent when the link asks for one;
+ *   exchange  the CLI, polling with the verifier, collects a fresh agent token;
  *   sign out  the CLI, uninstalling, revokes the token it presents -- that token and no other.
  *
  * Approval is the member's session and nothing else: the page posts it same-origin, so a site
- * that links a signed-in member to `/connect/agent` still needs them to press Approve, and the
- * code it yields goes only to the loopback port on the member's own machine. Redemption is
- * unauthenticated by design -- the CLI has no credential yet, which is the point of the flow --
- * and is bound instead by the verifier, which only the CLI that opened the page ever held.
+ * that links a signed-in member to `/connect/agent` still needs them to press Approve. Collection
+ * is unauthenticated by design -- the CLI has no credential yet, which is the point of the flow --
+ * and is bound instead by the verifier, which only the CLI that printed the link ever held.
  */
 
 const unavailable = () => jsonNoStore({ error: "spicytrade can't sign in computers right now. Try again in a minute." }, { status: 503 })
-const invalidGrant = () => jsonNoStore({ error: AGENT_LOGIN_INVALID_GRANT }, { status: 400 })
-
 
 /**
- * Record the signed-in member's approval and return the one-time code. Only the code's digest is
- * kept, so a database read cannot be redeemed.
+ * Record the signed-in member's approval. With a brokerage, its consent is opened first and its
+ * address returned: a consent that cannot be opened leaves nothing approved, so the member is
+ * never signed in on a link that promised a brokerage and could not deliver one.
  */
 export async function approveAgentLogin(
   request: Request,
@@ -57,23 +53,25 @@ export async function approveAgentLogin(
   const parsed = AgentLoginApproveRequestSchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return jsonNoStore({ error: 'Invalid agent sign-in request' }, { status: 400 })
   const userId = authenticated.identity.id
+  const { broker, codeChallenge, label } = parsed.data
   try {
-    const code = randomBase64Url(AGENT_LOGIN_RANDOM_BYTES)
+    const authorizationUrl = broker ? await openTastytradeConsent(env, userId, codeChallenge, now) : undefined
+    if (authorizationUrl instanceof Response) return authorizationUrl
     const nowIso = now.toISOString()
     // The member's lapsed approvals go first so they never count against the cap, and the cap is
     // checked inside the insert: two concurrent approvals that each counted a free slot would
-    // otherwise both insert.
-    const [, inserted] = await env.DB.batch([
-      env.DB.prepare('DELETE FROM agent_logins WHERE user_id = ? AND expires_at <= ?').bind(userId, nowIso),
+    // otherwise both insert. Approving one link twice replaces the first approval.
+    const [, , inserted] = await env.DB.batch([
+      env.DB.prepare('DELETE FROM agent_approvals WHERE user_id = ? AND expires_at <= ?').bind(userId, nowIso),
+      env.DB.prepare('DELETE FROM agent_approvals WHERE challenge = ?').bind(codeChallenge),
       env.DB.prepare(
-        `INSERT INTO agent_logins (code_digest, user_id, code_challenge, label, created_at, expires_at)
-         SELECT ?, ?, ?, ?, ?, ?
-         WHERE (SELECT COUNT(*) FROM agent_logins WHERE user_id = ?) < ?`,
+        `INSERT INTO agent_approvals (challenge, user_id, label, created_at, expires_at)
+         SELECT ?, ?, ?, ?, ?
+         WHERE (SELECT COUNT(*) FROM agent_approvals WHERE user_id = ?) < ?`,
       ).bind(
-        await sha256Base64Url(code),
+        codeChallenge,
         userId,
-        parsed.data.codeChallenge,
-        parsed.data.label,
+        label,
         nowIso,
         new Date(now.getTime() + AGENT_LOGIN_TTL_MS).toISOString(),
         userId,
@@ -85,7 +83,7 @@ export async function approveAgentLogin(
         error: `At most ${MAX_PENDING_AGENT_LOGINS_PER_USER} computer sign-ins may be pending at once. Wait a few minutes and try again.`,
       }, { status: 409 })
     }
-    return jsonNoStore({ code })
+    return jsonNoStore(authorizationUrl ? { authorizationUrl } : {})
   } catch (error) {
     console.error('AgentLoginApproveFailed', errorName(toError(error)))
     return unavailable()
@@ -93,8 +91,10 @@ export async function approveAgentLogin(
 }
 
 /**
- * Redeem a code for an agent token, once. The row is consumed before the verifier is checked, so
- * a wrong verifier spends the code: guessing gets one try per approval the member made.
+ * Collect an approved sign-in's agent token, once. The row is found by the digest of the
+ * verifier presented, so only the CLI that printed the link can collect it, and a poll before
+ * the member approves is indistinguishable from one for a link nobody will ever approve: both
+ * are pending, which says nothing about which challenges exist.
  *
  * `previousToken` is the token the CLI already held for this machine. When it is the same
  * member's, it is revoked, so signing in again replaces a machine's token rather than adding one
@@ -110,15 +110,12 @@ export async function exchangeAgentLogin(request: Request, env: AppEnv, now = ne
   if (!parsed.success) return jsonNoStore({ error: 'Invalid agent sign-in exchange' }, { status: 400 })
   try {
     const consumed = await database.prepare(
-      `DELETE FROM agent_logins
-        WHERE code_digest = ? AND expires_at > ?
-        RETURNING user_id, code_challenge, label`,
-    ).bind(await sha256Base64Url(parsed.data.code), now.toISOString())
-      .first<{ code_challenge: string; label: string; user_id: string }>()
-    if (!consumed) return invalidGrant()
-    if (!await constantTimeDigestMatch(await sha256Base64Url(parsed.data.codeVerifier), consumed.code_challenge)) {
-      return invalidGrant()
-    }
+      `DELETE FROM agent_approvals
+        WHERE challenge = ? AND expires_at > ?
+        RETURNING user_id, label`,
+    ).bind(await sha256Base64Url(parsed.data.codeVerifier), now.toISOString())
+      .first<{ label: string; user_id: string }>()
+    if (!consumed) return jsonNoStore({ pending: true }, { status: 202 })
     const userId = consumed.user_id
 
     const previous = parsed.data.previousToken
@@ -164,13 +161,13 @@ export async function signOutAgentLogin(request: Request, env: AppEnv, now = new
 }
 
 /**
- * Drop approvals that lapsed unredeemed. A member's own lapsed rows also go whenever they approve
+ * Drop approvals that lapsed uncollected. A member's own lapsed rows also go whenever they approve
  * another; this catches the ones whose CLI never came back. A lapsed row can no longer be
- * redeemed, so deleting it loses nothing.
+ * collected, so deleting it loses nothing.
  */
 export async function sweepExpiredAgentLogins(env: AppEnv, now = new Date()): Promise<number> {
   // Scheduled only: a missing binding is a misconfiguration to name, not a sweep of zero rows.
   if (!env.DB) throw new ConfigurationError('BindingMissing', 'DB')
-  const result = await env.DB.prepare('DELETE FROM agent_logins WHERE expires_at <= ?').bind(now.toISOString()).run()
+  const result = await env.DB.prepare('DELETE FROM agent_approvals WHERE expires_at <= ?').bind(now.toISOString()).run()
   return result.meta.changes ?? 0
 }

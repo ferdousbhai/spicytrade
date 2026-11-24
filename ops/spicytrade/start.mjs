@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline/promises'
 import { CLIENTS, EXPECTED_TARGET } from './clients.mjs'
 import { WORKSPACE_DIR, cliCommand } from './config.mjs'
 import { commandInstalled } from './keyring.mjs'
-import { CliFailure } from './loopback.mjs'
+import { CliFailure } from './cli.mjs'
 
 /** Keep trading opt-in while hiding each client's configuration syntax from the member. */
 export async function start() {

@@ -6,27 +6,26 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import { fakeSecretTool } from './fake-secret-tool.ts'
-import { closeLoopback, listenLoopback, visit } from './loopback.ts'
+import { closeLoopback, listenLoopback } from './loopback.ts'
 
 /*
- * `spicytrade connect-tastytrade` end to end against a stand-in Worker: the real loopback
- * listener, the real keyring code over a file-backed `secret-tool`, and a no-op browser opener, so
- * a run never opens a browser on the machine running the tests.
+ * `spicytrade connect-tastytrade` end to end against a stand-in Worker: the real polling, the
+ * real keyring code over a file-backed `secret-tool`, and a no-op browser opener, so a run never
+ * opens a browser on the machine running the tests.
  */
 
-const AGENT_TOKEN = 'spice_0123456789abcdef_AAAAAAAAAAAAAAAAAAAA'
-const STATE = 'S'.repeat(43)
-const CODE = 'authorization-code-from-tastytrade'
+const OLD_TOKEN = 'spice_0123456789abcdef_AAAAAAAAAAAAAAAAAAAA'
+const AGENT_TOKEN = 'spice_fedcba9876543210_BBBBBBBBBBBBBBBBBBBB'
 const REFRESH_TOKEN = 'app-refresh-token-that-belongs-in-the-keyring'
 
 /** Everything the CLI may send the Worker; a field it should not send fails the parse. */
 const WorkerCallBodySchema = z.strictObject({
-  code: z.string().optional(),
-  port: z.number().int().optional(),
-  state: z.string().optional(),
+  codeVerifier: z.string(),
+  previousToken: z.string().optional(),
 })
 
 type WorkerCall = { body: z.infer<typeof WorkerCallBodySchema>; headers: IncomingMessage['headers']; path: string }
+type Answer = { body: unknown; status: number }
 
 let cli: ChildProcess | undefined
 let worker: Server | undefined
@@ -50,21 +49,13 @@ async function fakeTools(entries: Record<string, string>): Promise<string> {
   return directory
 }
 
-async function fakeWorker(exchangeAnswer: () => { body: unknown; status: number }) {
+/** A Worker whose member has approved the link, and which answers each poll for the grant with `grant()`. */
+async function fakeWorker(grant: () => Answer) {
   const calls: WorkerCall[] = []
   const { port, server } = await listenLoopback((request, raw, response) => {
     const body = WorkerCallBodySchema.parse(JSON.parse(raw || '{}'))
     calls.push({ body, headers: request.headers, path: request.url ?? '' })
-    const answer = request.url === '/api/brokers/tastytrade/authorize'
-      ? {
-          body: {
-            authorizationUrl: `https://my.tastytrade.com/auth.html?state=${STATE}`,
-            expiresAt: new Date(Date.now() + 60_000).toISOString(),
-            state: STATE,
-          },
-          status: 200,
-        }
-      : exchangeAnswer()
+    const answer = request.url === '/api/agent-logins/exchange' ? { body: { token: AGENT_TOKEN }, status: 200 } : grant()
     response.writeHead(answer.status, { 'content-type': 'application/json' })
     response.end(JSON.stringify(answer.body))
   })
@@ -85,91 +76,86 @@ function startCli(tools: string, workerPort: number) {
   return { exited, output: () => ({ stderr, stdout }) }
 }
 
-async function loopbackPort(calls: WorkerCall[], output: () => { stdout: string }): Promise<number> {
-  // The listener takes the state from the authorize answer, which the CLI prints the URL after.
-  await expect.poll(() => output().stdout, { timeout: 10_000 }).toContain('Approve spicytrade on tastytrade')
-  const port = calls.find((call) => call.path === '/api/brokers/tastytrade/authorize')?.body.port
-  if (port === undefined) throw new Error('the CLI started without naming its loopback port')
-  return port
-}
+const PENDING: Answer = { body: { pending: true }, status: 202 }
+const GRANTED: Answer = { body: { refreshToken: REFRESH_TOKEN }, status: 200 }
 
 describe('connect-tastytrade', () => {
-  it('redeems the return through the Worker and stores the refresh token in the keyring only', async () => {
-    const tools = await fakeTools({ 'spicytrade/mcp-token': AGENT_TOKEN })
-    const { calls, port } = await fakeWorker(() => ({ body: { refreshToken: REFRESH_TOKEN }, status: 200 }))
+  it('signs in on the same link, collects the grant once the browser is back, and stores it in the keyring only', async () => {
+    const tools = await fakeTools({ 'spicytrade/mcp-token': OLD_TOKEN })
+    let polls = 0
+    const { calls, port } = await fakeWorker(() => (polls++ === 0 ? PENDING : GRANTED))
     const run = startCli(tools, port)
-    const listener = await loopbackPort(calls, run.output)
-
-    // A rebound page and a return that is not this run's are both refused, and the run goes on.
-    expect((await visit(listener, `/callback?code=${CODE}&state=${STATE}`, { host: `attacker.example:${listener}` })).status).toBe(403)
-    expect((await visit(listener, `/callback?code=${CODE}&state=${STATE}`, { origin: 'http://attacker.example' })).status).toBe(403)
-    expect((await visit(listener, 'http://[')).status).toBe(400)
-    expect((await visit(listener, `/callback?code=${CODE}&state=${'T'.repeat(43)}`)).status).toBe(400)
-    const returned = await visit(listener, `/callback?code=${CODE}&state=${STATE}`)
-    expect(returned.status).toBe(200)
-    expect(returned.body).not.toContain(CODE)
 
     expect(await run.exited).toBe(0)
     expect(await readFile(join(tools, 'store', 'tastytrade_app-refresh-token'), 'utf8')).toBe(REFRESH_TOKEN)
+    expect(await readFile(join(tools, 'store', 'spicytrade_mcp-token'), 'utf8')).toBe(AGENT_TOKEN)
     expect(calls.map((call) => call.path)).toEqual([
-      '/api/brokers/tastytrade/authorize',
+      '/api/agent-logins/exchange',
+      '/api/brokers/tastytrade/exchange',
       '/api/brokers/tastytrade/exchange',
     ])
-    for (const call of calls) expect(call.headers.authorization).toBe(`Bearer ${AGENT_TOKEN}`)
-    expect(calls[1]?.body).toEqual({ code: CODE, state: STATE })
+    // The sign-in retires this computer's earlier token; the grant is collected with the new one
+    // and the same verifier, and nothing else.
+    const { codeVerifier } = calls[0]!.body
+    expect(calls[0]!.body).toEqual({ codeVerifier, previousToken: OLD_TOKEN })
+    for (const call of calls.slice(1)) {
+      expect(call.headers.authorization).toBe(`Bearer ${AGENT_TOKEN}`)
+      expect(call.body).toEqual({ codeVerifier })
+    }
     const { stderr, stdout } = run.output()
-    for (const secret of [REFRESH_TOKEN, CODE, AGENT_TOKEN]) {
+    for (const secret of [REFRESH_TOKEN, AGENT_TOKEN, OLD_TOKEN, codeVerifier]) {
       expect(stdout).not.toContain(secret)
       expect(stderr).not.toContain(secret)
     }
-    // The consent URL is printed and handed to the opener, nothing more.
+    // One link, spicytrade's own, is printed and handed to the opener; tastytrade's follows in the browser.
+    expect(stdout.match(/https?:\/\//g)).toHaveLength(1)
     // The opener is detached, so it may still be writing when the run exits.
     await expect.poll(() => readFile(join(tools, 'opened'), 'utf8').catch(() => ''))
-      .toContain('https://my.tastytrade.com/auth.html')
+      .toMatch(/\/connect\/agent\?.*broker=tastytrade/)
   }, 30_000)
 
   it('lets Ctrl-C skip the wait for tastytrade, as a choice rather than a crash', async () => {
-    const tools = await fakeTools({ 'spicytrade/mcp-token': AGENT_TOKEN })
-    const { calls, port } = await fakeWorker(() => ({ body: { refreshToken: REFRESH_TOKEN }, status: 200 }))
+    const tools = await fakeTools({})
+    const { port } = await fakeWorker(() => PENDING)
     const run = startCli(tools, port)
-    await loopbackPort(calls, run.output)
     await expect.poll(() => run.output().stdout).toContain('To skip for now, press Ctrl-C.')
     cli!.kill('SIGINT')
     expect(await run.exited).toBe(1)
     expect(run.output().stderr).toMatch(/skipped for now, so tastytrade is not connected\. Connect any time with: \S+ setup/)
     expect(run.output().stderr).not.toContain('unexpectedly')
+    // Skipping tastytrade leaves the computer signed in.
+    expect(await readFile(join(tools, 'store', 'spicytrade_mcp-token'), 'utf8')).toBe(AGENT_TOKEN)
     await expect(readFile(join(tools, 'store', 'tastytrade_app-refresh-token'), 'utf8')).rejects.toThrow()
   }, 30_000)
 
-  it('reports a refusal by its OAuth code and stores nothing', async () => {
-    const tools = await fakeTools({ 'spicytrade/mcp-token': AGENT_TOKEN })
-    const { calls, port } = await fakeWorker(() => ({ body: { refreshToken: REFRESH_TOKEN }, status: 200 }))
+  it.each([
+    [{ body: { refusal: 'access_denied' }, status: 403 }, 'you declined on tastytrade, so it is not connected'],
+    [{ body: { refusal: 'server_error' }, status: 403 }, 'tastytrade did not grant access (server_error). Try again with: '],
+    [{ body: { error: 'No pending tastytrade connection matches this authorization' }, status: 404 }, 'the tastytrade approval expired, so it is not connected'],
+  ])('reports %j in its own words and stores nothing', async (answer, message) => {
+    const tools = await fakeTools({})
+    const { port } = await fakeWorker(() => answer)
     const run = startCli(tools, port)
-    const listener = await loopbackPort(calls, run.output)
-    expect((await visit(listener, `/callback?error=access_denied&state=${STATE}`)).status).toBe(200)
     expect(await run.exited).toBe(1)
-    expect(run.output().stderr).toContain('you declined on tastytrade, so it is not connected')
-    expect(calls.map((call) => call.path)).toEqual(['/api/brokers/tastytrade/authorize'])
+    expect(run.output().stderr).toContain(message)
     await expect(readFile(join(tools, 'store', 'tastytrade_app-refresh-token'), 'utf8')).rejects.toThrow()
   }, 30_000)
 
   it('reports a tastytrade refusal of the code by status, never a body', async () => {
-    const tools = await fakeTools({ 'spicytrade/mcp-token': AGENT_TOKEN })
-    const { calls, port } = await fakeWorker(() => ({
+    const tools = await fakeTools({})
+    const { port } = await fakeWorker(() => ({
       body: { error: 'tastytrade refused the grant', tastytradeStatus: 400 },
       status: 502,
     }))
     const run = startCli(tools, port)
-    const listener = await loopbackPort(calls, run.output)
-    await visit(listener, `/callback?code=${CODE}&state=${STATE}`)
     expect(await run.exited).toBe(1)
     expect(run.output().stderr).toContain('tastytrade did not accept the connection (HTTP 400). To try again, run: ')
-    expect(run.output().stderr).not.toContain(CODE)
+    expect(run.output().stderr).not.toContain('refused the grant')
   }, 30_000)
 
   it('refuses to start over a personal grant, before reaching the Worker', async () => {
     const tools = await fakeTools({
-      'spicytrade/mcp-token': AGENT_TOKEN,
+      'spicytrade/mcp-token': OLD_TOKEN,
       'tastytrade/client-secret': 'personal-client-secret',
       'tastytrade/refresh-token': 'personal-refresh-token',
     })

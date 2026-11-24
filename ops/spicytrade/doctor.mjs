@@ -12,7 +12,7 @@ import {
   agentToken, keyringHelperInstalled, keyringHelperMissing, keyringSecret, tastytradeCredentialKind,
 } from './keyring.mjs'
 import { legacyUnits } from './legacy-proxy.mjs'
-import { unexpectedTail } from './loopback.mjs'
+import { unexpectedTail } from './cli.mjs'
 import { NOT_READY } from './mcp.mjs'
 import { TOKEN_REQUEST_TIMEOUT_MS, UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
 import { checkAgentToken, describeTokenCheck } from './worker.mjs'

@@ -27,8 +27,8 @@ const ADD_COMMANDS = {
 } satisfies Record<AgentClient, string | undefined>
 /**
  * The whole path for an agent on the member's own computer: it installs the CLI from this site and
- * runs `spicytrade setup`, which signs in through the browser, offers tastytrade, and adds the
- * server to the agents it finds. Running it again updates it.
+ * runs `spicytrade setup`, which signs in and connects tastytrade on one approved link, and adds
+ * the server to the agents it finds. Running it again updates it.
  */
 const INSTALL_COMMAND = `curl -fsSL ${INSTALL_SCRIPT_URL} | bash`
 
@@ -249,7 +249,7 @@ export function ConnectScreen({ authError, owner, signedIn }: { authError?: stri
         <CopyBlock label="Message to your agent" value={CONNECT_PROMPT} />
         <p>
           Your agent installs the local connector and connects it to the current workspace.
-          Approve the browser sign-ins and any desktop password dialog, then continue your conversation.
+          Approve the link it gives you, in any browser, and any desktop password dialog, then continue your conversation.
           Your credentials stay in this computer&apos;s keyring.
         </p>
         <p>Once connected, ask “How is my account doing?”</p>
@@ -366,8 +366,7 @@ function HeadlessTokens() {
       <p>
         For a job that runs with no one signed in, such as a scheduled script, create a token. It gets market
         and research tools only, never your account. A computer you SSH into can use the install above
-        if your desktop session is logged in there; setup tells you how to finish signing in from your
-        own computer.
+        if your desktop session is logged in there; open the link it prints on your own computer.
       </p>
       <form
         className="connect-issue"

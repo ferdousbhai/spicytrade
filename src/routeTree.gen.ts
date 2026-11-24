@@ -47,7 +47,6 @@ import { Route as ConnectGuideRouteImport } from './routes/connect.guide'
 import { Route as OptionsSymbolRouteImport } from './routes/options.$symbol'
 import { Route as ApiAgentLoginsExchangeRouteImport } from './routes/api.agent-logins.exchange'
 import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
-import { Route as ApiBrokersTastytradeAuthorizeRouteImport } from './routes/api.brokers.tastytrade.authorize'
 import { Route as ApiBrokersTastytradeCallbackRouteImport } from './routes/api.brokers.tastytrade.callback'
 import { Route as ApiBrokersTastytradeExchangeRouteImport } from './routes/api.brokers.tastytrade.exchange'
 import { Route as ApiBrokersTastytradeTokenRouteImport } from './routes/api.brokers.tastytrade.token'
@@ -243,12 +242,6 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiBrokersTastytradeAuthorizeRoute =
-  ApiBrokersTastytradeAuthorizeRouteImport.update({
-    id: '/api/brokers/tastytrade/authorize',
-    path: '/api/brokers/tastytrade/authorize',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiBrokersTastytradeCallbackRoute =
   ApiBrokersTastytradeCallbackRouteImport.update({
     id: '/api/brokers/tastytrade/callback',
@@ -306,7 +299,6 @@ export interface FileRoutesByFullPath {
   '/briefs/': typeof BriefsIndexRoute
   '/api/agent-logins/exchange': typeof ApiAgentLoginsExchangeRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/brokers/tastytrade/authorize': typeof ApiBrokersTastytradeAuthorizeRoute
   '/api/brokers/tastytrade/callback': typeof ApiBrokersTastytradeCallbackRoute
   '/api/brokers/tastytrade/exchange': typeof ApiBrokersTastytradeExchangeRoute
   '/api/brokers/tastytrade/token': typeof ApiBrokersTastytradeTokenRoute
@@ -348,7 +340,6 @@ export interface FileRoutesByTo {
   '/briefs': typeof BriefsIndexRoute
   '/api/agent-logins/exchange': typeof ApiAgentLoginsExchangeRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/brokers/tastytrade/authorize': typeof ApiBrokersTastytradeAuthorizeRoute
   '/api/brokers/tastytrade/callback': typeof ApiBrokersTastytradeCallbackRoute
   '/api/brokers/tastytrade/exchange': typeof ApiBrokersTastytradeExchangeRoute
   '/api/brokers/tastytrade/token': typeof ApiBrokersTastytradeTokenRoute
@@ -393,7 +384,6 @@ export interface FileRoutesById {
   '/briefs/': typeof BriefsIndexRoute
   '/api/agent-logins/exchange': typeof ApiAgentLoginsExchangeRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/brokers/tastytrade/authorize': typeof ApiBrokersTastytradeAuthorizeRoute
   '/api/brokers/tastytrade/callback': typeof ApiBrokersTastytradeCallbackRoute
   '/api/brokers/tastytrade/exchange': typeof ApiBrokersTastytradeExchangeRoute
   '/api/brokers/tastytrade/token': typeof ApiBrokersTastytradeTokenRoute
@@ -438,7 +428,6 @@ export interface FileRouteTypes {
     | '/briefs/'
     | '/api/agent-logins/exchange'
     | '/api/auth/$'
-    | '/api/brokers/tastytrade/authorize'
     | '/api/brokers/tastytrade/callback'
     | '/api/brokers/tastytrade/exchange'
     | '/api/brokers/tastytrade/token'
@@ -480,7 +469,6 @@ export interface FileRouteTypes {
     | '/briefs'
     | '/api/agent-logins/exchange'
     | '/api/auth/$'
-    | '/api/brokers/tastytrade/authorize'
     | '/api/brokers/tastytrade/callback'
     | '/api/brokers/tastytrade/exchange'
     | '/api/brokers/tastytrade/token'
@@ -524,7 +512,6 @@ export interface FileRouteTypes {
     | '/briefs/'
     | '/api/agent-logins/exchange'
     | '/api/auth/$'
-    | '/api/brokers/tastytrade/authorize'
     | '/api/brokers/tastytrade/callback'
     | '/api/brokers/tastytrade/exchange'
     | '/api/brokers/tastytrade/token'
@@ -563,7 +550,6 @@ export interface RootRouteChildren {
   OptionsSymbolRoute: typeof OptionsSymbolRoute
   BriefsIndexRoute: typeof BriefsIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
-  ApiBrokersTastytradeAuthorizeRoute: typeof ApiBrokersTastytradeAuthorizeRoute
   ApiBrokersTastytradeCallbackRoute: typeof ApiBrokersTastytradeCallbackRoute
   ApiBrokersTastytradeExchangeRoute: typeof ApiBrokersTastytradeExchangeRoute
   ApiBrokersTastytradeTokenRoute: typeof ApiBrokersTastytradeTokenRoute
@@ -837,13 +823,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/brokers/tastytrade/authorize': {
-      id: '/api/brokers/tastytrade/authorize'
-      path: '/api/brokers/tastytrade/authorize'
-      fullPath: '/api/brokers/tastytrade/authorize'
-      preLoaderRoute: typeof ApiBrokersTastytradeAuthorizeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/brokers/tastytrade/callback': {
       id: '/api/brokers/tastytrade/callback'
       path: '/api/brokers/tastytrade/callback'
@@ -941,7 +920,6 @@ const rootRouteChildren: RootRouteChildren = {
   OptionsSymbolRoute: OptionsSymbolRoute,
   BriefsIndexRoute: BriefsIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
-  ApiBrokersTastytradeAuthorizeRoute: ApiBrokersTastytradeAuthorizeRoute,
   ApiBrokersTastytradeCallbackRoute: ApiBrokersTastytradeCallbackRoute,
   ApiBrokersTastytradeExchangeRoute: ApiBrokersTastytradeExchangeRoute,
   ApiBrokersTastytradeTokenRoute: ApiBrokersTastytradeTokenRoute,

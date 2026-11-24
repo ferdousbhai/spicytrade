@@ -5,7 +5,7 @@
 #
 # It downloads one file, https://spicy.trade/spicytrade.mjs, into ~/.local/share/spicytrade and
 # links it as ~/.local/bin/spicytrade. Nothing runs as root and nothing outside those two paths
-# is touched; setup then asks before it connects your brokerage. Run it again to update.
+# is touched; setup then prints the one link you approve to connect. Run it again to update.
 set -euo pipefail
 
 # Agent-driven onboarding installs only the connector; the current harness handles its own

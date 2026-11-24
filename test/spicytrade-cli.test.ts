@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import { fakeSecretTool } from './fake-secret-tool.ts'
-import { closeLoopback, listenLoopback, visit } from './loopback.ts'
+import { closeLoopback, listenLoopback } from './loopback.ts'
 
 /*
  * `spicytrade` end to end against a stand-in Worker, with every tool it drives replaced on PATH:
@@ -19,7 +19,6 @@ import { closeLoopback, listenLoopback, visit } from './loopback.ts'
 
 const OLD_TOKEN = 'spice_0123456789abcdef_OLDOLDOLDOLDOLDOLDOL'
 const NEW_TOKEN = 'spice_fedcba9876543210_NEWNEWNEWNEWNEWNEWNE'
-const CODE = 'C'.repeat(43)
 const APP_REFRESH_TOKEN = 'app-refresh-token-that-belongs-in-the-keyring'
 const CLI = 'ops/spicytrade/spicytrade.mjs'
 /**
@@ -34,7 +33,6 @@ const MCP_TARGET = `${resolve(CLI)} mcp`
 const LEGACY_PROXY_URL = 'http://127.0.0.1:8787/mcp'
 
 const ExchangeBodySchema = z.strictObject({
-  code: z.string(),
   codeVerifier: z.string(),
   previousToken: z.string().optional(),
 })
@@ -62,8 +60,8 @@ async function serve(handler: (request: IncomingMessage, body: string) => { body
 }
 
 /**
- * A Worker that accepts `acceptedTokens` on `/mcp` and on the app-grant mint, and answers the
- * sign-in exchange with `exchange()`.
+ * A Worker that accepts `acceptedTokens` on `/mcp` and on the app-grant mint, and answers each
+ * poll of the sign-in exchange with `exchange()`: by default, a member who has already approved.
  */
 async function fakeWorker(acceptedTokens: string[], exchange: () => { body: unknown; status: number } = () => ({
   body: { token: NEW_TOKEN, tokenMetadata: { createdAt: '2026-09-28T00:00:00Z', label: 'test', tokenId: '0123456789abcdef' } },
@@ -213,7 +211,7 @@ function run(
 
 /** The approval URL the CLI printed, once it has. */
 async function approvalUrl(output: () => { stdout: string }): Promise<URL> {
-  await expect.poll(() => output().stdout, { timeout: 10_000 }).toContain('Sign in to spicytrade and approve this computer')
+  await expect.poll(() => output().stdout, { timeout: 10_000 }).toContain('Open this link in any browser')
   const printed = output().stdout.match(/^ {2}(http\S+)$/m)?.[1]
   if (!printed) throw new Error('the CLI printed no approval URL')
   return new URL(printed)
@@ -227,42 +225,41 @@ async function legacyUnit(machine: Machine, name: string) {
 }
 
 describe('spicytrade login', () => {
-  it('signs in through the browser, redeems the code with its verifier, and keeps only the token', async () => {
+  it('prints one link, polls with its verifier until the member approves, and keeps only the token', async () => {
     const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN })
-    const worker = await fakeWorker([])
+    // The member approves between the first poll and the second.
+    let polls = 0
+    const worker = await fakeWorker([], () => (polls++ === 0
+      ? { body: { pending: true }, status: 202 }
+      : { body: { token: NEW_TOKEN }, status: 200 }))
     const cli = run(machine, worker.port, ['login'])
     const url = await approvalUrl(cli.output)
 
     expect(url.pathname).toBe('/connect/agent')
-    const port = Number(url.searchParams.get('port'))
-    const state = url.searchParams.get('state') ?? ''
+    // Nothing returns to this computer, so the link names no port and carries no state.
+    expect([...url.searchParams.keys()].sort()).toEqual(['challenge', 'label'])
     const challenge = url.searchParams.get('challenge') ?? ''
-    expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(challenge).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(url.searchParams.get('label')?.length).toBeGreaterThan(0)
-
-    // A rebound page and a return that is not this run's are refused, and the run goes on.
-    expect((await visit(port, `/callback?code=${CODE}&state=${state}`, { host: `attacker.example:${port}` })).status).toBe(403)
-    expect((await visit(port, `/callback?code=${CODE}&state=${state}`, { origin: 'http://attacker.example' })).status).toBe(403)
-    expect((await visit(port, `/callback?code=${CODE}&state=${'T'.repeat(43)}`)).status).toBe(400)
-    const returned = await visit(port, `/callback?code=${CODE}&state=${state}`)
-    expect(returned.status).toBe(200)
-    expect(returned.body).not.toContain(CODE)
+    // The code the page will show is the one printed beside the link.
+    const hex = Buffer.from(challenge, 'base64url').subarray(0, 4).toString('hex').toUpperCase()
+    expect(cli.output().stdout).toContain(`approve code ${hex.slice(0, 4)}-${hex.slice(4)}:`)
 
     expect(await cli.exited).toBe(0)
     expect(await readFile(join(machine.bin, 'store', 'spicytrade_mcp-token'), 'utf8')).toBe(NEW_TOKEN)
     const exchanges = worker.calls.filter((call) => call.path === '/api/agent-logins/exchange')
-    expect(exchanges).toHaveLength(1)
-    const body = ExchangeBodySchema.parse(JSON.parse(exchanges[0]!.body))
-    // The verifier is the one whose digest was in the page address, and the old token rides
-    // along so the Worker retires it rather than leaving this machine with two.
-    expect(body.code).toBe(CODE)
-    expect(createHash('sha256').update(body.codeVerifier).digest('base64url')).toBe(challenge)
-    expect(body.previousToken).toBe(OLD_TOKEN)
-    expect(exchanges[0]!.authorization).toBeUndefined()
+    expect(exchanges).toHaveLength(2)
+    for (const exchange of exchanges) {
+      const body = ExchangeBodySchema.parse(JSON.parse(exchange.body))
+      // The verifier is the one whose digest was in the page address, and the old token rides
+      // along so the Worker retires it rather than leaving this machine with two.
+      expect(createHash('sha256').update(body.codeVerifier).digest('base64url')).toBe(challenge)
+      expect(body.previousToken).toBe(OLD_TOKEN)
+      expect(exchange.authorization).toBeUndefined()
+    }
 
     const { stderr, stdout } = cli.output()
-    for (const secret of [NEW_TOKEN, OLD_TOKEN, CODE, body.codeVerifier]) {
+    for (const secret of [NEW_TOKEN, OLD_TOKEN, ExchangeBodySchema.parse(JSON.parse(exchanges[0]!.body)).codeVerifier]) {
       expect(stdout).not.toContain(secret)
       expect(stderr).not.toContain(secret)
     }
@@ -272,12 +269,20 @@ describe('spicytrade login', () => {
     await expect.poll(() => readFile(join(machine.state, 'opened'), 'utf8').catch(() => '')).toContain('/connect/agent?')
   }, 30_000)
 
+  it('opens no browser over SSH, where the member opens the link on their own device', async () => {
+    const machine = await fakeMachine({})
+    const worker = await fakeWorker([])
+    const cli = run(machine, worker.port, ['login'], { env: { SSH_CONNECTION: '203.0.113.7 50000 203.0.113.8 22' } })
+    expect(await cli.exited).toBe(0)
+    expect(cli.output().stdout).toContain('/connect/agent?')
+    expect(cli.output().stdout).not.toContain('ssh -L')
+    await expect(readFile(join(machine.state, 'opened'), 'utf8')).rejects.toThrow()
+  }, 30_000)
+
   it('moves a token signed in before the rename to the current keyring entry', async () => {
     const machine = await fakeMachine({ 'spicy-trade/mcp-token': OLD_TOKEN })
     const worker = await fakeWorker([])
     const cli = run(machine, worker.port, ['login'])
-    const url = await approvalUrl(cli.output)
-    await visit(Number(url.searchParams.get('port')), `/callback?code=${CODE}&state=${url.searchParams.get('state')}`)
 
     expect(await cli.exited).toBe(0)
     // The old token still rides along, so the Worker retires it.
@@ -287,28 +292,13 @@ describe('spicytrade login', () => {
     await expect(readFile(join(machine.bin, 'store', 'spicy-trade_mcp-token'), 'utf8')).rejects.toThrow()
   }, 30_000)
 
-  it('reports a refusal by its OAuth code and redeems nothing', async () => {
-    const machine = await fakeMachine({})
-    const worker = await fakeWorker([])
-    const cli = run(machine, worker.port, ['login'])
-    const url = await approvalUrl(cli.output)
-    const port = Number(url.searchParams.get('port'))
-    expect((await visit(port, `/callback?error=access_denied&state=${url.searchParams.get('state')}`)).status).toBe(200)
-    expect(await cli.exited).toBe(1)
-    expect(cli.output().stderr).toMatch(/spicytrade login: sign-in cancelled in the browser\. To try again, run: \S*spicytrade(\.mjs)? setup/)
-    expect(worker.calls).toEqual([])
-    await expect(readFile(join(machine.bin, 'store', 'spicytrade_mcp-token'), 'utf8')).rejects.toThrow()
-  }, 30_000)
-
   it.each([
-    [400, { error: 'invalid_grant' }, 'the sign-in expired or was already used. Run: '],
     [409, { error: 'At most 5 agent tokens' }, 'Revoke one you no longer'],
+    [503, { error: 'unavailable' }, 'spicytrade could not finish the sign-in (HTTP 503)'],
   ])('reports an exchange refused with %i in its own words, keeping the old token', async (status, answer, message) => {
     const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN })
     const worker = await fakeWorker([], () => ({ body: answer, status }))
     const cli = run(machine, worker.port, ['login'])
-    const url = await approvalUrl(cli.output)
-    await visit(Number(url.searchParams.get('port')), `/callback?code=${CODE}&state=${url.searchParams.get('state')}`)
     expect(await cli.exited).toBe(1)
     expect(cli.output().stderr).toContain(message)
     // The Worker's body is not echoed.
@@ -495,6 +485,37 @@ describe('spicytrade setup', () => {
     }
   }, 60_000)
 
+  it('signs a fresh computer in and connects tastytrade on one link, asking nothing', async () => {
+    const machine = await fakeMachine({}, { claude: {} })
+    const accepted: string[] = []
+    const calls: string[] = []
+    const port = await serve((request, body) => {
+      const path = request.url ?? ''
+      calls.push(path)
+      if (path === '/api/agent-logins/exchange') {
+        accepted.push(NEW_TOKEN)
+        return { body: { token: NEW_TOKEN }, status: 200 }
+      }
+      if (!accepted.some((token) => request.headers.authorization === `Bearer ${token}`)) return { body: { error: 'invalid_token' }, status: 401 }
+      if (path === '/api/brokers/tastytrade/exchange') return { body: { refreshToken: APP_REFRESH_TOKEN }, status: 200 }
+      if (path === '/api/brokers/tastytrade/token') return { body: { accessToken: 'minted', expiresIn: 900 }, status: 200 }
+      const { id, method } = JSON.parse(body)
+      return { body: { id, jsonrpc: '2.0', result: method === 'initialize' ? { protocolVersion: '2025-06-18' } : { tools: [] } }, status: 200 }
+    })
+    // No terminal: the member's answer is the approval itself, on the page and on tastytrade.
+    const cli = run(machine, port, ['setup'])
+    expect(await cli.exited).toBe(0)
+    const { stdout } = cli.output()
+    expect((await approvalUrl(cli.output)).searchParams.get('broker')).toBe('tastytrade')
+    expect(stdout.match(/\/connect\/agent\?/g)).toHaveLength(1)
+    expect(stdout.indexOf('✓ Signed in.')).toBeLessThan(stdout.indexOf('== Agents'))
+    expect(stdout).toMatch(/== tastytrade\nWaiting for tastytrade\. To skip for now, press Ctrl-C\.\n✓ tastytrade connected\.\n/)
+    expect(stdout).toContain('Account connected. Continue in your agent:')
+    expect(stdout).not.toContain('[Y/n]')
+    expect(calls.filter((path) => path === '/api/agent-logins/exchange')).toHaveLength(1)
+    expect(await readFile(join(machine.bin, 'store', 'tastytrade_app-refresh-token'), 'utf8')).toBe(APP_REFRESH_TOKEN)
+  }, 60_000)
+
   it('says what to install when no agent is on the machine, without calling the run a failure', async () => {
     const machine = await fakeMachine({ 'spicytrade/mcp-token': OLD_TOKEN })
     const worker = await fakeWorker([OLD_TOKEN])
@@ -636,7 +657,7 @@ describe('a keyring that answers lookups but cannot save', () => {
     const cli = run(machine, worker.port, ['setup'])
     expect(await cli.exited).toBe(1)
     expect(cli.output().stderr).toMatch(/spicytrade setup: your system keyring cannot save credentials here\. If you have one, unlock it\. If not, install one \(Debian\/Ubuntu: sudo apt install gnome-keyring;.* Over SSH, this computer's desktop session must also be logged in\. Then run: \S+ setup$/m)
-    expect(cli.output().stdout).not.toContain('Sign in to spicytrade')
+    expect(cli.output().stdout).not.toContain('/connect/agent')
     expect(worker.calls).toEqual([])
   }, 30_000)
 })
@@ -837,20 +858,18 @@ function snapshotWorker() {
 }
 
 describe('connecting from the current agent without a terminal', () => {
-  it('completes browser sign-in and broker approval without launching or configuring a harness', async () => {
+  it('signs in and connects the brokerage on one link, without launching or configuring a harness', async () => {
     const machine = await fakeMachine({})
-    const calls: string[] = []
-    const state = 'B'.repeat(43)
-    let brokerPort: number | undefined
+    const calls: WorkerCall[] = []
+    // The browser comes back from tastytrade between the first poll for the grant and the second.
+    let grantPolls = 0
     const port = await serve((request, body) => {
       const path = request.url ?? ''
-      calls.push(path)
+      calls.push({ authorization: request.headers.authorization, body, path })
       if (path === '/api/agent-logins/exchange') return { status: 200, body: { token: NEW_TOKEN } }
-      if (path === '/api/brokers/tastytrade/authorize') {
-        brokerPort = JSON.parse(body).port
-        return { status: 200, body: { authorizationUrl: `https://my.tastytrade.com/auth.html?state=${state}`, state, expiresAt: new Date(Date.now() + 60_000).toISOString() } }
+      if (path === '/api/brokers/tastytrade/exchange') {
+        return grantPolls++ === 0 ? { status: 202, body: { pending: true } } : { status: 200, body: { refreshToken: APP_REFRESH_TOKEN } }
       }
-      if (path === '/api/brokers/tastytrade/exchange') return { status: 200, body: { refreshToken: APP_REFRESH_TOKEN } }
       if (path === '/api/brokers/tastytrade/token') return { status: 200, body: { accessToken: 'minted', expiresIn: 900 } }
       const { id, method, params } = JSON.parse(body)
       if (method === 'tools/call') expect(params.name).toBe('read_account_snapshot')
@@ -861,17 +880,24 @@ describe('connecting from the current agent without a terminal', () => {
     })
     const cli = run(machine, port, ['connect'])
     const approval = await approvalUrl(cli.output)
-    await visit(Number(approval.searchParams.get('port')), `/callback?code=${CODE}&state=${approval.searchParams.get('state')}`)
-    await expect.poll(() => cli.output().stdout).toContain('Approve spicytrade on tastytrade')
-    if (brokerPort === undefined) throw new Error('No broker callback was started')
-    await visit(brokerPort, `/callback?code=broker-code&state=${state}`)
+    expect(approval.searchParams.get('broker')).toBe('tastytrade')
     expect(await cli.exited).toBe(0)
     expect(cli.output().stdout).toContain('Account connected and live snapshot verified. Continue in your existing agent conversation.')
-    expect(calls.filter(path => path === '/api/brokers/tastytrade/authorize')).toHaveLength(1)
+    // One link: the member is never sent a second address.
+    expect(cli.output().stdout.match(/https?:\/\//g)).toHaveLength(1)
+    const grants = calls.filter((call) => call.path === '/api/brokers/tastytrade/exchange')
+    expect(grants).toHaveLength(2)
+    const signIn = ExchangeBodySchema.parse(JSON.parse(calls.find((call) => call.path === '/api/agent-logins/exchange')!.body))
+    for (const grant of grants) {
+      // The grant is collected by the token the sign-in issued and the verifier behind the link.
+      expect(grant.authorization).toBe(`Bearer ${NEW_TOKEN}`)
+      expect(JSON.parse(grant.body)).toEqual({ codeVerifier: signIn.codeVerifier })
+    }
+    expect(createHash('sha256').update(signIn.codeVerifier).digest('base64url')).toBe(approval.searchParams.get('challenge'))
     const files = await readdir(machine.state)
     expect(files).not.toContain('claude-calls')
     expect(files).not.toContain('codex-calls')
-    for (const secret of [NEW_TOKEN, APP_REFRESH_TOKEN, CODE, 'broker-code']) expect(JSON.stringify(cli.output())).not.toContain(secret)
+    for (const secret of [NEW_TOKEN, APP_REFRESH_TOKEN, signIn.codeVerifier]) expect(JSON.stringify(cli.output())).not.toContain(secret)
     expect(await readFile(join(machine.bin, 'store', 'tastytrade_app-refresh-token'), 'utf8')).toBe(APP_REFRESH_TOKEN)
   }, 30_000)
 

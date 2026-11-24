@@ -5,28 +5,25 @@ import { z } from 'zod'
 import { Button } from '#/components/ui/button'
 import { Spinner } from '#/components/ui/spinner'
 import { AuthorizeFrame, GoogleSignInButton, useRawQuery, useViewer } from '../components/auth-gate'
-import { AgentLoginApproveResponseSchema, AgentLoginPageQuerySchema } from '../domain/agent-login'
-import { pageTitle } from '../domain/site'
+import { AgentLoginApproveResponseSchema, AgentLoginPageQuerySchema, connectCode } from '../domain/agent-login'
+import { INSTALL_SCRIPT_URL, pageTitle } from '../domain/site'
 import { toError } from '../domain/failure'
 
 /**
- * Where `spicytrade login` sends the browser: the member approves the terminal on their own
- * machine, and the browser is handed back to that terminal's loopback listener with a one-time
- * code. The flow and why the token never rides in a URL are in `src/domain/agent-login.ts`.
+ * Where the `spicytrade` CLI sends the member: they approve the computer that printed this link,
+ * in any browser, and the CLI collects the result by polling. With a brokerage in the link, the
+ * approval goes straight on to that broker's own consent page. The flow is in
+ * `src/domain/agent-login.ts`.
  *
- * The destination is only ever `127.0.0.1` on the port the CLI put in this address, never a host
- * read from the request, so approving can deliver a code to nothing but a process on the machine
- * this browser runs on -- and that code redeems only with the verifier the CLI kept. The state is
- * the CLI's check that the return is its own; it is echoed back and never posted here.
+ * Nothing here proves this browser belongs to the computer being approved, so the page shows the
+ * code that computer's terminal printed, and the label, which the link's author chose, is never
+ * the reason to approve.
  */
 export const Route = createFileRoute('/connect/agent')({
   component: ConnectAgentPage,
-  head: () => ({ meta: [{ title: pageTitle('Sign in a computer') }] }),
+  head: () => ({ meta: [{ title: pageTitle('Connect a computer') }] }),
 })
 
-/** The literal address rather than `localhost`, which a resolver may map elsewhere. */
-const LOOPBACK_HOST = '127.0.0.1'
-const LOOPBACK_CALLBACK_PATH = '/callback'
 const ErrorResponseSchema = z.object({ error: z.string().min(1) })
 const APPROVAL_NOT_RECORDED = 'spicytrade could not record that approval.'
 const SESSION_ENDED = 'Your spicytrade session ended. Reload this page and sign in again.'
@@ -39,10 +36,12 @@ function parseQuery(rawSearch: string) {
   return AgentLoginPageQuerySchema.safeParse(Object.fromEntries(new URLSearchParams(rawSearch)))
 }
 
-function loopbackReturn(port: number, params: Record<string, string>): string {
-  const destination = new URL(`http://${LOOPBACK_HOST}:${port}${LOOPBACK_CALLBACK_PATH}`)
-  for (const [name, value] of Object.entries(params)) destination.searchParams.set(name, value)
-  return destination.toString()
+/**
+ * A link from a CLI installed before approvals were polled for: it names the port that CLI is
+ * listening on and waits there for a return this page no longer makes.
+ */
+function fromOlderCli(rawSearch: string): boolean {
+  return new URLSearchParams(rawSearch).has('port')
 }
 
 function ConnectAgentPage() {
@@ -50,16 +49,18 @@ function ConnectAgentPage() {
   // Empty on the server pass; every use below waits for the viewer check, which resolves only in
   // the browser.
   const rawSearch = useRawQuery()
+  const outdated = fromOlderCli(rawSearch)
   const query = parseQuery(rawSearch)
-  const [submitting, setSubmitting] = useState<'approve' | 'cancel'>()
+  const [submitting, setSubmitting] = useState(false)
+  const [approved, setApproved] = useState(false)
   const [failure, setFailure] = useState<string>()
 
-  const approve = async (port: number, codeChallenge: string, label: string, state: string) => {
-    setSubmitting('approve')
+  const approve = async ({ broker, challenge, label }: z.infer<typeof AgentLoginPageQuerySchema>) => {
+    setSubmitting(true)
     setFailure(undefined)
     try {
       const response = await fetch('/api/agent-logins', {
-        body: JSON.stringify({ codeChallenge, label, port }),
+        body: JSON.stringify({ broker, codeChallenge: challenge, label }),
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
         method: 'POST',
@@ -69,64 +70,55 @@ function ConnectAgentPage() {
       // "Authentication required" would give no next step.
       if (response.status === 401) throw new Error(SESSION_ENDED)
       if (!response.ok) throw new Error(ErrorResponseSchema.safeParse(body).data?.error ?? APPROVAL_NOT_RECORDED)
-      const approved = AgentLoginApproveResponseSchema.safeParse(body)
-      if (!approved.success) throw new Error(APPROVAL_NOT_RECORDED)
-      window.location.replace(loopbackReturn(port, { code: approved.data.code, state }))
+      const recorded = AgentLoginApproveResponseSchema.safeParse(body)
+      if (!recorded.success) throw new Error(APPROVAL_NOT_RECORDED)
+      if (recorded.data.authorizationUrl) window.location.assign(recorded.data.authorizationUrl)
+      else setApproved(true)
     } catch (error) {
-      setSubmitting(undefined)
+      setSubmitting(false)
       setFailure(toError(error)?.message ?? APPROVAL_NOT_RECORDED)
     }
   }
 
-  // A refusal is an answer the CLI is waiting for, so it goes back too rather than leaving the
-  // terminal to time out.
-  const cancel = (port: number, state: string) => {
-    setSubmitting('cancel')
-    window.location.replace(loopbackReturn(port, { error: 'access_denied', state }))
-  }
-
   return (
-    <AuthorizeFrame phase={viewer.phase} title="Sign in a computer">
-      {viewer.phase === 'ready' && !query.success && (
+    <AuthorizeFrame phase={viewer.phase} title="Connect a computer">
+      {viewer.phase === 'ready' && outdated && (
         <p className="authorize-error">
-          This sign-in link is incomplete. Run <code>spicytrade setup</code> again in your terminal.
+          This link came from an older spicytrade. Update it, then connect again:{' '}
+          <code>curl -fsSL {INSTALL_SCRIPT_URL} | bash</code>
         </p>
       )}
-      {viewer.phase === 'ready' && query.success && viewer.user === null && (
+      {viewer.phase === 'ready' && !outdated && !query.success && (
+        <p className="authorize-error">
+          This link is incomplete. Run <code>spicytrade connect</code> again.
+        </p>
+      )}
+      {viewer.phase === 'ready' && !outdated && query.success && viewer.user === null && (
         <>
           <p>
-            <strong>{query.data.label}</strong> is asking to sign in to spicytrade as you. Sign in to
-            continue, and you will be returned here.
+            A computer named <strong>{query.data.label}</strong> is asking to connect to spicytrade as
+            you. Sign in to continue, and you will be returned here.
           </p>
           <GoogleSignInButton callbackURL={`/connect/agent${rawSearch}`} />
         </>
       )}
-      {viewer.phase === 'ready' && query.success && viewer.user !== null && (
+      {viewer.phase === 'ready' && !outdated && query.success && viewer.user !== null && approved && (
+        <p>Approved. Return to your terminal or agent; you can close this tab.</p>
+      )}
+      {viewer.phase === 'ready' && !outdated && query.success && viewer.user !== null && !approved && (
         <>
           <p>
-            Sign in <strong>{query.data.label}</strong> to spicytrade as <strong>{viewer.user.name}</strong>?
+            Connect <strong>{query.data.label}</strong> to spicytrade as <strong>{viewer.user.name}</strong>?
           </p>
           <p>
-            Approve only if you just installed spicytrade or ran <code>spicytrade setup</code> yourself. You
-            can sign it out any time under Signed-in computers on the Connect tab.
+            Approve only if the terminal or agent you started this from shows the code{' '}
+            <strong>{connectCode(query.data.challenge)}</strong>.
           </p>
           {failure && <p className="authorize-error">{failure}</p>}
           <div className="authorize-actions">
-            <Button
-              disabled={submitting !== undefined}
-              onClick={() => void approve(query.data.port, query.data.challenge, query.data.label, query.data.state)}
-              type="button"
-            >
-              {submitting === 'approve' ? <Spinner data-icon="inline-start" /> : null}
-              <span>Approve</span>
-            </Button>
-            <Button
-              disabled={submitting !== undefined}
-              onClick={() => cancel(query.data.port, query.data.state)}
-              type="button"
-              variant="outline"
-            >
-              <span>Cancel</span>
+            <Button disabled={submitting} onClick={() => void approve(query.data)} type="button">
+              {submitting ? <Spinner data-icon="inline-start" /> : null}
+              <span>{query.data.broker ? 'Approve and continue to tastytrade' : 'Approve'}</span>
             </Button>
           </div>
         </>

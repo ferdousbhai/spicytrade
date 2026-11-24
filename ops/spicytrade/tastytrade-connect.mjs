@@ -2,54 +2,52 @@ import { spawnSync } from 'node:child_process'
 import { z } from 'zod'
 
 import { AppGrantRefusalSchema, transportCode } from './broker-grants.mjs'
+import { CliFailure, pollUntil, unexpectedTail } from './cli.mjs'
 import { cliCommand, ORIGIN } from './config.mjs'
 import { keyringEnvironment } from './keyring-environment.mjs'
 import {
-  agentToken, APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, keyringClear, keyringPrompt, keyringSecret, keyringStore, KeyringUnavailable, REFRESH_TOKEN_KEY, TASTYTRADE,
+  APP_REFRESH_TOKEN_KEY, CLIENT_SECRET_KEY, keyringClear, keyringPrompt, keyringSecret, keyringStore, KeyringUnavailable, REFRESH_TOKEN_KEY, TASTYTRADE,
   tastytradeCredentialKind,
 } from './keyring.mjs'
-import { awaitReturn, CliFailure, loopbackListener, openBrowser, remoteNote, unexpectedTail } from './loopback.mjs'
+import { login } from './login.mjs'
 import { TOKEN_REQUEST_TIMEOUT_MS } from './token-refresh.mjs'
 
 /**
  * `spicytrade connect-tastytrade`: connect tastytrade through spicytrade's OAuth app, once, and
  * keep the result in the OS keyring.
  *
- * The member approves spicytrade on tastytrade's own page; the browser comes back through the Worker
- * to a listener here on the loopback address; this process redeems the code through the Worker
- * and stores the refresh token under `tastytrade/app-refresh-token`, where `spicytrade mcp` finds
- * it. The Worker holds the app's client secret and never keeps the refresh token; this machine
- * keeps the refresh token and never needs a client secret.
+ * It rides on the sign-in (`login.mjs`): the one link the member approves signs this computer in
+ * and continues to tastytrade's own consent page, in whichever browser they opened it. The
+ * browser returns to the Worker, and this process, polling with the agent token that sign-in
+ * issued and the same verifier, has the Worker redeem the code and stores the refresh token under
+ * `tastytrade/app-refresh-token`, where `spicytrade mcp` finds it. The Worker holds the app's
+ * client secret and never keeps the refresh token; this machine keeps the refresh token and
+ * never needs a client secret.
  *
- * Every Worker call carries the member's spicytrade agent token from the keyring, which is what binds
- * the whole connection to that member: a started connection can be redeemed only with the same
- * token, so the consent URL, the code, and the state are each useless to anyone else.
+ * The agent token and the verifier together bind the connection: only the CLI that printed the
+ * link, signed in as the member who approved it, can collect the grant.
  *
- * Output is fixed vocabulary. No token, code, or state is printed; the consent URL is, because
- * following it is the whole point, and its state grants nothing without the agent token.
+ * Output is fixed vocabulary. No token, code, or verifier is printed.
  */
 
-const PROGRAM = 'SpicytradeConnectTastytrade'
 /**
  * How long a started connection stays pending on the Worker (`BROKER_AUTHORIZATION_TTL_MS` in
  * `src/domain/broker-authorization.ts`), which this package cannot import: once that passes, the
- * pending ones no longer count against the member's limit.
+ * Worker answers that it expired, and the pending ones no longer count against the member's limit.
  */
 const PENDING_WAIT_MINUTES = 10
 const BROKER = TASTYTRADE
 const KEY = APP_REFRESH_TOKEN_KEY
 
-const AuthorizeResponseSchema = z.object({
-  authorizationUrl: z.url({ protocol: /^https$/ }),
-  expiresAt: z.iso.datetime(),
-  state: z.string().min(1),
-})
 const ExchangeResponseSchema = z.object({ refreshToken: z.string().min(1) })
+/** The Worker's answer for a consent the member did not give (`BrokerConsentRefusalSchema`). */
+const RefusalResponseSchema = z.object({ refusal: z.string().min(1) })
 
 /**
- * One call to the Worker. A refusal is reported by status and, for a tastytrade refusal the
- * Worker relays, tastytrade's status; never by body text, which for the exchange could carry
- * credential material.
+ * One call to the Worker: its answer, undefined while the browser has not returned from
+ * tastytrade, `{ refusal }` when the member declined there, or `{ lapsed }` once the connection
+ * expired. A failure is reported by status and, for a tastytrade refusal the Worker relays,
+ * tastytrade's status; never by body text, which for the exchange could carry credential material.
  */
 async function callWorker(path, agentBearer, body) {
   let response
@@ -70,6 +68,11 @@ async function callWorker(path, agentBearer, body) {
     throw new CliFailure(`spicytrade could not be reached${cause ? ` (${cause})` : ''}. Check your internet connection, then run: ${cliCommand('setup')}`)
   }
   const payload = await response.json().catch(() => undefined)
+  if (response.status === 202) return undefined
+  const refusal = response.status === 403 ? RefusalResponseSchema.safeParse(payload) : undefined
+  if (refusal?.success) return { refusal: refusal.data.refusal }
+  // The pending connection lapsed before the browser came back from tastytrade.
+  if (response.status === 404) return { lapsed: true }
   if (!response.ok) {
     const tastytradeStatus = AppGrantRefusalSchema.safeParse(payload)
     if (response.status === 401) {
@@ -81,10 +84,6 @@ async function callWorker(path, agentBearer, body) {
     }
     // The Worker's own refusals (src/server/broker-authorizations.ts), each in words that say what to do.
     if (response.status === 503) throw new CliFailure(`connecting tastytrade is unavailable right now. Try again later with: ${again}`)
-    if (response.status === 409) {
-      throw new CliFailure(`too many tastytrade connections were started and not finished. Wait ${PENDING_WAIT_MINUTES} minutes, then run: ${again}`)
-    }
-    if (response.status === 404) throw new CliFailure(`this tastytrade connection expired. Run: ${again}`)
     throw new CliFailure(`spicytrade could not connect tastytrade (HTTP ${response.status}). To try again, run: ${again}`)
   }
   return payload
@@ -103,57 +102,23 @@ export class NotConnected extends CliFailure {
   }
 }
 
-/** Connect and store the grant. Progress goes to `out`. */
-export async function connectTastytrade(out = process.stdout) {
-  const agentBearer = await agentToken()
-  if (!agentBearer) {
-    throw new CliFailure(`this computer is not signed in to spicytrade. Run: ${cliCommand('setup')}`)
-  }
-  // A working personal grant is the member's choice, so connecting over it is refused rather than
-  // replacing it. Two connections, or half a personal grant, cannot trade at all: the new
-  // connection replaces them once it is in hand.
-  const { kind } = await tastytradeCredentialKind()
-  if (kind === 'personal') {
-    throw new CliFailure('tastytrade is already connected with your personal grant. To switch, run:\n'
-      + `  ${cliCommand('disconnect-tastytrade')}\nthen run this again.`)
-  }
-
-  const listener = await loopbackListener(PROGRAM, {
-    forbidden: 'This listener only answers the tastytrade return.',
-    received: 'tastytrade approved. Return to your agent conversation or terminal while the connection finishes.',
-    refused: 'Not connected. You can close this tab.',
-  })
-  let authorization
-  try {
-    authorization = AuthorizeResponseSchema.safeParse(
-      await callWorker('/api/brokers/tastytrade/authorize', agentBearer, { port: listener.port }),
-    )
-  } catch (error) {
-    // An open listener would keep this process alive after the failure is reported.
-    listener.close()
-    throw error
-  }
-  if (!authorization.success) {
-    listener.close()
-    throw new CliFailure(`spicytrade answered the authorization request with an unreadable response. ${unexpectedTail()}`)
-  }
-  const { authorizationUrl, expiresAt, state } = authorization.data
-  listener.expect(state)
-
-  out.write(`Approve spicytrade on tastytrade to connect your account:\n${remoteNote(listener.port)}\n  ${authorizationUrl}\n\n`)
-  openBrowser(authorizationUrl)
-
-  // Waits no longer than the Worker keeps the connection redeemable.
+/**
+ * Collect the grant the approval behind `session` started, and store it. Progress goes to `out`.
+ * The wait ends when the Worker has the browser's return, or says the connection expired.
+ */
+export async function collectTastytrade(out, { agentBearer, codeVerifier }) {
   out.write('Waiting for tastytrade. To skip for now, press Ctrl-C.\n')
-  const outcome = await awaitReturn(listener, Date.parse(expiresAt) - Date.now(), { skippable: true })
+  const outcome = await pollUntil(
+    () => callWorker('/api/brokers/tastytrade/exchange', agentBearer, { codeVerifier }),
+    PENDING_WAIT_MINUTES * 60_000,
+    { skippable: true },
+  )
   if (outcome.skipped) throw new NotConnected('skipped for now, so tastytrade is not connected')
   if (outcome.lapsed) throw new NotConnected('the tastytrade approval expired, so it is not connected')
-  if (outcome.error === 'access_denied') throw new NotConnected('you declined on tastytrade, so it is not connected')
-  if (outcome.error) throw new CliFailure(`tastytrade did not grant access (${outcome.error}). Try again with: ${cliCommand('setup')}`)
+  if (outcome.refusal === 'access_denied') throw new NotConnected('you declined on tastytrade, so it is not connected')
+  if (outcome.refusal) throw new CliFailure(`tastytrade did not grant access (${outcome.refusal}). Try again with: ${cliCommand('setup')}`)
 
-  const exchanged = ExchangeResponseSchema.safeParse(
-    await callWorker('/api/brokers/tastytrade/exchange', agentBearer, { code: outcome.code, state }),
-  )
+  const exchanged = ExchangeResponseSchema.safeParse(outcome)
   if (!exchanged.success) throw new CliFailure(`spicytrade answered the exchange with an unreadable response. ${unexpectedTail()}`)
   const { refreshToken } = exchanged.data
 
@@ -164,6 +129,22 @@ export async function connectTastytrade(out = process.stdout) {
     throw new KeyringUnavailable()
   }
   out.write('✓ tastytrade connected.\n')
+}
+
+/**
+ * Sign in and connect tastytrade on one link. Signing in again is part of it even on a computer
+ * that already is: the approval is what starts the consent, under the member's own session.
+ */
+export async function connectTastytrade(out = process.stdout) {
+  // A working personal grant is the member's choice, so connecting over it is refused rather than
+  // replacing it. Two connections, or half a personal grant, cannot trade at all: the new
+  // connection replaces them once it is in hand.
+  const { kind } = await tastytradeCredentialKind()
+  if (kind === 'personal') {
+    throw new CliFailure('tastytrade is already connected with your personal grant. To switch, run:\n'
+      + `  ${cliCommand('disconnect-tastytrade')}\nthen run this again.`)
+  }
+  await collectTastytrade(out, await login(out, { tastytrade: true }))
 }
 
 /**

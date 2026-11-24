@@ -6,14 +6,16 @@ import {
   MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER,
 } from '../src/domain/broker-authorization'
 import { type JsonValue } from '../src/domain/json-payload'
+import { approveAgentLogin } from '../src/server/agent-logins'
 import {
-  authorizeTastytrade,
   exchangeTastytrade,
+  openTastytradeConsent,
   sweepExpiredBrokerAuthorizations,
   tastytradeAccessToken,
   tastytradeCallback,
   TASTYTRADE_CALLBACK_PATH,
 } from '../src/server/broker-authorizations'
+import { base64Url, sha256Base64Url } from '../src/server/digest'
 import { type AppEnv } from '../src/server/env'
 import { issueMcpToken } from '../src/server/mcp-tokens'
 import { migrationStore, seedMember, type SqliteD1Store } from './sqlite-d1'
@@ -26,12 +28,6 @@ const CODE = 'one-time-authorization-code'
 const NOW = new Date('2026-09-25T12:00:00.000Z')
 
 type TokenCall = { body: Record<string, string>; url: string }
-
-const AuthorizeAnswerSchema = z.object({
-  authorizationUrl: z.string(),
-  expiresAt: z.string(),
-  state: z.string(),
-})
 
 let store: SqliteD1Store
 let env: AppEnv
@@ -83,15 +79,26 @@ function post(path: string, body: JsonValue, bearer?: string): Request {
   return new Request(`${BASE_URL}${path}`, { body: JSON.stringify(body), headers, method: 'POST' })
 }
 
-function authorize(bearer = memberToken, port = 43_210, now = NOW): Promise<Response> {
-  return authorizeTastytrade(post('/api/brokers/tastytrade/authorize', { port }, bearer), env, now)
+/** What the CLI holds: a verifier only it knows, and the challenge the member approves. */
+async function pkce() {
+  const codeVerifier = random32()
+  return { codeChallenge: await sha256Base64Url(codeVerifier), codeVerifier }
 }
 
-/** A start that must succeed, and what it answered. */
-async function start(bearer = memberToken, port = 43_210, now = NOW) {
-  const response = await authorize(bearer, port, now)
-  expect(response.status).toBe(200)
-  return AuthorizeAnswerSchema.parse(await response.json())
+function random32(): string {
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  return base64Url(bytes)
+}
+
+/** A consent that must open, as the member's approval opens it: its address, state and verifier. */
+async function start(member = 'member-a', now = NOW, link?: Awaited<ReturnType<typeof pkce>>) {
+  const { codeChallenge, codeVerifier } = link ?? await pkce()
+  const opened = await openTastytradeConsent(env, member, codeChallenge, now)
+  if (opened instanceof Response) throw new Error(`consent refused with ${opened.status}`)
+  const state = new URL(opened).searchParams.get('state')
+  if (!state) throw new Error('the consent address carries no state')
+  return { authorizationUrl: opened, codeChallenge, codeVerifier, state }
 }
 
 function callback(query: Record<string, string>, now = NOW): Promise<Response> {
@@ -105,101 +112,121 @@ function exchange(body: JsonValue, bearer = memberToken, now = NOW): Promise<Res
 }
 
 function pendingRows() {
-  return store.sqlite.prepare('SELECT * FROM broker_authorizations').all()
+  return store.sqlite.prepare('SELECT * FROM broker_consents').all()
 }
 
-describe('tastytrade connect: authorize', () => {
+describe('tastytrade connect: consent', () => {
   it('returns tastytrade consent for this app and keeps only the state digest', async () => {
-    const response = await authorize()
-    expect(response.status).toBe(200)
-    expect(response.headers.get('Cache-Control')).toBe('no-store')
-    const body = AuthorizeAnswerSchema.parse(await response.json())
-    const url = new URL(body.authorizationUrl)
+    const consent = await start()
+    const url = new URL(consent.authorizationUrl)
     expect(`${url.origin}${url.pathname}`).toBe('https://my.tastytrade.com/auth.html')
     expect(Object.fromEntries(url.searchParams)).toEqual({
       client_id: 'spice-app-client-id',
       redirect_uri: `${BASE_URL}${TASTYTRADE_CALLBACK_PATH}`,
       response_type: 'code',
       scope: 'read trade',
-      state: body.state,
+      state: consent.state,
     })
-    expect(body.expiresAt).toBe(new Date(NOW.getTime() + BROKER_AUTHORIZATION_TTL_MS).toISOString())
 
     const rows = pendingRows()
-    expect(rows).toEqual([expect.objectContaining({ broker: 'tastytrade', loopback_port: 43_210, user_id: 'member-a' })])
-    // A database read yields nothing the callback would accept.
-    expect(JSON.stringify(rows)).not.toContain(body.state)
+    expect(rows).toEqual([{
+      broker: 'tastytrade',
+      challenge: consent.codeChallenge,
+      code: null,
+      created_at: NOW.toISOString(),
+      expires_at: new Date(NOW.getTime() + BROKER_AUTHORIZATION_TTL_MS).toISOString(),
+      refusal: null,
+      state_digest: await sha256Base64Url(consent.state),
+      user_id: 'member-a',
+    }])
+    // A database read yields nothing the callback would accept, and nothing that collects.
+    expect(JSON.stringify(rows)).not.toContain(consent.state)
+    expect(JSON.stringify(rows)).not.toContain(consent.codeVerifier)
   })
 
-  it('refuses an absent, foreign-shaped, or unknown bearer', async () => {
-    for (const bearer of [undefined, 'eyJhbGciOiJIUzI1NiJ9.e30.signature', `spice_${'0'.repeat(16)}_AAAAAAAAAAAAAAAA`]) {
-      const response = await authorizeTastytrade(post('/api/brokers/tastytrade/authorize', { port: 43_210 }, bearer), env, NOW)
-      expect(response.status).toBe(401)
-    }
-    expect(pendingRows()).toEqual([])
-  })
-
-  it('accepts only an unprivileged loopback port', async () => {
-    for (const port of [80, 1023, 65_536, 4321.5, '4321']) {
-      const response = await authorizeTastytrade(post('/api/brokers/tastytrade/authorize', { port }, memberToken), env, NOW)
-      expect(response.status).toBe(400)
-    }
-    expect((await authorize(memberToken, 1024)).status).toBe(200)
-    expect((await authorize(memberToken, 65_535)).status).toBe(200)
+  it('is opened by the member\'s approval of a link that asks for it', async () => {
+    const { codeChallenge } = await pkce()
+    const request = new Request(`${BASE_URL}/api/agent-logins`, {
+      body: JSON.stringify({ broker: 'tastytrade', codeChallenge, label: 'laptop' }),
+      headers: { 'content-type': 'application/json', Origin: BASE_URL },
+      method: 'POST',
+    })
+    const response = await approveAgentLogin(request, env, NOW, async () => ({ email: 'a@example.com', id: 'member-a', name: 'Member' }))
+    expect(response.status).toBe(200)
+    const { authorizationUrl } = z.object({ authorizationUrl: z.string() }).parse(await response.json())
+    expect(authorizationUrl).toContain('https://my.tastytrade.com/auth.html?')
+    expect(pendingRows()).toEqual([expect.objectContaining({ challenge: codeChallenge, user_id: 'member-a' })])
+    expect(store.sqlite.prepare('SELECT challenge, user_id FROM agent_approvals').all())
+      .toEqual([{ challenge: codeChallenge, user_id: 'member-a' }])
   })
 
   it('caps pending connections per member, counting only live ones', async () => {
-    for (let index = 0; index < MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER; index += 1) {
-      expect((await authorize()).status).toBe(200)
-    }
-    expect((await authorize()).status).toBe(409)
+    for (let index = 0; index < MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER; index += 1) await start()
+    const refused = await openTastytradeConsent(env, 'member-a', (await pkce()).codeChallenge, NOW)
+    expect(refused).toBeInstanceOf(Response)
+    expect(refused).toMatchObject({ status: 409 })
     // The cap is the member's own.
-    expect((await authorize(otherMemberToken)).status).toBe(200)
+    await start('member-b')
     // Once those lapse, a new start clears them rather than counting them.
-    const later = new Date(NOW.getTime() + BROKER_AUTHORIZATION_TTL_MS)
-    expect((await authorize(memberToken, 43_210, later)).status).toBe(200)
+    await start('member-a', new Date(NOW.getTime() + BROKER_AUTHORIZATION_TTL_MS))
     expect(pendingRows().filter((row) => row.user_id === 'member-a')).toHaveLength(1)
+  })
+
+  it('keeps one consent per link, so approving twice leaves only the later state', async () => {
+    const link = await pkce()
+    const first = await start('member-a', NOW, link)
+    const second = await start('member-a', NOW, link)
+    expect(pendingRows()).toHaveLength(1)
+    expect((await callback({ code: CODE, state: first.state })).status).toBe(400)
+    expect((await callback({ code: CODE, state: second.state })).status).toBe(200)
   })
 })
 
 describe('tastytrade connect: callback', () => {
-  it('sends the browser only to the loopback port the member registered', async () => {
-    const body = await start(memberToken, 51_234)
-    const response = await callback({ code: CODE, state: body.state })
-    expect(response.status).toBe(302)
+  it('keeps the code for the CLI and sends the browser nowhere', async () => {
+    const consent = await start()
+    const response = await callback({ code: CODE, redirect_uri: 'https://attacker.example/steal', state: consent.state })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Location')).toBeNull()
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect(response.headers.get('Referrer-Policy')).toBe('no-referrer')
-    const location = new URL(response.headers.get('Location')!)
-    expect(`${location.origin}${location.pathname}`).toBe('http://127.0.0.1:51234/callback')
-    expect(Object.fromEntries(location.searchParams)).toEqual({ code: CODE, state: body.state })
-    // Looked up, not consumed: the exchange is what spends it.
-    expect(pendingRows()).toHaveLength(1)
+    const page = await response.text()
+    expect(page).toContain('tastytrade approved.')
+    expect(page).not.toContain(CODE)
+    expect(pendingRows()).toEqual([expect.objectContaining({ code: CODE, refusal: null })])
     // The code is never exchanged here.
     expect(tokenCalls).toEqual([])
   })
 
-  it('forwards a refusal and ignores any destination the request names', async () => {
-    const body = await start(memberToken, 51_234)
-    const response = await callback({
-      error: 'access_denied',
-      redirect_uri: 'https://attacker.example/steal',
-      state: body.state,
-    })
-    const location = new URL(response.headers.get('Location')!)
-    expect(location.host).toBe('127.0.0.1:51234')
-    expect(Object.fromEntries(location.searchParams)).toEqual({ error: 'access_denied', state: body.state })
+  it('records a refusal as one of its own codes, never the broker\'s text', async () => {
+    const declined = await start()
+    expect(await (await callback({ error: 'access_denied', state: declined.state })).text()).toContain('Not connected.')
+    const strange = await start()
+    // A return carrying both is a refusal: the code is not kept.
+    await callback({ code: CODE, error: '<script>alert(1)</script>', state: strange.state })
+    expect(pendingRows().map(({ code, refusal }) => ({ code, refusal }))).toEqual([
+      { code: null, refusal: 'access_denied' },
+      { code: null, refusal: 'unrecognized' },
+    ])
   })
 
-  it('refuses an unknown, malformed, or expired state with a no-store page and no redirect', async () => {
-    const body = await start()
-    const unknown = 'A'.repeat(body.state.length)
+  it('records one return, so a replayed address cannot swap the code', async () => {
+    const consent = await start()
+    expect((await callback({ code: CODE, state: consent.state })).status).toBe(200)
+    expect((await callback({ code: 'another-code', state: consent.state })).status).toBe(400)
+    expect(pendingRows()).toEqual([expect.objectContaining({ code: CODE })])
+  })
+
+  it('refuses an unknown, malformed, or expired state with a no-store page', async () => {
+    const consent = await start()
+    const unknown = 'A'.repeat(consent.state.length)
     const expired = new Date(NOW.getTime() + BROKER_AUTHORIZATION_TTL_MS)
     for (const response of [
       await callback({ code: CODE, state: unknown }),
       await callback({ code: CODE, state: 'short' }),
       await callback({ code: CODE }),
-      await callback({ code: CODE, state: body.state }, expired),
-      await callback({ state: body.state }),
+      await callback({ code: CODE, state: consent.state }, expired),
+      await callback({ state: consent.state }),
     ]) {
       expect(response.status).toBe(400)
       expect(response.headers.get('Location')).toBeNull()
@@ -207,13 +234,27 @@ describe('tastytrade connect: callback', () => {
       expect(response.headers.get('Referrer-Policy')).toBe('no-referrer')
       expect(await response.text()).not.toContain(CODE)
     }
+    expect(pendingRows()).toEqual([expect.objectContaining({ code: null, refusal: null })])
   })
 })
 
+/** A consent the browser has returned from with the code. */
+async function returned(member = 'member-a') {
+  const consent = await start(member)
+  expect((await callback({ code: CODE, state: consent.state })).status).toBe(200)
+  return consent
+}
+
 describe('tastytrade connect: exchange', () => {
-  it('redeems the code under the app secret, once, and returns the refresh token only here', async () => {
-    const body = await start()
-    const response = await exchange({ code: CODE, state: body.state })
+  it('answers pending until the browser returns, then redeems the code once under the app secret', async () => {
+    const consent = await start()
+    const waiting = await exchange({ codeVerifier: consent.codeVerifier })
+    expect(waiting.status).toBe(202)
+    expect(await waiting.json()).toEqual({ pending: true })
+    expect(tokenCalls).toEqual([])
+    await callback({ code: CODE, state: consent.state })
+
+    const response = await exchange({ codeVerifier: consent.codeVerifier })
     expect(response.status).toBe(200)
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect(await response.json()).toEqual({ refreshToken: MEMBER_REFRESH_TOKEN })
@@ -229,46 +270,65 @@ describe('tastytrade connect: exchange', () => {
     }])
     // Nothing of the grant was kept, and the attempt is spent.
     expect(pendingRows()).toEqual([])
-    const replay = await exchange({ code: CODE, state: body.state })
+    const replay = await exchange({ codeVerifier: consent.codeVerifier })
     expect(replay.status).toBe(404)
     expect(tokenCalls).toHaveLength(1)
     expect(JSON.stringify(logged)).not.toContain(MEMBER_REFRESH_TOKEN)
   })
 
-  it('refuses another member redeeming the state, without spending it', async () => {
-    const body = await start()
-    const stolen = await exchange({ code: CODE, state: body.state }, otherMemberToken)
-    expect(stolen.status).toBe(404)
-    expect(await stolen.text()).not.toContain(MEMBER_REFRESH_TOKEN)
+  it('reports the member\'s refusal, and spends the attempt', async () => {
+    const consent = await start()
+    await callback({ error: 'access_denied', state: consent.state })
+    const response = await exchange({ codeVerifier: consent.codeVerifier })
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ refusal: 'access_denied' })
+    expect(pendingRows()).toEqual([])
+    expect(tokenCalls).toEqual([])
+  })
+
+  it('refuses another member, the challenge, or another verifier, without spending it', async () => {
+    const consent = await returned()
+    for (const response of [
+      await exchange({ codeVerifier: consent.codeVerifier }, otherMemberToken),
+      // The link carries the challenge; it is not the verifier.
+      await exchange({ codeVerifier: consent.codeChallenge }),
+      await exchange({ codeVerifier: random32() }),
+    ]) {
+      expect(response.status).toBe(404)
+      expect(await response.text()).not.toContain(MEMBER_REFRESH_TOKEN)
+    }
     expect(tokenCalls).toEqual([])
     expect(pendingRows()).toHaveLength(1)
-    expect((await exchange({ code: CODE, state: body.state })).status).toBe(200)
+    expect((await exchange({ codeVerifier: consent.codeVerifier })).status).toBe(200)
   })
 
-  it('refuses an expired state', async () => {
-    const body = await start()
+  it('refuses an expired consent', async () => {
+    const consent = await returned()
     const expired = new Date(NOW.getTime() + BROKER_AUTHORIZATION_TTL_MS)
-    expect((await exchange({ code: CODE, state: body.state }, memberToken, expired)).status).toBe(404)
+    expect((await exchange({ codeVerifier: consent.codeVerifier }, memberToken, expired)).status).toBe(404)
     expect(tokenCalls).toEqual([])
   })
 
-  it('refuses an absent or non-minted bearer', async () => {
-    const body = await start()
+  it('refuses an absent or non-minted bearer, and a malformed body', async () => {
+    const consent = await returned()
     for (const bearer of [undefined, 'eyJhbGciOiJIUzI1NiJ9.e30.signature']) {
       const response = await exchangeTastytrade(
-        post('/api/brokers/tastytrade/exchange', { code: CODE, state: body.state }, bearer),
+        post('/api/brokers/tastytrade/exchange', { codeVerifier: consent.codeVerifier }, bearer),
         env,
         NOW,
       )
       expect(response.status).toBe(401)
+    }
+    for (const body of [{}, { codeVerifier: 'short' }, { code: CODE, codeVerifier: consent.codeVerifier }]) {
+      expect((await exchange(body)).status).toBe(400)
     }
     expect(pendingRows()).toHaveLength(1)
   })
 
   it('reports a tastytrade refusal by status, never its body', async () => {
     tastytradeAnswer = () => Response.json({ error: 'invalid_grant', echoed: MEMBER_REFRESH_TOKEN }, { status: 400 })
-    const body = await start()
-    const response = await exchange({ code: CODE, state: body.state })
+    const consent = await returned()
+    const response = await exchange({ codeVerifier: consent.codeVerifier })
     expect(response.status).toBe(502)
     const text = await response.text()
     expect(JSON.parse(text)).toEqual({ error: 'tastytrade refused the grant', tastytradeStatus: 400 })
@@ -279,8 +339,8 @@ describe('tastytrade connect: exchange', () => {
 
   it('refuses a token response without a refresh token rather than returning part of one', async () => {
     tastytradeAnswer = () => Response.json({ access_token: 'access-only', expires_in: 900 })
-    const body = await start()
-    const response = await exchange({ code: CODE, state: body.state })
+    const consent = await returned()
+    const response = await exchange({ codeVerifier: consent.codeVerifier })
     expect(response.status).toBe(502)
     expect(await response.json()).toEqual({ error: 'tastytrade answered with an unreadable token response' })
   })
@@ -355,12 +415,14 @@ describe('tastytrade connect: configuration', () => {
   ]
 
   it.each(missing)('closes every endpoint when %s is missing', async (_binding, without) => {
-    const body = await start()
+    const consent = await returned()
     env = without(env)
+    const opened = await openTastytradeConsent(env, 'member-a', (await pkce()).codeChallenge, NOW)
+    if (!(opened instanceof Response)) throw new Error('a consent opened without its configuration')
     const responses = [
-      await authorizeTastytrade(post('/api/brokers/tastytrade/authorize', { port: 43_210 }, memberToken), env, NOW),
-      await callback({ code: CODE, state: body.state }),
-      await exchange({ code: CODE, state: body.state }),
+      opened,
+      await callback({ code: CODE, state: consent.state }),
+      await exchange({ codeVerifier: consent.codeVerifier }),
       await tastytradeAccessToken(post('/api/brokers/tastytrade/token', { refreshToken: MEMBER_REFRESH_TOKEN }, memberToken), env),
     ]
     for (const response of responses) {
@@ -372,9 +434,9 @@ describe('tastytrade connect: configuration', () => {
   })
 
   it('does not spend the attempt when the app secret cannot be read', async () => {
-    const body = await start()
+    const consent = await returned()
     env = { ...env, TASTYTRADE_OAUTH_CLIENT_SECRET: { get: async () => { throw new Error('store down') } } }
-    expect((await exchange({ code: CODE, state: body.state })).status).toBe(503)
+    expect((await exchange({ codeVerifier: consent.codeVerifier })).status).toBe(503)
     expect(pendingRows()).toHaveLength(1)
     expect(tokenCalls).toEqual([])
   })
@@ -382,8 +444,8 @@ describe('tastytrade connect: configuration', () => {
 
 describe('tastytrade connect: sweep', () => {
   it('drops only lapsed pending connections, and names a missing binding', async () => {
-    await start(memberToken, 43_210, new Date(NOW.getTime() - BROKER_AUTHORIZATION_TTL_MS))
-    await start(otherMemberToken)
+    await start('member-a', new Date(NOW.getTime() - BROKER_AUTHORIZATION_TTL_MS))
+    await start('member-b')
     await expect(sweepExpiredBrokerAuthorizations(env, NOW)).resolves.toBe(1)
     expect(pendingRows()).toEqual([expect.objectContaining({ user_id: 'member-b' })])
     await expect(sweepExpiredBrokerAuthorizations({}, NOW)).rejects.toMatchObject({ name: 'BindingMissing' })

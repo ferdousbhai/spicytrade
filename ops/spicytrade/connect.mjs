@@ -8,7 +8,7 @@ import { CLI_PATH, cliCommand, LEGACY_MCP_SERVER_NAME, MCP_PROTOCOL_VERSION, MCP
 import { agentToken, keyringHelperInstalled, keyringHelperMissing, keyringWritable, requireSupportedPlatform, tastytradeCredentialKind } from './keyring.mjs'
 import { login } from './login.mjs'
 import { register, removeStale } from './setup.mjs'
-import { CliFailure } from './loopback.mjs'
+import { CliFailure } from './cli.mjs'
 import { connectTastytrade } from './tastytrade-connect.mjs'
 import { TOKEN_REQUEST_TIMEOUT_MS, UPSTREAM_TIMEOUT_MS } from './token-refresh.mjs'
 import { checkAgentToken, describeTokenCheck } from './worker.mjs'
@@ -121,27 +121,28 @@ export async function connect(out = process.stdout) {
   let token = await agentToken()
   const checked = token ? await checkAgentToken(token) : undefined
   if (checked?.status === 'unanswered' || checked?.status === 'unreachable') throw new CliFailure(describeTokenCheck(checked))
-  if (checked?.status !== 'accepted') {
-    await login(out)
-    token = await agentToken()
-  }
   const credential = await tastytradeCredentialKind()
   if (credential.kind === 'ambiguous' || credential.kind === 'incomplete') {
     throw new CliFailure(`The saved tastytrade connection needs repair. Run ${cliCommand('setup')} in a terminal to choose whether to replace it.`)
   }
-  let needsConnection = credential.kind === 'none'
-  if (!needsConnection) {
+  // Running `connect` explicitly asks for account access. Brokerage authorization is still
+  // the user's own decision on tastytrade's consent page; a shell/agent never supplies consent.
+  if (credential.kind === 'none') {
+    // One link: it signs this computer in and continues to tastytrade.
+    await connectTastytrade(out)
+  } else {
+    if (checked?.status !== 'accepted') {
+      await login(out)
+      token = await agentToken()
+    }
     try {
       await grantMinter(token, credential)()
     } catch (error) {
       if (!(error instanceof TastytradeAuthError) || !grantRefused(error)) throw error
       if (credential.kind === 'personal') throw new CliFailure(`tastytrade refused your personal grant. Store a replacement with ${cliCommand('store-personal-grant')}.`)
-      needsConnection = true
+      await connectTastytrade(out)
     }
   }
-  // Running `connect` explicitly asks for account access. Brokerage authorization is still
-  // the user's own decision on tastytrade's consent page; a shell/agent never supplies consent.
-  if (needsConnection) await connectTastytrade(out)
   out.write('Verifying live account access…\n')
   await verifyAccount()
   out.write(finish(out))

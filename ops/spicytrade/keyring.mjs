@@ -5,7 +5,7 @@ import { delimiter, join } from 'node:path'
 import { promisify } from 'node:util'
 
 import { AGENT_TOKEN_SERVICE, cliCommand, LEGACY_AGENT_TOKEN_SERVICE, MCP_TOKEN_KEY, ORIGIN } from './config.mjs'
-import { CliFailure } from './loopback.mjs'
+import { CliFailure } from './cli.mjs'
 import { keyringEnvironment } from './keyring-environment.mjs'
 
 /**

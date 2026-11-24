@@ -37,7 +37,7 @@ To connect your tastytrade account (macOS or Linux, Node.js 22+; Linux also need
 curl -fsSL https://spicy.trade/install.sh | bash
 ```
 
-That installs one file into `~/.local/share/spicytrade`, links `~/.local/bin/spicytrade`, then runs `spicytrade setup`, which asks before connecting your brokerage. Run it again to update. For agent-driven onboarding (the current agent registers itself), use `bash -s -- --connector-only` and follow the [connect guide](https://spicy.trade/connect/guide). Agents can read [llms.txt](https://spicy.trade/llms.txt) for the full map.
+That installs one file into `~/.local/share/spicytrade`, links `~/.local/bin/spicytrade`, then runs `spicytrade setup`, which prints one link. Approve it in any browser, on that computer or your phone: it signs the computer in and continues to tastytrade's consent page. Run the install again to update. For agent-driven onboarding (the current agent registers itself), use `bash -s -- --connector-only` and follow the [connect guide](https://spicy.trade/connect/guide). Agents can read [llms.txt](https://spicy.trade/llms.txt) for the full map.
 
 ## Architecture
 

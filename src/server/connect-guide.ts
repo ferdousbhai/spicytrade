@@ -12,21 +12,23 @@ a special trading folder. Configure only this harness in the user's current work
 
 ## Local account access
 
-Requires a local Linux or macOS execution environment, Node.js 22+, and a browser the user can
-approve in. Linux also needs secret-tool and a desktop keyring; macOS uses its login keychain.
+Requires a local Linux or macOS execution environment and Node.js 22+. Linux also needs
+secret-tool and a desktop keyring; macOS uses its login keychain. The user approves one link in
+any browser, on that computer or another device such as their phone.
 Windows is not supported: on Windows, do not attempt the install. Tell the user account access
 needs Linux or macOS, and offer research through ${MCP_ENDPOINT} instead.
 If the harness has no local shell or no stdio MCP support, explain that account access needs
 the local connector; offer research through ${MCP_ENDPOINT} instead. Do not claim a cloud shell is the user's local computer.
 
-Do every step yourself. The user's part is approving in the browser, and in Claude Code one
+Do every step yourself. The user's part is approving one link, and in Claude Code one
 restart; do not hand them commands to run.
 
 Fastest path in Claude Code: if ~/.local/bin/spicytrade is missing, install it (step 1). Then
-run ~/.local/bin/spicytrade connect from the user's current workspace. It signs in, connects the
-brokerage, verifies a live snapshot, and registers spicytrade in this workspace, replacing
-spicytrade's own older entry, including an HTTP one for ${MCP_ENDPOINT}. Keep it running while
-the user approves. Its closing line says what is left: usually that the user restarts Claude
+run ~/.local/bin/spicytrade connect from the user's current workspace. It prints one link and a
+short code: give the user both, and tell them to approve only if the page shows that code. The
+one approval signs in and continues to tastytrade. The command then verifies a live snapshot and
+registers spicytrade in this workspace, replacing spicytrade's own older entry, including an HTTP
+one for ${MCP_ENDPOINT}. Keep it running while the user approves. Its closing line says what is left: usually that the user restarts Claude
 Code with claude --continue, which resumes this conversation. Tell them that once. Steps 2 to 4
 are for other harnesses, and for repair.
 
@@ -67,18 +69,18 @@ are for other harnesses, and for repair.
    do not guess a configuration format or launch Claude/Codex as a substitute.
 
 3. Refresh this harness's MCP tools using its supported mechanism. When connect_spicytrade is
-   available, call it with action=start, give the user its browser link or explain the desktop
+   available, call it with action=start, give the user its link and code or explain the desktop
    dialog, and check action=status after they approve. The tool returns immediately, so the
    conversation stays responsive. Browser consent, never an agent-supplied answer, authorizes
    the brokerage connection. Do not collect passwords, tokens or authorization codes in chat.
 
    If newly registered tools cannot load in this running conversation, the current agent can
    run ~/.local/bin/spicytrade connect in its own shell. This explicit account-connection command
-   works without a TTY, opens browser approval, and verifies a live snapshot. Keep the process
+   works without a TTY, prints the approval link, and verifies a live snapshot. Keep the process
    running while the user approves. It never launches or configures an agent; run from Claude
    Code, its closing line says whether this workspace has the server, and if not, the command
-   that adds it. Act on that line before telling the user to continue. On SSH, follow
-   its port-forward instructions; remote browser approval needs a route back to that machine.
+   that adds it. Act on that line before telling the user to continue. Over SSH nothing
+   more is needed: the link is approved in whichever browser the user opens it in.
 
 4. On success, call setup_required if available to reload saved credentials, then call
    read_account_snapshot in this conversation. Do not retry a trade as part of setup. Report

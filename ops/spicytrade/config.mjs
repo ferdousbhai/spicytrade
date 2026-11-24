@@ -38,9 +38,6 @@ export function workerFault(response) {
  */
 export const MCP_PROTOCOL_VERSION = '2025-06-18'
 
-/** The browser sign-ins' one-shot listeners bind here, never to a routable address. */
-export const LISTEN_HOST = '127.0.0.1'
-
 /** The address the retired background proxy listened on, which older client entries still name. */
 export const LEGACY_PROXY_URL = 'http://127.0.0.1:8787/mcp'
 /** The retired proxy's systemd user units, current name and pre-rename name. */

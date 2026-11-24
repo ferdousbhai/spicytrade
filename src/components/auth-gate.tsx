@@ -103,7 +103,7 @@ function GoogleMark() {
 /**
  * `callbackURL` exists for the OAuth authorization page, which must return the browser to the
  * signed authorization request it arrived with, for the Connect view, which returns the reader
- * to itself, and for the terminal sign-in page (`/connect/agent`), which returns with its raw
+ * to itself, and for the computer approval page (`/connect/agent`), which returns with its raw
  * query. Anywhere else a sign-in lands on Watch, the application's own address.
  */
 export function GoogleSignInButton(

@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  AGENT_LOGIN_TTL_MS,
-  AgentLoginApproveResponseSchema,
-  MAX_PENDING_AGENT_LOGINS_PER_USER,
-} from '../src/domain/agent-login'
+import { AGENT_LOGIN_TTL_MS, connectCode, MAX_PENDING_AGENT_LOGINS_PER_USER } from '../src/domain/agent-login'
 import { type JsonValue } from '../src/domain/json-payload'
 import { MAX_MCP_TOKENS_PER_USER, McpTokenIssuedResponseSchema } from '../src/domain/mcp-tokens'
 import { approveAgentLogin, exchangeAgentLogin, signOutAgentLogin, sweepExpiredAgentLogins } from '../src/server/agent-logins'
@@ -16,7 +12,6 @@ import { migrationStore, seedMember, type SqliteD1Store } from './sqlite-d1'
 
 const BASE_URL = 'https://spicy.trade'
 const NOW = new Date('2026-09-28T12:00:00.000Z')
-const PORT = 43_210
 
 let store: SqliteD1Store
 let env: AppEnv
@@ -69,11 +64,11 @@ function approve(
   return approveAgentLogin(post('/api/agent-logins', body, origin), env, now, readIdentity)
 }
 
-/** An approval that must succeed, and the code it yielded. */
-async function approved(codeChallenge: string, member = 'member-a', now = NOW, label = 'laptop'): Promise<string> {
-  const response = await approve({ codeChallenge, label, port: PORT }, { member, now })
+/** An approval that must succeed. */
+async function approved(codeChallenge: string, member = 'member-a', now = NOW, label = 'laptop'): Promise<void> {
+  const response = await approve({ codeChallenge, label }, { member, now })
   expect(response.status).toBe(200)
-  return AgentLoginApproveResponseSchema.parse(await response.json()).code
+  expect(await response.json()).toEqual({})
 }
 
 function exchange(body: JsonValue, now = NOW): Promise<Response> {
@@ -81,31 +76,49 @@ function exchange(body: JsonValue, now = NOW): Promise<Response> {
 }
 
 function pendingRows() {
-  return store.sqlite.prepare('SELECT * FROM agent_logins').all()
+  return store.sqlite.prepare('SELECT * FROM agent_approvals').all()
 }
 
 describe('agent login: approve', () => {
-  it('keeps only the code digest and never the code', async () => {
-    const { codeChallenge } = await pkce()
-    const response = await approve({ codeChallenge, label: 'laptop', port: PORT })
+  it('records the approval under the challenge, with no credential', async () => {
+    const { codeChallenge, codeVerifier } = await pkce()
+    const response = await approve({ codeChallenge, label: 'laptop' })
     expect(response.status).toBe(200)
     expect(response.headers.get('Cache-Control')).toBe('no-store')
-    const { code } = AgentLoginApproveResponseSchema.parse(await response.json())
     const rows = pendingRows()
-    expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({
-      code_challenge: codeChallenge,
-      code_digest: await sha256Base64Url(code),
+    expect(rows).toEqual([{
+      challenge: codeChallenge,
+      created_at: NOW.toISOString(),
       expires_at: new Date(NOW.getTime() + AGENT_LOGIN_TTL_MS).toISOString(),
       label: 'laptop',
       user_id: 'member-a',
-    })
-    expect(JSON.stringify(rows)).not.toContain(code)
+    }])
+    expect(JSON.stringify(rows)).not.toContain(codeVerifier)
+  })
+
+  it('replaces the approval when one link is approved twice', async () => {
+    const { codeChallenge, codeVerifier } = await pkce()
+    await approved(codeChallenge)
+    await approved(codeChallenge, 'member-b')
+    expect(pendingRows()).toHaveLength(1)
+    const issued = McpTokenIssuedResponseSchema.parse(await (await exchange({ codeVerifier })).json())
+    expect(await authenticateMcpToken(store.database, issued.token)).toMatchObject({ userId: 'member-b' })
+  })
+
+  it('opens no brokerage consent it was not asked for, and refuses one it cannot open', async () => {
+    const { codeChallenge } = await pkce()
+    await approved(codeChallenge)
+    expect(store.sqlite.prepare('SELECT * FROM broker_consents').all()).toEqual([])
+    // This environment has no tastytrade app configured: nothing is approved on a link that
+    // promised a brokerage.
+    const other = await pkce()
+    expect((await approve({ broker: 'tastytrade', codeChallenge: other.codeChallenge, label: 'laptop' })).status).toBe(503)
+    expect(pendingRows()).toHaveLength(1)
   })
 
   it('requires a signed-in member posting from the site itself', async () => {
     const { codeChallenge } = await pkce()
-    const body = { codeChallenge, label: 'laptop', port: PORT }
+    const body = { codeChallenge, label: 'laptop' }
     expect((await approve(body, { member: null })).status).toBe(401)
     expect((await approve(body, { origin: 'https://evil.example' })).status).toBe(403)
     expect(pendingRows()).toHaveLength(0)
@@ -114,11 +127,10 @@ describe('agent login: approve', () => {
   it('refuses a malformed approval', async () => {
     const { codeChallenge } = await pkce()
     for (const body of [
-      { codeChallenge, label: 'laptop', port: 80 },
-      { codeChallenge, label: 'laptop', port: 70_000 },
-      { codeChallenge: 'short', label: 'laptop', port: PORT },
-      { codeChallenge, label: '', port: PORT },
-      { codeChallenge, label: 'laptop', port: PORT, state: random32() },
+      { codeChallenge: 'short', label: 'laptop' },
+      { codeChallenge, label: '' },
+      { broker: 'another-broker', codeChallenge, label: 'laptop' },
+      { codeChallenge, label: 'laptop', port: 43_210 },
     ]) {
       expect((await approve(body)).status).toBe(400)
     }
@@ -130,7 +142,7 @@ describe('agent login: approve', () => {
       await approved((await pkce()).codeChallenge)
     }
     const { codeChallenge } = await pkce()
-    const refused = await approve({ codeChallenge, label: 'laptop', port: PORT })
+    const refused = await approve({ codeChallenge, label: 'laptop' })
     expect(refused.status).toBe(409)
     // Another member is not affected by this one's cap.
     await approved(codeChallenge, 'member-b')
@@ -140,10 +152,13 @@ describe('agent login: approve', () => {
 })
 
 describe('agent login: exchange', () => {
-  it('redeems an approved code for a working agent token under the approved label', async () => {
+  it('answers pending until the member approves, then hands over a working agent token under the approved label', async () => {
     const { codeChallenge, codeVerifier } = await pkce()
-    const code = await approved(codeChallenge, 'member-a', NOW, 'work laptop')
-    const response = await exchange({ code, codeVerifier })
+    const waiting = await exchange({ codeVerifier })
+    expect(waiting.status).toBe(202)
+    expect(await waiting.json()).toEqual({ pending: true })
+    await approved(codeChallenge, 'member-a', NOW, 'work laptop')
+    const response = await exchange({ codeVerifier })
     expect(response.status).toBe(200)
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     const issued = McpTokenIssuedResponseSchema.parse(await response.json())
@@ -153,47 +168,37 @@ describe('agent login: exchange', () => {
     expect(JSON.stringify(logged)).not.toContain(issued.token)
   })
 
-  it('redeems a code once', async () => {
+  it('hands the token over once', async () => {
     const { codeChallenge, codeVerifier } = await pkce()
-    const code = await approved(codeChallenge)
-    expect((await exchange({ code, codeVerifier })).status).toBe(200)
-    const replay = await exchange({ code, codeVerifier })
-    expect(replay.status).toBe(400)
-    expect(await replay.json()).toEqual({ error: 'invalid_grant' })
+    await approved(codeChallenge)
+    expect((await exchange({ codeVerifier })).status).toBe(200)
+    expect((await exchange({ codeVerifier })).status).toBe(202)
     expect(await listMcpTokens(store.database, 'member-a')).toHaveLength(1)
   })
 
-  it('refuses a lapsed code', async () => {
+  it('leaves a lapsed approval uncollected', async () => {
     const { codeChallenge, codeVerifier } = await pkce()
-    const code = await approved(codeChallenge)
-    const response = await exchange({ code, codeVerifier }, new Date(NOW.getTime() + AGENT_LOGIN_TTL_MS))
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({ error: 'invalid_grant' })
+    await approved(codeChallenge)
+    expect((await exchange({ codeVerifier }, new Date(NOW.getTime() + AGENT_LOGIN_TTL_MS))).status).toBe(202)
     expect(await listMcpTokens(store.database, 'member-a')).toHaveLength(0)
   })
 
-  it('refuses the wrong verifier, and the attempt spends the code', async () => {
+  it('gives another verifier nothing, and leaves the approval for its own', async () => {
     const { codeChallenge, codeVerifier } = await pkce()
-    const code = await approved(codeChallenge)
-    const wrong = await exchange({ code, codeVerifier: random32() })
-    expect(wrong.status).toBe(400)
-    expect(await wrong.json()).toEqual({ error: 'invalid_grant' })
-    expect((await exchange({ code, codeVerifier })).status).toBe(400)
-    expect(await listMcpTokens(store.database, 'member-a')).toHaveLength(0)
-  })
-
-  it('refuses an unknown code', async () => {
-    const response = await exchange({ code: random32(), codeVerifier: random32() })
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({ error: 'invalid_grant' })
+    await approved(codeChallenge)
+    // Holding the challenge, which the link carries, is not holding the verifier.
+    expect((await exchange({ codeVerifier: codeChallenge })).status).toBe(202)
+    expect((await exchange({ codeVerifier: random32() })).status).toBe(202)
+    expect((await exchange({ codeVerifier })).status).toBe(200)
   })
 
   it('refuses a malformed exchange', async () => {
     for (const body of [
       {},
-      { code: 'short', codeVerifier: random32() },
-      { code: random32(), codeVerifier: random32(), extra: 1 },
-      { code: random32(), codeVerifier: random32(), previousToken: '' },
+      { codeVerifier: 'short' },
+      { codeVerifier: random32(), extra: 1 },
+      { code: random32(), codeVerifier: random32() },
+      { codeVerifier: random32(), previousToken: '' },
     ]) {
       const response = await exchange(body)
       expect(response.status).toBe(400)
@@ -204,8 +209,8 @@ describe('agent login: exchange', () => {
   it('replaces the same member\'s previous token', async () => {
     const previous = await issueMcpToken(store.database, 'member-a', 'laptop')
     const { codeChallenge, codeVerifier } = await pkce()
-    const code = await approved(codeChallenge)
-    const response = await exchange({ code, codeVerifier, previousToken: previous.token })
+    await approved(codeChallenge)
+    const response = await exchange({ codeVerifier, previousToken: previous.token })
     expect(response.status).toBe(200)
     const issued = McpTokenIssuedResponseSchema.parse(await response.json())
     expect(await authenticateMcpToken(store.database, previous.token)).toBeUndefined()
@@ -219,8 +224,8 @@ describe('agent login: exchange', () => {
       tokens.push(await issueMcpToken(store.database, 'member-a', `machine ${index}`))
     }
     const { codeChallenge, codeVerifier } = await pkce()
-    const code = await approved(codeChallenge)
-    const response = await exchange({ code, codeVerifier, previousToken: tokens[0]!.token })
+    await approved(codeChallenge)
+    const response = await exchange({ codeVerifier, previousToken: tokens[0]!.token })
     expect(response.status).toBe(200)
     expect(await authenticateMcpToken(store.database, tokens[0]!.token)).toBeUndefined()
     expect(await listMcpTokens(store.database, 'member-a')).toHaveLength(MAX_MCP_TOKENS_PER_USER)
@@ -230,8 +235,8 @@ describe('agent login: exchange', () => {
     const foreign = await issueMcpToken(store.database, 'member-b', 'desktop')
     for (const previousToken of [foreign.token, 'not-a-token']) {
       const { codeChallenge, codeVerifier } = await pkce()
-      const code = await approved(codeChallenge)
-      expect((await exchange({ code, codeVerifier, previousToken })).status).toBe(200)
+      await approved(codeChallenge)
+      expect((await exchange({ codeVerifier, previousToken })).status).toBe(200)
     }
     expect(await authenticateMcpToken(store.database, foreign.token)).toMatchObject({ userId: 'member-b' })
     expect(await listMcpTokens(store.database, 'member-a')).toHaveLength(2)
@@ -242,8 +247,8 @@ describe('agent login: exchange', () => {
       await issueMcpToken(store.database, 'member-a', `machine ${index}`)
     }
     const { codeChallenge, codeVerifier } = await pkce()
-    const code = await approved(codeChallenge)
-    const response = await exchange({ code, codeVerifier })
+    await approved(codeChallenge)
+    const response = await exchange({ codeVerifier })
     expect(response.status).toBe(409)
     expect(await response.json()).toEqual({
       error: `You can have at most ${MAX_MCP_TOKENS_PER_USER} signed-in computers and tokens. Revoke one you no longer use above, then try again.`,
@@ -252,9 +257,9 @@ describe('agent login: exchange', () => {
 
   it('fails closed without a database', async () => {
     env = { AUTH_BASE_URL: BASE_URL }
-    expect((await exchange({ code: random32(), codeVerifier: random32() })).status).toBe(503)
+    expect((await exchange({ codeVerifier: random32() })).status).toBe(503)
     const { codeChallenge } = await pkce()
-    expect((await approve({ codeChallenge, label: 'laptop', port: PORT })).status).toBe(503)
+    expect((await approve({ codeChallenge, label: 'laptop' })).status).toBe(503)
   })
 })
 
@@ -289,5 +294,12 @@ describe('agent login: sweep', () => {
     await approved((await pkce()).codeChallenge)
     expect(await sweepExpiredAgentLogins(env, NOW)).toBe(1)
     expect(pendingRows()).toHaveLength(1)
+  })
+})
+
+describe('the code a member matches against their terminal', () => {
+  it('is the challenge\'s first four bytes in hex, as two groups', () => {
+    // 0xfb 0xff 0xbf 0x00 ... in base64url, the alphabet's two substituted characters included.
+    expect(connectCode(`-_-_${'A'.repeat(39)}`)).toBe('FBFF-BF00')
   })
 })

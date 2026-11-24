@@ -3,7 +3,7 @@ import { connect } from './connect.mjs'
 import { cliCommand, MCP_COMMAND } from './config.mjs'
 import { doctor } from './doctor.mjs'
 import { login } from './login.mjs'
-import { CliFailure, reconnectNote } from './loopback.mjs'
+import { CliFailure, reconnectNote } from './cli.mjs'
 import { serveMcp } from './mcp.mjs'
 import { setup } from './setup.mjs'
 import { start } from './start.mjs'
@@ -23,8 +23,8 @@ const SUPPORT_EMAIL = 'support@spicy.trade'
 
 const USAGE = `Usage: spicytrade <command>
 
-  connect  Connect your account from the agent you already have open.
-           Your agent handles MCP registration; approve sign-in in your browser.
+  connect  Connect this computer and your tastytrade account.
+           Prints one link; approve it in any browser, on any device.
 
 Advanced:
   setup                   Manual setup and repair for installed agent clients.

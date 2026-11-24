@@ -4,7 +4,7 @@ import {
   BROKER_AUTHORIZATION_STATE_BYTES,
   BROKER_AUTHORIZATION_TTL_MS,
   BrokerAuthorizationStateSchema,
-  BrokerAuthorizeRequestSchema,
+  BrokerConsentRefusalSchema,
   BrokerExchangeRequestSchema,
   BrokerTokenRequestSchema,
   MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER,
@@ -24,14 +24,14 @@ import {
 } from './tastytrade-member-grant'
 
 /*
- * The one-click tastytrade connection, driven by `spicytrade connect-tastytrade` (`ops/spicytrade/`).
+ * Connecting tastytrade, started by the member's approval on `/connect/agent` and collected by
+ * the `spicytrade` CLI that printed that link (`ops/spicytrade/`).
  *
- *   authorize  the CLI, holding the member's agent token, opens a pending row and gets the
- *              consent URL;
- *   callback   tastytrade returns the browser here, and it is sent straight on to the CLI's
- *              loopback listener with the code;
- *   exchange   the CLI, with the same agent token, redeems the code for the member's refresh
- *              token, which goes into their keyring;
+ *   consent    the approval, made under the member's session, opens a pending row bound to the
+ *              link's challenge and sends the browser to tastytrade's consent page;
+ *   callback   tastytrade returns the browser here, and the one-time code waits in that row;
+ *   exchange   the CLI, polling with its agent token and its verifier, has the code redeemed for
+ *              the member's refresh token, which goes into their keyring;
  *   token      `spicytrade mcp` on the member's machine trades that refresh token for a 15-minute access token.
  *
  * The Worker never stores the member's refresh token: it crosses this Worker in the exchange
@@ -47,13 +47,6 @@ const TASTYTRADE_AUTHORIZATION_URL = 'https://my.tastytrade.com/auth.html'
 const TASTYTRADE_SCOPES = 'read trade'
 /** Registered with tastytrade as the app's redirect URI, so it must match the route exactly. */
 export const TASTYTRADE_CALLBACK_PATH = '/api/brokers/tastytrade/callback'
-/**
- * Where the CLI listens. The literal address rather than `localhost`, which a resolver may map
- * elsewhere; the callback redirects to nothing but this host and the stored port.
- */
-const LOOPBACK_HOST = '127.0.0.1'
-const LOOPBACK_CALLBACK_PATH = '/callback'
-
 type ConnectConfig = {
   clientId: string
   clientSecret: SecretsStoreSecret
@@ -93,6 +86,8 @@ function unconfigured(missing: string): undefined {
 
 /** What the browser is told when the callback cannot reach its configuration or its row. */
 const CALLBACK_UNAVAILABLE = 'Connecting tastytrade is unavailable right now. Go back to the terminal and press Ctrl-C to skip it, then run spicytrade setup later to connect.'
+const CALLBACK_APPROVED = 'tastytrade approved. Return to your terminal or agent; you can close this tab.'
+const CALLBACK_REFUSED = 'Not connected. You can close this tab.'
 
 const unavailable = () => jsonNoStore({ error: 'Connecting tastytrade is unavailable' }, { status: 503 })
 
@@ -109,7 +104,7 @@ async function agentUserId(request: Request, database: D1Database): Promise<stri
 
 /**
  * The member a minted agent token names and the body parsed against `schema`, or the refusal to
- * return. Every endpoint but the callback, which the browser reaches unauthenticated, opens so.
+ * return. The CLI's two endpoints, `exchange` and `token`, open so.
  */
 async function agentRequest<T>(
   request: Request,
@@ -139,61 +134,61 @@ function grantFailure(error: TastytradeMemberGrantError): Response {
 
 
 /**
- * Open a pending connection and return tastytrade's consent URL. Only the state's digest is
- * kept, so a database read cannot be replayed through the callback.
+ * Open a pending consent for the member whose session approved `challenge`, and return
+ * tastytrade's consent URL, or the refusal to answer the approval with. Only the state's digest
+ * is kept, so a database read cannot be replayed through the callback.
  */
-export async function authorizeTastytrade(request: Request, env: AppEnv, now = new Date()): Promise<Response> {
+export async function openTastytradeConsent(
+  env: AppEnv,
+  userId: string,
+  challenge: string,
+  now = new Date(),
+): Promise<string | Response> {
   const config = connectConfig(env)
   if (!config) return unavailable()
-  try {
-    const parsed = await agentRequest(request, config.database, BrokerAuthorizeRequestSchema, 'Invalid loopback port')
-    if (parsed instanceof Response) return parsed
-    const { userId } = parsed
-
-    const state = randomBase64Url(BROKER_AUTHORIZATION_STATE_BYTES)
-    const nowIso = now.toISOString()
-    const expiresAt = new Date(now.getTime() + BROKER_AUTHORIZATION_TTL_MS).toISOString()
-    // The member's lapsed attempts go first so they never count against the cap, and the cap is
-    // checked inside the insert: two concurrent starts that each counted a free slot would
-    // otherwise both insert.
-    const [, inserted] = await config.database.batch([
-      config.database.prepare(
-        'DELETE FROM broker_authorizations WHERE user_id = ? AND expires_at <= ?',
-      ).bind(userId, nowIso),
-      config.database.prepare(
-        `INSERT INTO broker_authorizations (state_digest, user_id, broker, loopback_port, created_at, expires_at)
-         SELECT ?, ?, ?, ?, ?, ?
-         WHERE (SELECT COUNT(*) FROM broker_authorizations WHERE user_id = ?) < ?`,
-      ).bind(
-        await sha256Base64Url(state),
-        userId,
-        BROKER,
-        parsed.data.port,
-        nowIso,
-        expiresAt,
-        userId,
-        MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER,
-      ),
-    ])
-    if (!inserted?.meta.changes) {
-      return jsonNoStore({
-        error: `At most ${MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER} tastytrade connections may be pending at once. Finish one or wait for it to expire.`,
-      }, { status: 409 })
-    }
-
-    const authorizationUrl = new URL(TASTYTRADE_AUTHORIZATION_URL)
-    authorizationUrl.search = new URLSearchParams({
-      client_id: config.clientId,
-      redirect_uri: config.redirectUri,
-      response_type: 'code',
-      scope: TASTYTRADE_SCOPES,
-      state,
-    }).toString()
-    return jsonNoStore({ authorizationUrl: authorizationUrl.toString(), expiresAt, state })
-  } catch (error) {
-    console.error('TastytradeAuthorizeFailed', errorName(toError(error)))
-    return unavailable()
+  const state = randomBase64Url(BROKER_AUTHORIZATION_STATE_BYTES)
+  const nowIso = now.toISOString()
+  // The member's lapsed attempts go first so they never count against the cap, and the cap is
+  // checked inside the insert: two concurrent starts that each counted a free slot would
+  // otherwise both insert. Approving one link twice replaces the consent the first approval
+  // opened, so one challenge never has two.
+  const [, , inserted] = await config.database.batch([
+    config.database.prepare(
+      'DELETE FROM broker_consents WHERE user_id = ? AND expires_at <= ?',
+    ).bind(userId, nowIso),
+    config.database.prepare(
+      'DELETE FROM broker_consents WHERE challenge = ? AND user_id = ? AND broker = ?',
+    ).bind(challenge, userId, BROKER),
+    config.database.prepare(
+      `INSERT INTO broker_consents (state_digest, challenge, user_id, broker, created_at, expires_at)
+       SELECT ?, ?, ?, ?, ?, ?
+       WHERE (SELECT COUNT(*) FROM broker_consents WHERE user_id = ?) < ?`,
+    ).bind(
+      await sha256Base64Url(state),
+      challenge,
+      userId,
+      BROKER,
+      nowIso,
+      new Date(now.getTime() + BROKER_AUTHORIZATION_TTL_MS).toISOString(),
+      userId,
+      MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER,
+    ),
+  ])
+  if (!inserted?.meta.changes) {
+    return jsonNoStore({
+      error: `At most ${MAX_PENDING_BROKER_AUTHORIZATIONS_PER_USER} tastytrade connections may be pending at once. Finish one or wait for it to expire.`,
+    }, { status: 409 })
   }
+
+  const authorizationUrl = new URL(TASTYTRADE_AUTHORIZATION_URL)
+  authorizationUrl.search = new URLSearchParams({
+    client_id: config.clientId,
+    redirect_uri: config.redirectUri,
+    response_type: 'code',
+    scope: TASTYTRADE_SCOPES,
+    state,
+  }).toString()
+  return authorizationUrl.toString()
 }
 
 function plainNoStore(text: string, status: number): Response {
@@ -213,57 +208,45 @@ function plainNoStore(text: string, status: number): Response {
  *
  * It does not redeem the code. Redeeming here would leave the Worker holding the member's
  * refresh token with nowhere to put it but storage, which is exactly what must not happen. The
- * code alone is useless: redeeming it takes the app's client secret, which only this Worker
- * holds, and `exchange` requires the same member's agent token besides, so a code seen in a
- * request log grants nothing. So the browser is sent on to the member's own CLI, and only ever
- * to the loopback address and the port that member's CLI registered -- never to a destination
- * read from the request.
+ * code waits in the row instead, for the CLI's next poll, and is useless on its own: redeeming
+ * it takes the app's client secret, which only this Worker holds, and `exchange` requires the
+ * same member's agent token and the CLI's verifier besides. A return is recorded once, so a
+ * replayed address cannot swap the code a row already holds.
  *
- * The row is looked up, not consumed: `exchange` consumes it, bound to the member.
+ * tastytrade's `error` is never rendered or stored as text: it is recorded only as one of this
+ * repository's own refusal codes.
  */
 export async function tastytradeCallback(request: Request, env: AppEnv, now = new Date()): Promise<Response> {
   const config = connectConfig(env)
   if (!config) return plainNoStore(CALLBACK_UNAVAILABLE, 503)
   const params = new URL(request.url).searchParams
   const state = BrokerAuthorizationStateSchema.safeParse(params.get('state'))
-  const code = params.get('code')
   const error = params.get('error')
+  const code = error ? null : params.get('code')
   const expired = 'This tastytrade connection has expired or is unknown. Run spicytrade setup again.'
   if (!state.success) return plainNoStore(expired, 400)
   if (!code && !error) return plainNoStore('tastytrade returned neither an approval nor a refusal. Go back to the terminal, press Ctrl-C to skip, then run spicytrade setup again.', 400)
+  const refusal = error ? BrokerConsentRefusalSchema.catch('unrecognized').parse(error) : null
 
-  let row: { loopback_port: number } | null
   try {
-    row = await config.database.prepare(
-      `SELECT loopback_port FROM broker_authorizations
-        WHERE state_digest = ? AND broker = ? AND expires_at > ?`,
-    ).bind(await sha256Base64Url(state.data), BROKER, now.toISOString()).first<{ loopback_port: number }>()
+    const recorded = await config.database.prepare(
+      `UPDATE broker_consents SET code = ?, refusal = ?
+        WHERE state_digest = ? AND broker = ? AND expires_at > ? AND code IS NULL AND refusal IS NULL`,
+    ).bind(code, refusal, await sha256Base64Url(state.data), BROKER, now.toISOString()).run()
+    if (!recorded.meta.changes) return plainNoStore(expired, 400)
   } catch (cause) {
     console.error('TastytradeCallbackFailed', errorName(toError(cause)))
     return plainNoStore(CALLBACK_UNAVAILABLE, 503)
   }
-  if (!row) return plainNoStore(expired, 400)
-
-  const destination = new URL(`http://${LOOPBACK_HOST}:${row.loopback_port}${LOOPBACK_CALLBACK_PATH}`)
-  // tastytrade's `error` is forwarded as a parameter and never rendered here; the CLI prints
-  // only codes from its own list, and treats any return carrying one as a refusal.
-  if (code) destination.searchParams.set('code', code)
-  if (error) destination.searchParams.set('error', error)
-  destination.searchParams.set('state', state.data)
-  return new Response(null, {
-    headers: {
-      'Cache-Control': 'no-store',
-      Location: destination.toString(),
-      'Referrer-Policy': 'no-referrer',
-    },
-    status: 302,
-  })
+  return plainNoStore(refusal ? CALLBACK_REFUSED : CALLBACK_APPROVED, 200)
 }
 
 /**
- * Redeem the code for the member's refresh token and hand it to their CLI, once. The row is
- * consumed in the same statement that checks it belongs to this member and has not lapsed, so a
- * state is single-use and cannot be redeemed with another member's agent token.
+ * Redeem the consent's code for the member's refresh token and hand it to their CLI, once. The
+ * consent is found by the digest of the verifier presented and must belong to the member the
+ * agent token names, so only the CLI that printed the approved link, signed in as the member who
+ * approved it, can collect. Until the browser returns from tastytrade the answer is pending; a
+ * consent that lapsed or never existed is 404.
  */
 export async function exchangeTastytrade(request: Request, env: AppEnv, now = new Date()): Promise<Response> {
   const config = connectConfig(env)
@@ -272,22 +255,34 @@ export async function exchangeTastytrade(request: Request, env: AppEnv, now = ne
     const parsed = await agentRequest(request, config.database, BrokerExchangeRequestSchema, 'Invalid authorization')
     if (parsed instanceof Response) return parsed
     const { userId } = parsed
+    const consent = [await sha256Base64Url(parsed.data.codeVerifier), userId, BROKER, now.toISOString()]
+    const pending = await config.database.prepare(
+      `SELECT code IS NULL AND refusal IS NULL AS waiting FROM broker_consents
+        WHERE challenge = ? AND user_id = ? AND broker = ? AND expires_at > ?`,
+    ).bind(...consent).first<{ waiting: number }>()
+    if (!pending) {
+      return jsonNoStore({ error: 'No pending tastytrade connection matches this authorization' }, { status: 404 })
+    }
+    if (pending.waiting) return jsonNoStore({ pending: true }, { status: 202 })
     // Read before the row is consumed, so a misconfigured secret does not burn the attempt.
     const clientSecret = await readStoredSecret(config.clientSecret, 'TASTYTRADE_OAUTH_CLIENT_SECRET')
 
     const consumed = await config.database.prepare(
-      `DELETE FROM broker_authorizations
-        WHERE state_digest = ? AND user_id = ? AND broker = ? AND expires_at > ?
-        RETURNING loopback_port`,
-    ).bind(await sha256Base64Url(parsed.data.state), userId, BROKER, now.toISOString()).first()
+      `DELETE FROM broker_consents
+        WHERE challenge = ? AND user_id = ? AND broker = ? AND expires_at > ?
+        RETURNING code, refusal`,
+    ).bind(...consent).first<{ code: string | null; refusal: string | null }>()
     if (!consumed) {
       return jsonNoStore({ error: 'No pending tastytrade connection matches this authorization' }, { status: 404 })
+    }
+    if (!consumed.code) {
+      return jsonNoStore({ refusal: BrokerConsentRefusalSchema.catch('unrecognized').parse(consumed.refusal) }, { status: 403 })
     }
 
     const refreshToken = await exchangeTastytradeAuthorizationCode(env, {
       clientId: config.clientId,
       clientSecret,
-      code: parsed.data.code,
+      code: consumed.code,
       redirectUri: config.redirectUri,
     })
     // The member's permanent credential, in this response and nowhere else on this side.
@@ -329,7 +324,7 @@ export async function sweepExpiredBrokerAuthorizations(env: AppEnv, now = new Da
   // Scheduled only: a missing binding is a misconfiguration to name, not a sweep of zero rows.
   if (!env.DB) throw new ConfigurationError('BindingMissing', 'DB')
   const result = await env.DB.prepare(
-    'DELETE FROM broker_authorizations WHERE expires_at <= ?',
+    'DELETE FROM broker_consents WHERE expires_at <= ?',
   ).bind(now.toISOString()).run()
   return result.meta.changes ?? 0
 }
