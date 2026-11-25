@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BrokerageSubmissionUnknownError, executeOrderPlacement } from '../src/server/brokerage'
 import { resetBrokerApi, setBrokerApi } from '../src/server/tastytrade'
 import { resetTradeGuards, setTradeGuards, type TradeGuards } from '../src/server/trade-guards'
-import { brokerCredential, stubBroker } from './broker-stub'
+import { brokerCredential, stubBroker, KEYED } from './broker-stub'
 import { migrationStore, type SqliteD1Store } from './sqlite-d1'
 
 const guards = {
@@ -32,7 +32,7 @@ afterEach(() => {
   store.close()
 })
 
-const place = () => executeOrderPlacement({ DB: store.database }, action, brokerCredential, 'TEST123')
+const place = () => executeOrderPlacement({ ...KEYED, DB: store.database }, action, brokerCredential, 'TEST123')
 
 const action = {
   action: 'Buy to Open' as const,

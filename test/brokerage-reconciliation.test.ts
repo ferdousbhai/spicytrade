@@ -4,12 +4,13 @@ import {
   matchesSubmittedOrder,
   reconcileUnknownBrokerageAction,
   SUBMISSION_TRANSPORT_BUDGET_MS,
+  sweepSettledSubmissions,
 } from '../src/server/brokerage-reconciliation'
 import { BROKER_CLOCK_SKEW_MS } from '../src/server/order-market'
 import { BrokerageSubmissionUnknownError } from '../src/server/brokerage'
 import { buildOrderPayload } from '../src/server/order-payload'
 import { placeBrokerageOrder } from '../src/server/order-placement'
-import { brokerCredential, stubBroker } from './broker-stub'
+import { brokerCredential, stubBroker, KEYED, accountKey } from './broker-stub'
 import { tastytradeAdapter, tastytradeOrderRecord } from '../src/server/brokers/tastytrade'
 import { resetBrokerAdapters, setBrokerAdapters } from '../src/server/brokers'
 import { resetBrokerApi, setBrokerApi } from '../src/server/tastytrade'
@@ -20,6 +21,9 @@ import { type JsonObject, type JsonValue } from '../src/domain/json-payload'
 import { type AppEnv } from '../src/server/env'
 import { unsupportedDatabase } from './fake-d1'
 import { migrationStore, type SqliteD1Store } from './sqlite-d1'
+
+/** The account keys the rows below carry in place of the numbers. */
+const KEY = { TEST123: await accountKey('TEST123') }
 
 let store: SqliteD1Store | undefined
 
@@ -127,7 +131,7 @@ describe('brokerage submission reconciliation', () => {
       assertPortfolioActionAllowed: async () => undefined,
     })
     store = await migrationStore()
-    const env = { DB: store.database }
+    const env = { ...KEYED, DB: store.database }
 
     await expect(placeBrokerageOrder(env, optionOrder, brokerCredential, () => undefined))
       .rejects.toBeInstanceOf(BrokerageSubmissionUnknownError)
@@ -172,8 +176,8 @@ describe('brokerage submission reconciliation', () => {
       const raced = await migrationStore()
       store = raced
       raced.sqlite.prepare(
-        `INSERT INTO broker_submissions (id, broker_id, account_number, payload_json, resolved_payload_json, submitted_at, status)
-         VALUES ('row-1', 'tastytrade', 'TEST123', ?, ?, ?, 'unresolved')`,
+        `INSERT INTO broker_submissions (id, broker_id, account_number, account_key, payload_json, resolved_payload_json, submitted_at, status)
+         VALUES ('row-1', 'tastytrade', '${KEY.TEST123}', '${KEY.TEST123}', ?, ?, ?, 'unresolved')`,
       ).run(JSON.stringify(optionAction), JSON.stringify(intended), submittedAt)
       const database: D1Database = {
         ...unsupportedDatabase(),
@@ -207,7 +211,7 @@ describe('brokerage submission reconciliation', () => {
         'received-at': submittedAt, status: 'Filled', 'time-in-force': 'Day',
       })])
 
-      await expect(reconcileUnknownBrokerageAction({ DB }, brokerCredential)).resolves.toEqual({
+      await expect(reconcileUnknownBrokerageAction({ ...KEYED, DB }, brokerCredential)).resolves.toEqual({
         actionId: 'row-1',
         detail: 'The action was already reconciled by another request.',
         providerOrderId: '42',
@@ -223,7 +227,7 @@ describe('brokerage submission reconciliation', () => {
       )
       historyWith([])
 
-      await expect(reconcileUnknownBrokerageAction({ DB }, brokerCredential)).resolves.toEqual({
+      await expect(reconcileUnknownBrokerageAction({ ...KEYED, DB }, brokerCredential)).resolves.toEqual({
         actionId: 'row-1',
         detail: 'The action was already reconciled by another request.',
         status: 'failed',
@@ -246,8 +250,8 @@ describe('brokerage submission reconciliation', () => {
     store = await migrationStore()
     const submittedAt = new Date(Date.now() - 60 * 60_000)
     store.sqlite.prepare(
-      `INSERT INTO broker_submissions (id, broker_id, account_number, payload_json, resolved_payload_json, submitted_at, status)
-       VALUES ('row-1', 'tastytrade', 'TEST123', ?, ?, ?, 'unresolved')`,
+      `INSERT INTO broker_submissions (id, broker_id, account_number, account_key, payload_json, resolved_payload_json, submitted_at, status)
+       VALUES ('row-1', 'tastytrade', '${KEY.TEST123}', '${KEY.TEST123}', ?, ?, ?, 'unresolved')`,
     ).run(
       JSON.stringify({
         action: 'Buy to Open', expiry: '2026-09-18', kind: 'place_option_order', limitPrice: 2.5,
@@ -268,14 +272,14 @@ describe('brokerage submission reconciliation', () => {
     })
 
     // Two candidates are ambiguous, never an absence: the quarantine stays.
-    const ambiguous = await reconcileUnknownBrokerageAction({ DB: store.database }, brokerCredential)
+    const ambiguous = await reconcileUnknownBrokerageAction({ ...KEYED, DB: store.database }, brokerCredential)
     expect(ambiguous).toMatchObject({ status: 'unresolved' })
     expect(ambiguous.detail).toContain('More than one exact broker match')
     expect(store.sqlite.prepare('SELECT status FROM broker_submissions').all()).toEqual([{ status: 'unresolved' }])
 
     // The lone real order settles as executed rather than as BrokerageSubmissionNotFound.
     orders.pop()
-    await expect(reconcileUnknownBrokerageAction({ DB: store.database }, brokerCredential))
+    await expect(reconcileUnknownBrokerageAction({ ...KEYED, DB: store.database }, brokerCredential))
       .resolves.toMatchObject({ providerOrderId: '42', status: 'executed' })
   })
 
@@ -283,8 +287,8 @@ describe('brokerage submission reconciliation', () => {
     store = await migrationStore()
     const longAgo = new Date(Date.now() - 24 * 60 * 60_000).toISOString()
     store.sqlite.prepare(
-      `INSERT INTO broker_submissions (id, broker_id, account_number, payload_json, resolved_payload_json, submitted_at, status)
-       VALUES ('row-1', 'tastytrade', 'TEST123', ?, ?, ?, 'unresolved')`,
+      `INSERT INTO broker_submissions (id, broker_id, account_number, account_key, payload_json, resolved_payload_json, submitted_at, status)
+       VALUES ('row-1', 'tastytrade', '${KEY.TEST123}', '${KEY.TEST123}', ?, ?, ?, 'unresolved')`,
     ).run(
       JSON.stringify({
         action: 'Buy to Open', expiry: '2026-09-18', kind: 'place_option_order', limitPrice: 2.5,
@@ -302,7 +306,7 @@ describe('brokerage submission reconciliation', () => {
       },
     })
 
-    const result = await reconcileUnknownBrokerageAction({ DB: store.database }, brokerCredential)
+    const result = await reconcileUnknownBrokerageAction({ ...KEYED, DB: store.database }, brokerCredential)
     expect(result).toMatchObject({ status: 'unresolved' })
     expect(result.detail).toContain('came back incomplete')
     expect(result.detail).not.toContain('can be concluded from')
@@ -312,8 +316,8 @@ describe('brokerage submission reconciliation', () => {
   it('refuses a stored order that disagrees with its stored action rather than trusting either', async () => {
     store = await migrationStore()
     store.sqlite.prepare(
-      `INSERT INTO broker_submissions (id, broker_id, account_number, payload_json, resolved_payload_json, submitted_at, status)
-       VALUES ('row-1', 'tastytrade', 'TEST123', ?, ?, ?, 'unresolved')`,
+      `INSERT INTO broker_submissions (id, broker_id, account_number, account_key, payload_json, resolved_payload_json, submitted_at, status)
+       VALUES ('row-1', 'tastytrade', '${KEY.TEST123}', '${KEY.TEST123}', ?, ?, ?, 'unresolved')`,
     ).run(
       JSON.stringify({
         action: 'Buy to Open', expiry: '2026-09-18', kind: 'place_option_order', limitPrice: 2.5,
@@ -331,7 +335,7 @@ describe('brokerage submission reconciliation', () => {
       },
     })
 
-    await expect(reconcileUnknownBrokerageAction({ DB: store.database }, brokerCredential))
+    await expect(reconcileUnknownBrokerageAction({ ...KEYED, DB: store.database }, brokerCredential))
       .rejects.toThrow('stored-order-disagrees-with-action')
     expect(store.sqlite.prepare('SELECT status FROM broker_submissions').all()).toEqual([{ status: 'unresolved' }])
   })
@@ -340,8 +344,8 @@ describe('brokerage submission reconciliation', () => {
     store = await migrationStore()
     const submittedAt = new Date().toISOString()
     store.sqlite.prepare(
-      `INSERT INTO broker_submissions (id, broker_id, account_number, payload_json, resolved_payload_json, submitted_at, status)
-       VALUES ('row-1', 'tastytrade', 'TEST123', ?, ?, ?, 'unresolved')`,
+      `INSERT INTO broker_submissions (id, broker_id, account_number, account_key, payload_json, resolved_payload_json, submitted_at, status)
+       VALUES ('row-1', 'tastytrade', '${KEY.TEST123}', '${KEY.TEST123}', ?, ?, ?, 'unresolved')`,
     ).run(
       JSON.stringify({
         action: 'Buy to Open', expiry: '2026-09-18', kind: 'place_option_order', limitPrice: 2.5,
@@ -365,7 +369,7 @@ describe('brokerage submission reconciliation', () => {
       },
     })
 
-    await expect(reconcileUnknownBrokerageAction({ DB: store.database }, brokerCredential))
+    await expect(reconcileUnknownBrokerageAction({ ...KEYED, DB: store.database }, brokerCredential))
       .rejects.toThrow('TastytradeReconciliation:invalid-match')
     expect(store.sqlite.prepare('SELECT status, provider_order_id FROM broker_submissions').all())
       .toEqual([{ provider_order_id: null, status: 'unresolved' }])
@@ -387,8 +391,8 @@ describe('brokerage submission reconciliation', () => {
     async function quarantined(history: BrokerOrderRecord[]) {
       store = await migrationStore()
       store.sqlite.prepare(
-        `INSERT INTO broker_submissions (id, broker_id, account_number, payload_json, resolved_payload_json, submitted_at, status)
-         VALUES ('row-1', 'tastytrade', 'TEST123', ?, ?, ?, 'unresolved')`,
+        `INSERT INTO broker_submissions (id, broker_id, account_number, account_key, payload_json, resolved_payload_json, submitted_at, status)
+         VALUES ('row-1', 'tastytrade', '${KEY.TEST123}', '${KEY.TEST123}', ?, ?, ?, 'unresolved')`,
       ).run(storedAction, JSON.stringify(intended), claimedAt.toISOString())
       setBrokerApi(stubBroker())
       setBrokerAdapters({
@@ -407,11 +411,11 @@ describe('brokerage submission reconciliation', () => {
       const sqlite = (await quarantined([ticket('41', at(-9_000))])).sqlite
       sqlite.prepare(
         `INSERT INTO broker_submissions
-           (id, broker_id, account_number, payload_json, resolved_payload_json, submitted_at, status, provider_order_id)
-         VALUES ('settled-1', 'tastytrade', 'TEST123', ?, ?, ?, 'executed', '41')`,
+           (id, broker_id, account_number, account_key, payload_json, resolved_payload_json, submitted_at, status, provider_order_id)
+         VALUES ('settled-1', 'tastytrade', '${KEY.TEST123}', '${KEY.TEST123}', ?, ?, ?, 'executed', '41')`,
       ).run(storedAction, JSON.stringify(intended), at(-10_000))
 
-      await expect(reconcileUnknownBrokerageAction({ DB: store!.database }, brokerCredential))
+      await expect(reconcileUnknownBrokerageAction({ ...KEYED, DB: store!.database }, brokerCredential))
         .resolves.toMatchObject({ actionId: 'row-1', status: 'failed' })
       expect(sqlite.prepare('SELECT id, status, provider_order_id FROM broker_submissions ORDER BY id').all()).toEqual([
         { id: 'row-1', provider_order_id: null, status: 'failed' },
@@ -424,7 +428,7 @@ describe('brokerage submission reconciliation', () => {
       // request of this submission could have arrived that late.
       const sqlite = (await quarantined([ticket('42', at(1_000)), ticket('43', at(5 * 60_000))])).sqlite
 
-      await expect(reconcileUnknownBrokerageAction({ DB: store!.database }, brokerCredential))
+      await expect(reconcileUnknownBrokerageAction({ ...KEYED, DB: store!.database }, brokerCredential))
         .resolves.toMatchObject({ providerOrderId: '42', status: 'executed' })
       expect(sqlite.prepare('SELECT status, provider_order_id FROM broker_submissions').all())
         .toEqual([{ provider_order_id: '42', status: 'executed' }])
@@ -447,8 +451,8 @@ describe('brokerage submission reconciliation', () => {
     const submittedAt = new Date().toISOString()
     // A row claimed before the resolved order was stored: the action tuple only.
     store.sqlite.prepare(
-      `INSERT INTO broker_submissions (id, broker_id, account_number, payload_json, submitted_at, status)
-       VALUES ('legacy-1', 'tastytrade', 'TEST123', ?, ?, 'unresolved')`,
+      `INSERT INTO broker_submissions (id, broker_id, account_number, account_key, payload_json, submitted_at, status)
+       VALUES ('legacy-1', 'tastytrade', '${KEY.TEST123}', '${KEY.TEST123}', ?, ?, 'unresolved')`,
     ).run(JSON.stringify({
       action: 'Buy to Open', expiry: '2026-09-18', kind: 'place_option_order', limitPrice: 2.5,
       optionType: 'C', priceEffect: 'Debit', quantity: 2, strike: 600, underlying: 'SPY',
@@ -467,7 +471,7 @@ describe('brokerage submission reconciliation', () => {
       },
     })
 
-    await expect(reconcileUnknownBrokerageAction({ DB: store.database }, brokerCredential))
+    await expect(reconcileUnknownBrokerageAction({ ...KEYED, DB: store.database }, brokerCredential))
       .resolves.toMatchObject({ providerOrderId: '43', status: 'executed' })
   })
 
@@ -527,7 +531,7 @@ describe('brokerage submission reconciliation', () => {
         return run
       })
       store = await migrationStore()
-      const env = { DB: store.database }
+      const env = { ...KEYED, DB: store.database }
 
       const placement = placeBrokerageOrder(env, equityOrder, brokerCredential, () => undefined)
       await vi.waitFor(() => expect(submitted(brokerage)).toHaveLength(1))
@@ -549,7 +553,7 @@ describe('brokerage submission reconciliation', () => {
       // keeps the placement from telling its agent a settled account is still quarantined.
       const { answer, brokerage } = heldPlacement()
       store = await migrationStore()
-      const env = { DB: store.database }
+      const env = { ...KEYED, DB: store.database }
 
       const placement = placeBrokerageOrder(env, equityOrder, brokerCredential, () => undefined)
       await vi.waitFor(() => expect(submitted(brokerage)).toHaveLength(1))
@@ -561,5 +565,24 @@ describe('brokerage submission reconciliation', () => {
       await expect(placement).resolves.toEqual({ detail: 'Order #123 accepted by tastytrade.', orderId: '123' })
       expect(logged).not.toHaveBeenCalledWith('BrokerageSubmissionSettleFailed')
     })
+  })
+
+  it('sweeps settled submissions past their retention and keeps every quarantine', async () => {
+    store = await migrationStore()
+    const now = new Date('2026-11-25T15:00:00.000Z')
+    const daysAgo = (days: number) => new Date(now.getTime() - days * 24 * 60 * 60_000).toISOString()
+    const insert = store.sqlite.prepare(
+      `INSERT INTO broker_submissions (id, broker_id, account_number, account_key, payload_json, submitted_at, status)
+       VALUES (?, 'tastytrade', ?, ?, '{}', ?, ?)`,
+    )
+    insert.run('old-executed', KEY.TEST123, KEY.TEST123, daysAgo(8), 'executed')
+    insert.run('old-failed', KEY.TEST123, KEY.TEST123, daysAgo(8), 'failed')
+    insert.run('recent-executed', KEY.TEST123, KEY.TEST123, daysAgo(6), 'executed')
+    // However old, an unresolved row is still what stops the account's next order.
+    insert.run('old-quarantine', KEY.TEST123, KEY.TEST123, daysAgo(30), 'unresolved')
+
+    await expect(sweepSettledSubmissions({ DB: store.database }, now)).resolves.toBe(2)
+    expect(store.sqlite.prepare('SELECT id FROM broker_submissions ORDER BY id').all())
+      .toEqual([{ id: 'old-quarantine' }, { id: 'recent-executed' }])
   })
 })

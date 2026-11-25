@@ -117,6 +117,12 @@ export default {
       import('./server/agent-logins').then(({ sweepExpiredAgentLogins }) => sweepExpiredAgentLogins(env, scheduledAt)),
       'AgentLoginsSwept', 'loginCount', 'AgentLoginSweepFailed',
     )
+    // A settled order submission is only read on the day it was placed; the tick drops it a few
+    // days later, so the table never becomes a history of a member's orders.
+    sweep(
+      import('./server/brokerage-reconciliation').then(({ sweepSettledSubmissions }) => sweepSettledSubmissions(env, scheduledAt)),
+      'BrokerSubmissionsSwept', 'submissionCount', 'BrokerSubmissionSweepFailed',
+    )
     // Anyone may register an OAuth client, and each registration is a row; one no member ever
     // approved holds nothing, so the tick drops it once its first authorization has lapsed.
     sweep(

@@ -12,6 +12,8 @@ import { brokerApi, TASTYTRADE_REQUEST_TIMEOUT_MS } from './tastytrade'
 import { d1InListChunks, d1RowPlaceholders } from './d1-limits'
 import { textResult } from './agent-tool-result'
 import { BrokerCredentialMissingError, type BrokerCredential } from './broker-credential'
+import { brokerAccountKey } from './broker-account-key'
+import { ConfigurationError } from './secrets'
 import { PortfolioRiskError } from './portfolio-risk'
 import { CallerVisibleError } from './caller-visible-error'
 
@@ -33,9 +35,9 @@ export async function unresolvedSubmission(
   return env.DB.prepare(
     `SELECT id, payload_json, resolved_payload_json, submitted_at
        FROM broker_submissions
-      WHERE broker_id = ? AND account_number = ? AND status = 'unresolved'
+      WHERE broker_id = ? AND account_key = ? AND status = 'unresolved'
       LIMIT 1`,
-  ).bind(broker, accountNumber).first<StoredUnknownAction>()
+  ).bind(broker, await brokerAccountKey(env, broker, accountNumber)).first<StoredUnknownAction>()
 }
 
 /**
@@ -62,15 +64,19 @@ export async function claimSubmission(
 ): Promise<string> {
   if (!env.DB) throw new PortfolioRiskError('The brokerage submission store is unavailable, so nothing was submitted.')
   const id = crypto.randomUUID()
+  // Before the insert, so a missing secret is named as one rather than read as a full store.
+  const accountKey = await brokerAccountKey(env, submission.broker, submission.accountNumber)
   try {
+    // `account_number` is on its way out (migration 0056) and holds the key until it is dropped.
     await env.DB.prepare(
       `INSERT INTO broker_submissions
-         (id, broker_id, account_number, payload_json, resolved_payload_json, submitted_at, status, error_code)
-       VALUES (?, ?, ?, ?, ?, ?, 'unresolved', 'BrokerageSubmissionUnknown')`,
+         (id, broker_id, account_number, account_key, payload_json, resolved_payload_json, submitted_at, status, error_code)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'unresolved', 'BrokerageSubmissionUnknown')`,
     ).bind(
       id,
       submission.broker,
-      submission.accountNumber,
+      accountKey,
+      accountKey,
       JSON.stringify(submission.storedAction),
       JSON.stringify(submission.resolvedPayload),
       new Date().toISOString(),
@@ -236,17 +242,17 @@ export function matchesSubmittedOrder(
 async function unclaimedOrders(
   db: D1Database,
   broker: string,
-  accountNumber: string,
+  accountKey: string,
   candidates: BrokerOrderRecord[],
 ): Promise<BrokerOrderRecord[]> {
   const ids = [...new Set(candidates.flatMap((row) => row.id ? [row.id] : []))]
   const owned = new Set<string>()
-  // The account's broker and number bind two parameters; the rest carry candidate order ids.
+  // The account's broker and key bind two parameters; the rest carry candidate order ids.
   for (const chunk of d1InListChunks(ids, 2)) {
     const result = await db.prepare(
       `SELECT provider_order_id FROM broker_submissions
-        WHERE broker_id = ? AND account_number = ? AND provider_order_id IN ${d1RowPlaceholders(chunk.length)}`,
-    ).bind(broker, accountNumber, ...chunk).all<{ provider_order_id: string }>()
+        WHERE broker_id = ? AND account_key = ? AND provider_order_id IN ${d1RowPlaceholders(chunk.length)}`,
+    ).bind(broker, accountKey, ...chunk).all<{ provider_order_id: string }>()
     for (const row of result.results ?? []) owned.add(row.provider_order_id)
   }
   return candidates.filter((row) => !row.id || !owned.has(row.id))
@@ -321,7 +327,7 @@ async function reconcileUnderLease(
   const matches = await unclaimedOrders(
     db,
     credential.broker,
-    ref.accountNumber,
+    await brokerAccountKey(env, credential.broker, ref.accountNumber),
     history.orders.filter((row) => matchesSubmittedOrder(row, intended, submission, now, replacedOrderId)),
   )
   if (matches.length !== 1) {
@@ -365,6 +371,27 @@ async function reconcileUnderLease(
     providerOrderId,
     status: rejected ? 'failed' : 'executed',
   }
+}
+
+/**
+ * How long a settled submission is kept. Every order is a Day order, so nothing reads a settled
+ * row after the session it was placed in: a replacement needs a working order, and reconciliation
+ * compares rows minutes apart. A week is the owner's margin for looking into an order that went
+ * wrong, not a figure anything depends on.
+ */
+const SETTLED_SUBMISSION_RETENTION_MS = 7 * 24 * 60 * 60_000
+
+/**
+ * Drop settled submissions past their retention. An unresolved one is a quarantine and stays
+ * until it is reconciled, however old.
+ */
+export async function sweepSettledSubmissions(env: AppEnv, now = new Date()): Promise<number> {
+  // Scheduled only: a missing binding is a misconfiguration to name, not a sweep of zero rows.
+  if (!env.DB) throw new ConfigurationError('BindingMissing', 'DB')
+  const result = await env.DB.prepare(
+    "DELETE FROM broker_submissions WHERE status <> 'unresolved' AND submitted_at <= ?",
+  ).bind(new Date(now.getTime() - SETTLED_SUBMISSION_RETENTION_MS).toISOString()).run()
+  return result.meta.changes ?? 0
 }
 
 export function createBrokerageReconciliationTool(

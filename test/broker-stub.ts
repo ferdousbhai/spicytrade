@@ -3,6 +3,7 @@ import { vi } from 'vitest'
 import { type AppEnv } from '../src/server/env'
 import { type BrokerApi, type StoredPublicMarketSnapshot } from '../src/server/tastytrade'
 import { type BrokerCredential } from '../src/server/broker-credential'
+import { brokerAccountKey } from '../src/server/broker-account-key'
 import {
   type BrokerAccountHistoryPage,
   type BrokerAccountRef,
@@ -17,6 +18,14 @@ import {
   type PublicMarketSnapshot,
   type PublicSymbolLookup,
 } from '../src/domain/market'
+
+/** The secret `broker_submissions` keys account numbers with; spread into a test's env. */
+export const KEYED = { BETTER_AUTH_SECRET: 'test-secret-that-is-long-enough-32' } satisfies AppEnv
+
+/** The key a submission row carries for `accountNumber`, as the Worker would compute it under `KEYED`. */
+export function accountKey(accountNumber: string, broker: string = 'tastytrade'): Promise<string> {
+  return brokerAccountKey(KEYED, broker, accountNumber)
+}
 
 export const brokerCredential = {
   accessToken: 'member-access-token',

@@ -1,3 +1,4 @@
+import { brokerAccountKey } from './broker-account-key'
 import {
   parseFreshOrderPlacement,
   StoredOrderPlacementSchema,
@@ -86,9 +87,9 @@ export function assertReplaceableOrder(order: BrokerOrderRecord, orderId: string
 /**
  * The action spicytrade placed as `orderId`, read only from this broker account's own rows. The broker
  * re-verifies the live order afterwards, but another account's row must never be the source of an
- * order's shape: the per-account rule holds here too, not only at the broker. Rows carried forward
- * by migration 0029 have an empty account number and so are never found; they were all Day
- * orders placed long before it, so none of them is still working to be replaced.
+ * order's shape: the per-account rule holds here too, not only at the broker. A row is kept only
+ * a few days (`sweepSettledSubmissions`), which loses nothing: every order is a Day order, so one
+ * old enough to be swept is no longer working to be replaced.
  */
 async function sourceOrderAction(
   env: AppEnv,
@@ -99,9 +100,9 @@ async function sourceOrderAction(
   if (!env.DB) throw new CallerVisibleError('OrderReplacement:action-store-unavailable')
   const result = await env.DB.prepare(
     `SELECT payload_json FROM broker_submissions
-      WHERE broker_id = ? AND account_number = ? AND provider_order_id = ? AND status = 'executed'
+      WHERE broker_id = ? AND account_key = ? AND provider_order_id = ? AND status = 'executed'
       ORDER BY submitted_at DESC LIMIT 2`,
-  ).bind(broker, accountNumber, orderId).all<{ payload_json: string }>()
+  ).bind(broker, await brokerAccountKey(env, broker, accountNumber), orderId).all<{ payload_json: string }>()
   const rows = result.results ?? []
   if (rows.length !== 1) throw new CallerVisibleError('OrderReplacement:source-order-not-found')
   return StoredOrderPlacementSchema.parse(JSON.parse(rows[0]!.payload_json))

@@ -144,6 +144,35 @@ describe('D1 migrations', () => {
     db.close()
   })
 
+  it('drops settled submissions and their account numbers, and quarantines by account key', async () => {
+    const db = new DatabaseSync(':memory:')
+    db.exec(await read('0001_spice.sql'))
+    db.exec(await read('0029_broker_submission_quarantine.sql'))
+    db.exec(await read('0047_broker_submission_resolved_payload.sql'))
+    const before = db.prepare(
+      `INSERT INTO broker_submissions (id, broker_id, account_number, payload_json, submitted_at, status)
+       VALUES (?, 'tastytrade', ?, '{}', '2026-09-03T13:30:00.000Z', ?)`,
+    )
+    before.run('executed', 'ACCOUNT-1', 'executed')
+    before.run('failed', 'ACCOUNT-1', 'failed')
+    before.run('quarantine', 'ACCOUNT-2', 'unresolved')
+
+    db.exec(await read('0056_broker_submission_account_key.sql'))
+
+    // A quarantine is never deleted; it has no key, so nothing new can match it.
+    expect(db.prepare('SELECT id, account_key FROM broker_submissions').all())
+      .toEqual([{ account_key: null, id: 'quarantine' }])
+    const insert = db.prepare(
+      `INSERT INTO broker_submissions (id, broker_id, account_number, account_key, payload_json, submitted_at, status)
+       VALUES (?, ?, ?, ?, '{}', '2026-09-03T13:30:00.000Z', 'unresolved')`,
+    )
+    insert.run('one', 'tastytrade', 'key-1', 'key-1')
+    expect(() => insert.run('two', 'tastytrade', 'other', 'key-1')).toThrow(/UNIQUE constraint/)
+    expect(() => insert.run('other-account', 'tastytrade', 'key-2', 'key-2')).not.toThrow()
+    expect(() => insert.run('other-broker', 'future-broker', 'key-1', 'key-1')).not.toThrow()
+    db.close()
+  })
+
   it('carries executed orders forward so a pre-deploy order stays replaceable', async () => {
     const initial = await read('0001_spice.sql')
     const inFlight = await read('0005_brokerage_action_state.sql')
