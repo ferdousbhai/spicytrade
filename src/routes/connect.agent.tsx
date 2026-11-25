@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
 
+import { Alert, AlertDescription, AlertTitle } from '#/components/ui/alert'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { Spinner } from '#/components/ui/spinner'
@@ -98,10 +99,16 @@ function ConnectAgentPage() {
           <p>
             Connect <strong>{query.data.label}</strong> to spicytrade as <strong>{viewer.user.name}</strong>?
           </p>
-          <p>
-            Enter the code shown in the terminal or agent you started this from. If someone sent you
-            this link, or a code to type, do not continue: it would give them your account.
-          </p>
+          <Alert variant="destructive">
+            <AlertTitle>Only continue if you started this yourself</AlertTitle>
+            <AlertDescription>
+              Nobody from spicytrade or tastytrade will send you this link or a code to type. If
+              someone did, stop here: approving would let them {query.data.broker
+                ? 'see your tastytrade account and place trades in it'
+                : 'use spicytrade as you'}.
+            </AlertDescription>
+          </Alert>
+          <p>Enter the code shown in the terminal or agent you started this from.</p>
           <p>
             <Input
               aria-label="Code from your terminal"

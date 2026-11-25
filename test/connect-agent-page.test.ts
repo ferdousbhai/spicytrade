@@ -49,6 +49,8 @@ it('names the computer, takes the code the terminal printed, and posts the appro
   open({ challenge: CHALLENGE, check: CHECK, label: '2024' })
   await screen.findByText(/to spicytrade as/)
   expect(screen.getByText('2024')).toBeTruthy()
+  // The warning says what a link someone else sent would hand over.
+  expect(screen.getByRole('alert').textContent).toContain('approving would let them use spicytrade as you')
   // The link alone approves nothing: there is no code on the page, and no approving without one.
   const button = screen.getByRole('button', { name: 'Approve' })
   expect(button).toHaveProperty('disabled', true)
@@ -70,6 +72,7 @@ it('says where a brokerage link continues, and goes on to the consent address it
   vi.stubGlobal('location', { assign, href: `http://localhost/connect/agent${search}`, pathname: '/connect/agent', search })
   render(createElement(ConnectAgentPage))
   await typeCode('6A26-A884')
+  expect(screen.getByRole('alert').textContent).toContain('see your tastytrade account and place trades in it')
   fireEvent.click(await screen.findByRole('button', { name: 'Approve and continue to tastytrade' }))
   await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('https://my.tastytrade.com/auth.html?state=s'))
   expect(posted()).toEqual({ broker: 'tastytrade', code: '6A26A884', codeChallenge: CHALLENGE, codeCheck: CHECK, label: 'laptop' })
