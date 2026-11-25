@@ -170,6 +170,17 @@ describe('D1 migrations', () => {
     expect(() => insert.run('two', 'tastytrade', 'other', 'key-1')).toThrow(/UNIQUE constraint/)
     expect(() => insert.run('other-account', 'tastytrade', 'key-2', 'key-2')).not.toThrow()
     expect(() => insert.run('other-broker', 'future-broker', 'key-1', 'key-1')).not.toThrow()
+
+    db.exec(await read('0057_drop_broker_submission_account_number.sql'))
+
+    // The number's column is gone, and the quarantine holds on the key alone.
+    expect(db.prepare("SELECT name FROM pragma_table_info('broker_submissions') WHERE name = 'account_number'").all()).toEqual([])
+    const keyed = db.prepare(
+      `INSERT INTO broker_submissions (id, broker_id, account_key, payload_json, submitted_at, status)
+       VALUES (?, 'tastytrade', ?, '{}', '2026-09-03T13:30:00.000Z', 'unresolved')`,
+    )
+    expect(() => keyed.run('again', 'key-1')).toThrow(/UNIQUE constraint/)
+    expect(() => keyed.run('third-account', 'key-3')).not.toThrow()
     db.close()
   })
 

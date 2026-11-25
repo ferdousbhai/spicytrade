@@ -67,15 +67,13 @@ export async function claimSubmission(
   // Before the insert, so a missing secret is named as one rather than read as a full store.
   const accountKey = await brokerAccountKey(env, submission.broker, submission.accountNumber)
   try {
-    // `account_number` is on its way out (migration 0056) and holds the key until it is dropped.
     await env.DB.prepare(
       `INSERT INTO broker_submissions
-         (id, broker_id, account_number, account_key, payload_json, resolved_payload_json, submitted_at, status, error_code)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'unresolved', 'BrokerageSubmissionUnknown')`,
+         (id, broker_id, account_key, payload_json, resolved_payload_json, submitted_at, status, error_code)
+       VALUES (?, ?, ?, ?, ?, ?, 'unresolved', 'BrokerageSubmissionUnknown')`,
     ).bind(
       id,
       submission.broker,
-      accountKey,
       accountKey,
       JSON.stringify(submission.storedAction),
       JSON.stringify(submission.resolvedPayload),

@@ -82,9 +82,9 @@ function rows(store: SqliteD1Store) {
 
 function quarantine(store: SqliteD1Store, accountKey: string) {
   store.sqlite.prepare(
-    `INSERT INTO broker_submissions (id, broker_id, account_number, account_key, payload_json, submitted_at, status)
-     VALUES ('quarantined-1', 'tastytrade', ?, ?, ?, ?, 'unresolved')`,
-  ).run(accountKey, accountKey, JSON.stringify(EQUITY_ORDER), new Date().toISOString())
+    `INSERT INTO broker_submissions (id, broker_id, account_key, payload_json, submitted_at, status)
+     VALUES ('quarantined-1', 'tastytrade', ?, ?, ?, 'unresolved')`,
+  ).run(accountKey, JSON.stringify(EQUITY_ORDER), new Date().toISOString())
 }
 
 function apiError(status: number): Error {
