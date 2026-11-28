@@ -100,10 +100,14 @@ temporary_worker_wait_until_routable() {
 
 # `cf deploy` reads `cloudflare.config.ts` from the directory it runs in, so each ops
 # Worker keeps its config in its own folder and takes this run's name from the
-# environment. The token travels with the version (`--secrets-file`), so the Worker is
-# never live without it.
+# environment. The folder has no node_modules of its own, so `cf` cannot run its build
+# there: Vite (resolved from the repository root) writes the Build Output and `cf`
+# deploys it as built. The token travels with the version (`--secrets-file`), so the
+# Worker is never live without it.
 temporary_worker_deploy_step() {
-  (cd "$1" && SPICE_OPS_WORKER_NAME="$2" npx cf deploy --secrets-file "$temporary_worker_secrets_file")
+  (cd "$1" && export SPICE_OPS_WORKER_NAME="$2" \
+    && npx vite build \
+    && npx cf deploy --prebuilt --secrets-file "$temporary_worker_secrets_file")
 }
 
 temporary_worker_start() {

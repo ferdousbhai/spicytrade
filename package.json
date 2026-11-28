@@ -48,7 +48,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "2.0.0-beta.sha-52b0dc0e9",
+    "@cloudflare/vite-plugin": "2.0.0-rc.6",
     "@oxlint/plugins": "1.78.0",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/react": "^16.3.2",
@@ -57,7 +57,7 @@
     "@types/react-dom": "^19.2.0",
     "@typescript-eslint/parser": "^8.67.0",
     "@vitejs/plugin-react": "^6.0.1",
-    "cf": "1.0.0-beta.24",
+    "cf": "1.0.0-rc.6",
     "esbuild": "^0.28.1",
     "eslint": "^10.8.1",
     "eslint-plugin-react-hooks": "^7.1.1",

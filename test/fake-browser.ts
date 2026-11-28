@@ -14,6 +14,7 @@ const UNSUPPORTED_CALLS = {
   launch: unsupported,
   limits: unsupported,
   listSessions: unsupported,
+  script: unsupported,
 }
 
 /**

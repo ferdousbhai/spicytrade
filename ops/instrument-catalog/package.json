@@ -1,9 +1,0 @@
-{
-  "name": "spice-instrument-catalog",
-  "private": true,
-  "type": "module",
-  "devDependencies": {
-    "@cloudflare/vite-plugin": "2.0.0-beta.sha-52b0dc0e9",
-    "vite": "^8.0.0"
-  }
-}
